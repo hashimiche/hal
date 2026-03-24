@@ -1,0 +1,188 @@
+package nomad
+
+import (
+	"fmt"
+	"net/http"
+	"os/exec"
+	"strings"
+	"time"
+
+	"hal/internal/global"
+
+	"github.com/spf13/cobra"
+)
+
+var (
+	nomadVersion    string
+	nomadCPUs       string
+	nomadMem        string
+	nomadJoinConsul bool // The new unified Control Plane flag
+	nomadForce      bool
+)
+
+var deployCmd = &cobra.Command{
+	Use:   "deploy",
+	Short: "Deploy a local Nomad cluster via Multipass",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := exec.Command("multipass", "version").Run(); err != nil {
+			fmt.Println("❌ Error: Multipass is not installed or not running.")
+			return
+		}
+
+		// PRE-FLIGHT CHECK
+		if nomadJoinConsul {
+			engine, err := global.DetectEngine()
+			if err != nil || !global.IsConsulRunning(engine) {
+				fmt.Println("❌ Error: --join-consul was requested, but the global Consul brain is not running.")
+				fmt.Println("   💡 Run 'hal consul deploy' first to bring the Control Plane online.")
+				return
+			}
+		}
+
+		if nomadForce {
+			if global.Debug {
+				fmt.Println("[DEBUG] --force flag detected. Purging existing VM 'hal-nomad'...")
+			}
+			_ = exec.Command("multipass", "delete", "hal-nomad").Run()
+			_ = exec.Command("multipass", "purge").Run()
+		}
+
+		fmt.Printf(" Deploying Nomad %s via Multipass (Ubuntu VM)...\n", nomadVersion)
+
+		// 1. Launch the VM
+		fmt.Println("📦 Provisioning Ubuntu VM (This takes a few seconds)...")
+		launchArgs := []string{"launch", "22.04", "--name", "hal-nomad", "--cpus", nomadCPUs, "--mem", nomadMem}
+		out, err := exec.Command("multipass", launchArgs...).CombinedOutput()
+		if err != nil {
+			if strings.Contains(string(out), "already exists") {
+				fmt.Println("⚠️  VM 'hal-nomad' already exists! Use '--force' to redeploy.")
+				return
+			}
+			fmt.Printf("❌ Failed to launch VM: %v\nOutput: %s\n", err, string(out))
+			return
+		}
+
+		// 2. Build the dynamic installation script
+		fmt.Println("🔧 Installing binaries and configuring systemd services...")
+
+		joinConsulStr := "false"
+		if nomadJoinConsul {
+			fmt.Println("   🤝 --join-consul detected! Tethering Nomad to the global HAL Consul...")
+			joinConsulStr = "true"
+		}
+
+		installScript := fmt.Sprintf(`
+			sudo apt-get update -yqq && sudo apt-get install unzip -yqq;
+			
+			ARCH=$(dpkg --print-architecture)
+			curl -sLo nomad.zip https://releases.hashicorp.com/nomad/%s/nomad_%s_linux_${ARCH}.zip;
+			unzip -o nomad.zip;
+			sudo mv nomad /usr/local/bin/;
+			
+			# Dynamically fetch the Mac's Gateway IP from the Multipass bridge
+			CONSUL_ENV=""
+			if [ "%s" = "true" ]; then
+				MAC_IP=$(ip route | awk '/default/ {print $3}')
+				CONSUL_ENV="Environment=CONSUL_HTTP_ADDR=http://${MAC_IP}:8500"
+			fi
+
+			echo "[Unit]
+			Description=Nomad
+			After=network-online.target
+
+			[Service]
+			${CONSUL_ENV}
+			ExecStart=/usr/local/bin/nomad agent -dev -bind 0.0.0.0
+			Restart=always
+			RestartSec=2
+
+			[Install]
+			WantedBy=multi-user.target" | sudo tee /etc/systemd/system/nomad.service;
+			
+			sudo systemctl daemon-reload;
+			sudo systemctl enable --now nomad;
+		`, nomadVersion, nomadVersion, joinConsulStr)
+
+		execArgs := []string{"exec", "hal-nomad", "--", "bash", "-c", installScript}
+		if out, err := exec.Command("multipass", execArgs...).CombinedOutput(); err != nil {
+			fmt.Printf("❌ Failed to configure VM: %v\nOutput: %s\n", err, string(out))
+			return
+		}
+
+		// 3. Fetch the VM's IP Address
+		ipOut, _ := exec.Command("multipass", "info", "hal-nomad", "--format", "csv").Output()
+		ip := extractMultipassIP(string(ipOut))
+
+		// 4. THE HEALTH CHECK PHASE
+		fmt.Println("⏳ Waiting for Nomad to become healthy...")
+		if err := waitForService("Nomad", fmt.Sprintf("http://%s:4646/v1/status/leader", ip), 45); err != nil {
+			handleServiceFailure("nomad")
+			return
+		}
+
+		fmt.Println("\n✅ Environment is fully verified and ready!")
+		fmt.Printf("   🔗 Nomad UI:  http://%s:4646\n", ip)
+
+		if nomadJoinConsul {
+			fmt.Println("   🟢 Nomad is successfully tethered to the global Consul Control Plane!")
+		}
+	},
+}
+
+// waitForService pings the URL every 2 seconds until it gets an HTTP 200 or hits the timeout limit
+func waitForService(name string, url string, maxRetries int) error {
+	client := http.Client{Timeout: 2 * time.Second}
+
+	for i := 0; i < maxRetries; i++ {
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == 200 {
+				return nil
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("timeout waiting for %s at %s", name, url)
+}
+
+// handleServiceFailure pulls the systemd logs directly from the VM to diagnose the crash
+func handleServiceFailure(service string) {
+	fmt.Printf("❌ %s service failed to start or become healthy.\n", strings.Title(service))
+	fmt.Println("📜 Fetching recent systemd logs from the VM...")
+
+	out, _ := exec.Command("multipass", "exec", "hal-nomad", "--", "journalctl", "-u", service, "-n", "15", "--no-pager").CombinedOutput()
+	logStr := strings.TrimSpace(string(out))
+
+	if logStr != "" {
+		fmt.Println("----------------- SYSTEMD LOGS -----------------")
+		fmt.Println(logStr)
+		fmt.Println("------------------------------------------------")
+	} else {
+		fmt.Println("(No logs found)")
+	}
+	fmt.Println("⚠️  Deployment halted. Run 'hal nomad destroy' to clean up the broken VM.")
+}
+
+func extractMultipassIP(csvData string) string {
+	lines := strings.Split(csvData, "\n")
+	if len(lines) > 1 {
+		cols := strings.Split(lines[1], ",")
+		if len(cols) > 2 {
+			return cols[2]
+		}
+	}
+	return "127.0.0.1"
+}
+
+func init() {
+	deployCmd.Flags().StringVarP(&nomadVersion, "version", "v", "1.11.3", "Nomad version to install")
+	deployCmd.Flags().StringVar(&nomadCPUs, "cpus", "2", "Number of CPUs for the VM")
+	deployCmd.Flags().StringVar(&nomadMem, "mem", "2G", "Amount of RAM for the VM")
+	deployCmd.Flags().BoolVarP(&nomadForce, "force", "f", false, "Force redeploy")
+
+	// The unified global join flag
+	deployCmd.Flags().BoolVarP(&nomadJoinConsul, "join-consul", "c", false, "Tether Nomad to the global HAL Consul instance")
+
+	Cmd.AddCommand(deployCmd)
+}
