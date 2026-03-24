@@ -1,0 +1,36 @@
+name: Release HAL 9000 (macOS)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.1' # Updated to match your exact local environment
+
+      - name: Build for macOS (Intel)
+        run: GOOS=darwin GOARCH=amd64 go build -o hal-darwin-amd64 main.go
+
+      - name: Build for macOS (Apple Silicon M1/M2/M3/M4)
+        run: GOOS=darwin GOARCH=arm64 go build -o hal-darwin-arm64 main.go
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            hal-darwin-amd64
+            hal-darwin-arm64
+          generate_release_notes: true
