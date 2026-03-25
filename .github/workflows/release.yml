@@ -1,4 +1,4 @@
-name: Release HAL 9000 (macOS)
+name: Release HAL 9000
 
 on:
   push:
@@ -19,18 +19,57 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.1' # Updated to match your exact local environment
+          go-version: '1.26.1'
 
-      - name: Build for macOS (Intel)
-        run: GOOS=darwin GOARCH=amd64 go build -o hal-darwin-amd64 main.go
+      # ==========================
+      # macOS BUILDS
+      # ==========================
+      - name: Build and Archive for macOS (Intel)
+        run: |
+          GOOS=darwin GOARCH=amd64 go build -o hal main.go
+          tar -czvf hal-darwin-amd64.tar.gz hal
+          rm hal
 
-      - name: Build for macOS (Apple Silicon M1/M2/M3/M4)
-        run: GOOS=darwin GOARCH=arm64 go build -o hal-darwin-arm64 main.go
+      - name: Build and Archive for macOS (Apple Silicon)
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -o hal main.go
+          tar -czvf hal-darwin-arm64.tar.gz hal
+          rm hal
 
+      # ==========================
+      # LINUX BUILDS
+      # ==========================
+      - name: Build and Archive for Linux (amd64)
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o hal main.go
+          tar -czvf hal-linux-amd64.tar.gz hal
+          rm hal
+
+      - name: Build and Archive for Linux (arm64)
+        run: |
+          GOOS=linux GOARCH=arm64 go build -o hal main.go
+          tar -czvf hal-linux-arm64.tar.gz hal
+          rm hal
+
+      # ==========================
+      # WINDOWS BUILD
+      # ==========================
+      - name: Build and Archive for Windows (amd64)
+        run: |
+          GOOS=windows GOARCH=amd64 go build -o hal.exe main.go
+          zip hal-windows-amd64.zip hal.exe
+          rm hal.exe
+
+      # ==========================
+      # GITHUB RELEASE
+      # ==========================
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            hal-darwin-amd64
-            hal-darwin-arm64
+            hal-darwin-amd64.tar.gz
+            hal-darwin-arm64.tar.gz
+            hal-linux-amd64.tar.gz
+            hal-linux-arm64.tar.gz
+            hal-windows-amd64.zip
           generate_release_notes: true
