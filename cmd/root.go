@@ -39,7 +39,7 @@ func Execute() {
 
 func init() {
 	// Point the flags directly to the memory addresses of your global variables
-	rootCmd.PersistentFlags().BoolVarP(&global.Debug, "debug", "d", false, "Enable debug output")
+	rootCmd.PersistentFlags().BoolVarP(&global.Debug, "debug", "", false, "Enable debug output")
 	rootCmd.PersistentFlags().BoolVarP(&global.DryRun, "dry-run", "", false, "Simulate the execution without changing state")
 
 	rootCmd.AddCommand(vault.Cmd)

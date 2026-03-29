@@ -51,6 +51,9 @@ var vaultDestroyCmd = &cobra.Command{
 		// 3. Attempt to clean the network
 		global.CleanNetworkIfEmpty(engine)
 
+		// 4, Clean audit volume if created
+		_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-logs").Run()
+
 		fmt.Println("✅ Vault instance and extensions destroyed successfully!")
 	},
 }

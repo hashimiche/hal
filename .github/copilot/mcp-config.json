@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "vault-audit": {
+      "command": "/Users/miche.sawrabakos/.hal/bin/vault-audit-mcp",
+      "args": [],
+      "env": {
+        "LOKI_URL": "http://127.0.0.1:3100",
+        "LOKI_BASE_LABELS": "{\"job\":\"vault-audit\"}"
+      }
+    }
+  }
+}

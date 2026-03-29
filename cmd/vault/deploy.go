@@ -51,9 +51,10 @@ var deployCmd = &cobra.Command{
 
 		if vaultForce {
 			if global.Debug {
-				fmt.Println("[DEBUG] --force flag detected. Purging existing Vault...")
+				fmt.Println("[DEBUG] --force flag detected. Purging existing Vault and Volumes...")
 			}
 			_ = exec.Command(engine, "rm", "-f", "hal-vault").Run()
+			_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-logs").Run() // Purge des anciens logs
 		}
 
 		// Determine the Image Repository and Version based on Edition
@@ -74,6 +75,10 @@ var deployCmd = &cobra.Command{
 		// 1. Ensure the global HAL network exists
 		global.EnsureNetwork(engine)
 
+		// NOUVEAU : Correction des permissions du volume d'audit pour l'utilisateur Vault (UID 100)
+		fmt.Println("⚙️  Preparing shared audit volume permissions...")
+		_ = exec.Command(engine, "run", "--rm", "-v", "hal-vault-logs:/vault/logs", "alpine", "chown", "-R", "100:1000", "/vault/logs").Run()
+
 		// 2. Build the Docker run arguments
 		vaultArgs := []string{
 			"run", "-d",
@@ -81,6 +86,7 @@ var deployCmd = &cobra.Command{
 			"--network", "hal-net",
 			"--cap-add", "IPC_LOCK",
 			"-p", "8200:8200",
+			"-v", "hal-vault-logs:/vault/logs",
 		}
 
 		// Inject the Enterprise License (we already know it exists thanks to the pre-flight check)
