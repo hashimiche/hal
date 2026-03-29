@@ -12,13 +12,15 @@ import (
 )
 
 var (
-	mariadbDestroy bool
+	mariadbEnable  bool
+	mariadbDisable bool
+	mariadbForce   bool
 	mariadbVersion string
 )
 
 var vaultMariadbCmd = &cobra.Command{
 	Use:   "mariadb",
-	Short: "Deploy MariaDB and configure Vault Dynamic Database Credentials using least-privilege best practices",
+	Short: "Deploy MariaDB and configure Vault Dynamic Database Credentials",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
@@ -27,156 +29,222 @@ var vaultMariadbCmd = &cobra.Command{
 			return
 		}
 
-		// 1. Try to get the client
 		client, vaultErr := GetHealthyClient()
 
-		// 2. If we are DEPLOYING, we demand Vault is healthy.
-		if !mariadbDestroy && vaultErr != nil {
-			fmt.Printf("❌ %v\n", vaultErr)
-			return
-		}
-
 		// ==========================================
-		// THE DESTROY LOGIC (--destroy)
+		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if mariadbDestroy {
-			fmt.Println("⚙️  Connecting to Vault API for cleanup...")
-			// Only attempt Vault cleanup if Vault is actually alive
-			if vaultErr == nil && client != nil {
+		if !mariadbEnable && !mariadbDisable && !mariadbForce {
+			fmt.Println("🔍 Checking Vault Database Engine Status...")
 
-				// 🎯 THE BULLETPROOF FIX: Force-revoke any dangling database leases first.
-				// This ensures Vault doesn't panic and block the unmount if the database is already offline!
-				fmt.Println("⚙️  Force-revoking dangling database leases...")
-				_ = client.Sys().RevokeForce("database/")
+			// Check Docker
+			dbExists := (exec.Command(engine, "inspect", "hal-mariadb").Run() == nil)
 
-				fmt.Println("⚙️  Disabling 'database/' secrets engine...")
-				_ = client.Sys().Unmount("database")
-
-			} else {
-				fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
+			// Check Vault API (if Vault is alive)
+			dbMounted := false
+			if vaultErr == nil {
+				mounts, _ := client.Sys().ListMounts()
+				_, dbMounted = mounts["database/"]
 			}
 
-			fmt.Println("⚙️  Removing MariaDB container...")
+			// Output Status
+			if dbExists {
+				fmt.Printf("  ✅ MariaDB       : Active (127.0.0.1:3306)\n")
+			} else {
+				fmt.Printf("  ❌ MariaDB       : Not running\n")
+			}
+
+			if dbMounted {
+				fmt.Printf("  ✅ Vault Secrets : Configured (database/)\n")
+			} else {
+				fmt.Printf("  ❌ Vault Secrets : Not configured\n")
+			}
+
+			// Smart Assistant Logic
+			fmt.Println("\n💡 Next Step:")
+			if !dbExists && !dbMounted {
+				fmt.Println("   To deploy MariaDB and wire up Vault, run:")
+				fmt.Println("   hal vault mariadb --enable")
+			} else if dbExists && dbMounted {
+				fmt.Println("   Demo is ready! Request a dynamic credential:")
+				fmt.Println("   vault read database/creds/readonly-user")
+				fmt.Println("\n   To completely remove this database environment, run:")
+				fmt.Println("   hal vault mariadb --disable")
+			} else {
+				fmt.Println("   Environment is partially degraded. To safely reset, run:")
+				fmt.Println("   hal vault mariadb --force")
+			}
+			return
+		}
+
+		// ==========================================
+		// 2. TEARDOWN / RESET PATH (--disable / --force)
+		// ==========================================
+		if mariadbDisable || mariadbForce {
+			if global.DryRun {
+				fmt.Println("[DRY RUN] Would execute: docker rm -f hal-mariadb")
+				fmt.Println("[DRY RUN] Would call API to force-revoke leases and unmount 'database/'")
+			} else {
+				if mariadbDisable {
+					fmt.Println("🛑 Tearing down MariaDB environment...")
+				} else {
+					fmt.Println("♻️  Force flag detected. Destroying database environment for reset...")
+				}
+
+				if vaultErr == nil && client != nil {
+					// 🎯 THE BULLETPROOF FIX: Force-revoke any dangling database leases first.
+					fmt.Println("⚙️  Connecting to Vault API for cleanup (Revoking leases)...")
+					_ = client.Sys().RevokeForce("database/")
+					_ = client.Sys().Unmount("database")
+				} else {
+					fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
+				}
+
+				fmt.Println("⚙️  Removing MariaDB container...")
+				_ = exec.Command(engine, "rm", "-f", "hal-mariadb").Run()
+
+				if mariadbDisable {
+					fmt.Println("✅ MariaDB environment destroyed successfully!")
+				}
+			}
+
+			if mariadbDisable && !global.DryRun {
+				return
+			}
+		}
+
+		// ==========================================
+		// 3. DEPLOY / ENABLE PATH (--enable / --force)
+		// ==========================================
+		if mariadbEnable || mariadbForce {
+			if vaultErr != nil {
+				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
+				return
+			}
+
+			if global.DryRun {
+				fmt.Println("[DRY RUN] Would execute Docker run command for MariaDB.")
+				fmt.Println("[DRY RUN] Would provision 'vaultadmin' least-privilege account via SQL.")
+				fmt.Println("[DRY RUN] Would configure Vault Database secrets engine and rotate root.")
+				return
+			}
+
+			fmt.Printf("🚀 Booting MariaDB Database (mariadb:%s)...\n", mariadbVersion)
 			_ = exec.Command(engine, "rm", "-f", "hal-mariadb").Run()
 
-			fmt.Println("✅ MariaDB environment destroyed successfully!")
-			return
+			dbArgs := []string{
+				"run", "-d", "--name", "hal-mariadb",
+				"--network", "hal-net",
+				"--network-alias", "mariadb.localhost",
+				"-p", "3306:3306",
+				"-e", "MARIADB_ROOT_PASSWORD=vaultroot",
+				fmt.Sprintf("mariadb:%s", mariadbVersion),
+			}
+
+			if err := exec.Command(engine, dbArgs...).Run(); err != nil {
+				fmt.Printf("❌ Failed to start MariaDB: %v\n", err)
+				return
+			}
+
+			fmt.Println("⏳ Waiting for MariaDB to initialize (this usually takes 10-15 seconds)...")
+			if err := waitForMariaDB(engine, 30); err != nil {
+				fmt.Println("\n❌ MariaDB failed to initialize within the time limit.")
+				return
+			}
+			fmt.Println("\n✅ MariaDB is online and accepting connections!")
+
+			// 🎯 BEST PRACTICE 1: Create a least-privileged vaultadmin account
+			fmt.Println("⚙️  Provisioning least-privileged 'vaultadmin' account...")
+			setupSQL := `
+				CREATE USER 'vaultadmin'@'%' IDENTIFIED BY 'temp-vault-pass';
+				GRANT SELECT, CREATE USER ON *.* TO 'vaultadmin'@'%' WITH GRANT OPTION;
+				FLUSH PRIVILEGES;
+			`
+			err = exec.Command(engine, "exec", "hal-mariadb", "mariadb", "-u", "root", "-pvaultroot", "-e", setupSQL).Run()
+			if err != nil {
+				fmt.Printf("❌ Failed to provision vaultadmin account: %v\n", err)
+				return
+			}
+
+			// 1. Enable Database Secrets Engine
+			fmt.Println("⚙️  Configuring Vault Database Secrets Engine...")
+			_ = client.Sys().Unmount("database")
+
+			err = client.Sys().Mount("database", &vault.MountInput{
+				Type: "database",
+			})
+			if err != nil {
+				fmt.Printf("❌ Failed to enable database engine: %v\n", err)
+				return
+			}
+
+			// 2. Configure Vault Connection
+			fmt.Println("⚙️  Wiring Vault to MariaDB via the 'vaultadmin' account...")
+			_, err = client.Logical().Write("database/config/hal-mariadb", map[string]interface{}{
+				"plugin_name":    "mysql-database-plugin",
+				"connection_url": "{{username}}:{{password}}@tcp(hal-mariadb:3306)/",
+				"allowed_roles":  "readonly-user",
+				"username":       "vaultadmin",
+				"password":       "temp-vault-pass",
+			})
+			if err != nil {
+				fmt.Printf("❌ Failed to configure database connection: %v\n", err)
+				return
+			}
+
+			// 🎯 BEST PRACTICE 2: Rotate the Vault Admin Password
+			fmt.Println("⚙️  Executing Password Rotation (Vault is taking exclusive ownership)...")
+			_, err = client.Logical().Write("database/rotate-root/hal-mariadb", map[string]interface{}{})
+			if err != nil {
+				fmt.Printf("❌ Failed to rotate Vault connection password: %v\n", err)
+				return
+			}
+
+			// 3. Create the Role
+			fmt.Println("⚙️  Injecting Dynamic SQL Creation Statements...")
+			_, err = client.Logical().Write("database/roles/readonly-user", map[string]interface{}{
+				"db_name":             "hal-mariadb",
+				"creation_statements": "CREATE USER '{{name}}'@'%' IDENTIFIED BY '{{password}}'; GRANT SELECT ON *.* TO '{{name}}'@'%';",
+				"default_ttl":         "1h",
+				"max_ttl":             "24h",
+			})
+			if err != nil {
+				fmt.Printf("❌ Failed to create Vault role: %v\n", err)
+				return
+			}
+
+			// 4. Generate the Temporary Credentials
+			fmt.Println("⚙️  Requesting temporary JIT (Just-In-Time) credentials from Vault...")
+			time.Sleep(2 * time.Second)
+
+			secret, err := client.Logical().Read("database/creds/readonly-user")
+			if err != nil || secret == nil {
+				fmt.Printf("❌ Failed to generate credentials: %v\n", err)
+				return
+			}
+
+			username := secret.Data["username"].(string)
+			password := secret.Data["password"].(string)
+
+			fmt.Println("\n✅ Enterprise Dynamic Database Credentials Generated!")
+			fmt.Println("---------------------------------------------------------")
+			fmt.Println("🔗 Database Host: 127.0.0.1:3306")
+			fmt.Println("👤 JIT Username:  " + username)
+			fmt.Println("🔑 JIT Password:  " + password)
+			fmt.Println("\n💡 THE SECURE WORKFLOW:")
+			fmt.Println("   1. A least-privileged 'vaultadmin' account was created.")
+			fmt.Println("   2. Vault immediately rotated the 'vaultadmin' password. Nobody knows it!")
+			fmt.Println("   3. Vault used that account to dynamically create the JIT user above.")
+			fmt.Println("   4. Try logging in: `mysql -h 127.0.0.1 -P 3306 -u " + username + " -p" + password + "`")
+			fmt.Println("   5. This user only has SELECT privileges and will self-destruct in 1 hour.")
+			fmt.Println("---------------------------------------------------------")
 		}
-
-		// ==========================================
-		// THE DEPLOY LOGIC (Default)
-		// ==========================================
-		fmt.Printf("⚙️  Booting MariaDB Database (mariadb:%s)...\n", mariadbVersion)
-		_ = exec.Command(engine, "rm", "-f", "hal-mariadb").Run()
-
-		dbArgs := []string{
-			"run", "-d", "--name", "hal-mariadb",
-			"--network", "hal-net",
-			"--network-alias", "mariadb.localhost",
-			"-p", "3306:3306",
-			"-e", "MARIADB_ROOT_PASSWORD=vaultroot", // The true DB root password (humans keep this)
-			fmt.Sprintf("mariadb:%s", mariadbVersion),
-		}
-
-		if err := exec.Command(engine, dbArgs...).Run(); err != nil {
-			fmt.Printf("❌ Failed to start MariaDB: %v\n", err)
-			return
-		}
-
-		fmt.Println("⚙️  Waiting for MariaDB to initialize (this usually takes 10-15 seconds)...")
-		if err := waitForMariaDB(engine, 30); err != nil {
-			fmt.Println("\n❌ MariaDB failed to initialize within the time limit.")
-			return
-		}
-		fmt.Println("\n✅ MariaDB is online and accepting connections!")
-
-		// 🎯 BEST PRACTICE 1: Create a least-privileged vaultadmin account
-		fmt.Println("⚙️  Provisioning least-privileged 'vaultadmin' account...")
-		setupSQL := `
-			CREATE USER 'vaultadmin'@'%' IDENTIFIED BY 'temp-vault-pass';
-			GRANT SELECT, CREATE USER ON *.* TO 'vaultadmin'@'%' WITH GRANT OPTION;
-			FLUSH PRIVILEGES;
-		`
-		err = exec.Command(engine, "exec", "hal-mariadb", "mariadb", "-u", "root", "-pvaultroot", "-e", setupSQL).Run()
-		if err != nil {
-			fmt.Printf("❌ Failed to provision vaultadmin account: %v\n", err)
-			return
-		}
-
-		// 1. Enable Database Secrets Engine
-		fmt.Println("⚙️  Configuring Vault Database Secrets Engine...")
-		_ = client.Sys().Unmount("database") // Clean state
-
-		err = client.Sys().Mount("database", &vault.MountInput{
-			Type: "database",
-		})
-		if err != nil {
-			fmt.Printf("❌ Failed to enable database engine: %v\n", err)
-			return
-		}
-
-		// 2. Configure Vault Connection using the least-privileged account
-		fmt.Println("⚙️  Wiring Vault to MariaDB via the 'vaultadmin' account...")
-		_, err = client.Logical().Write("database/config/hal-mariadb", map[string]interface{}{
-			"plugin_name":    "mysql-database-plugin",
-			"connection_url": "{{username}}:{{password}}@tcp(hal-mariadb:3306)/",
-			"allowed_roles":  "readonly-user",
-			"username":       "vaultadmin",
-			"password":       "temp-vault-pass",
-		})
-		if err != nil {
-			fmt.Printf("❌ Failed to configure database connection: %v\n", err)
-			return
-		}
-
-		// 🎯 BEST PRACTICE 2: Rotate the Vault Admin Password
-		fmt.Println("⚙️  Executing Password Rotation (Vault is taking exclusive ownership of the 'vaultadmin' credentials)...")
-		_, err = client.Logical().Write("database/rotate-root/hal-mariadb", map[string]interface{}{})
-		if err != nil {
-			fmt.Printf("❌ Failed to rotate Vault connection password: %v\n", err)
-			return
-		}
-
-		// 3. Create the Role with dynamic SQL statements
-		fmt.Println("⚙️  Injecting Dynamic SQL Creation Statements...")
-		_, err = client.Logical().Write("database/roles/readonly-user", map[string]interface{}{
-			"db_name":             "hal-mariadb",
-			"creation_statements": "CREATE USER '{{name}}'@'%' IDENTIFIED BY '{{password}}'; GRANT SELECT ON *.* TO '{{name}}'@'%';",
-			"default_ttl":         "1h",
-			"max_ttl":             "24h",
-		})
-		if err != nil {
-			fmt.Printf("❌ Failed to create Vault role: %v\n", err)
-			return
-		}
-
-		// 4. Generate the Temporary Credentials
-		fmt.Println("⚙️  Requesting temporary JIT (Just-In-Time) credentials from Vault...")
-		time.Sleep(2 * time.Second) // Small buffer for connection pool mapping
-
-		secret, err := client.Logical().Read("database/creds/readonly-user")
-		if err != nil || secret == nil {
-			fmt.Printf("❌ Failed to generate credentials: %v\n", err)
-			return
-		}
-
-		username := secret.Data["username"].(string)
-		password := secret.Data["password"].(string)
-
-		fmt.Println("\n✅ Enterprise Dynamic Database Credentials Generated!")
-		fmt.Println("---------------------------------------------------------")
-		fmt.Println("🔗 Database Host: 127.0.0.1:3306")
-		fmt.Println("👤 JIT Username:  " + username)
-		fmt.Println("🔑 JIT Password:  " + password)
-		fmt.Println("\n💡 THE SECURE WORKFLOW:")
-		fmt.Println("   1. A least-privileged 'vaultadmin' account was created.")
-		fmt.Println("   2. Vault immediately rotated the 'vaultadmin' password. Nobody knows it!")
-		fmt.Println("   3. Vault used that account to dynamically create the JIT user above.")
-		fmt.Println("   4. Try logging in: `mysql -h 127.0.0.1 -P 3306 -u " + username + " -p" + password + "`")
-		fmt.Println("   5. This user only has SELECT privileges and will self-destruct in 1 hour.")
-		fmt.Println("---------------------------------------------------------")
 	},
 }
+
+// -----------------------------------------------------------------------------
+// Helper Functions
+// -----------------------------------------------------------------------------
 
 func waitForMariaDB(engine string, maxRetries int) error {
 	for i := 0; i < maxRetries; i++ {
@@ -191,7 +259,13 @@ func waitForMariaDB(engine string, maxRetries int) error {
 }
 
 func init() {
-	vaultMariadbCmd.Flags().BoolVar(&mariadbDestroy, "destroy", false, "Remove MariaDB and strip the database configuration from Vault")
+	// Standard Lifecycle Flags
+	vaultMariadbCmd.Flags().BoolVarP(&mariadbEnable, "enable", "e", false, "Deploy MariaDB and configure Vault")
+	vaultMariadbCmd.Flags().BoolVarP(&mariadbDisable, "disable", "d", false, "Remove MariaDB and clean up Vault configurations")
+	vaultMariadbCmd.Flags().BoolVarP(&mariadbForce, "force", "f", false, "Force a clean redeployment of the database")
+
+	// Feature-Specific Flags
 	vaultMariadbCmd.Flags().StringVar(&mariadbVersion, "mariadb-version", "11.4", "Version of the MariaDB container image to deploy")
+
 	Cmd.AddCommand(vaultMariadbCmd)
 }

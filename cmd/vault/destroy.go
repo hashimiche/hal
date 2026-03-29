@@ -9,6 +9,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// The "Known Universe" of Vault infrastructure.
+// As you build new Vault features that require Docker containers, just add them here!
+var vaultEcosystem = []string{
+	"hal-vault",
+	"hal-keycloak",
+	"hal-gitlab",
+	"hal-gitlab-runner",
+	"hal-openldap",
+	"hal-phpldapadmin",
+	"hal-mariadb",
+}
+
+var vaultVolumes = []string{
+	"hal-vault-logs", // Spun up by Audit/Loki
+}
+
 var vaultDestroyCmd = &cobra.Command{
 	Use:   "destroy",
 	Short: "Destroy the local Vault instance and associated extensions (like Keycloak)",
@@ -23,38 +39,47 @@ var vaultDestroyCmd = &cobra.Command{
 			fmt.Printf("[DEBUG] Using container engine: %s\n", engine)
 		}
 
-		fmt.Printf("⚙️  Destroying Vault instance via %s...\n", engine)
+		fmt.Printf("⚙️  Destroying Vault ecosystem via %s...\n", engine)
 
-		if global.DryRun {
-			fmt.Printf("[DRY RUN] Would execute: %s rm -f hal-vault hal-keycloak\n", engine)
-			return
-		}
+		// 1. Destroy all associated containers
+		for _, container := range vaultEcosystem {
+			if global.DryRun {
+				fmt.Printf("[DRY RUN] Would execute: %s rm -f %s\n", engine, container)
+				continue
+			}
 
-		// 1. Destroy the primary Vault container
-		out, err := exec.Command(engine, "rm", "-f", "hal-vault").CombinedOutput()
-		if err != nil {
-			outputStr := string(out)
-			if strings.Contains(outputStr, "No such container") || strings.Contains(outputStr, "no container") {
-				fmt.Println("⚠️  No Vault instance named 'hal-vault' found. It might already be destroyed.")
+			out, err := exec.Command(engine, "rm", "-f", container).CombinedOutput()
+			if err != nil {
+				// We only care if the error is something OTHER than "container not found"
+				outputStr := string(out)
+				if !strings.Contains(outputStr, "No such container") && !strings.Contains(outputStr, "no container") {
+					fmt.Printf("⚠️  Failed to destroy '%s': %s\n", container, strings.TrimSpace(outputStr))
+				}
 			} else {
-				fmt.Printf("❌ Failed to destroy Vault container.\nReason: %s\nOutput: %s\n", err, outputStr)
+				// If it successfully deleted something, let the user know!
+				if strings.TrimSpace(string(out)) == container {
+					fmt.Printf("  ✅ Destroyed container: %s\n", container)
+				}
 			}
 		}
 
-		if global.Debug {
-			fmt.Printf("[DEBUG] Engine output: %s\n", strings.TrimSpace(string(out)))
+		// 2. Destroy all associated volumes
+		for _, volume := range vaultVolumes {
+			if global.DryRun {
+				fmt.Printf("[DRY RUN] Would execute: %s volume rm -f %s\n", engine, volume)
+				continue
+			}
+
+			// Volumes fail loudly if they are in use, but we just killed the containers, so it's safe.
+			_ = exec.Command(engine, "volume", "rm", "-f", volume).Run()
 		}
 
-		// 2. Silently sweep up any companion containers (like Keycloak for OIDC)
-		_ = exec.Command(engine, "rm", "-f", "hal-keycloak").Run()
-
-		// 3. Attempt to clean the network
+		// 3. Attempt to clean the network (Only deletes hal-net if NO containers are using it)
 		global.CleanNetworkIfEmpty(engine)
 
-		// 4, Clean audit volume if created
-		_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-logs").Run()
-
-		fmt.Println("✅ Vault instance and extensions destroyed successfully!")
+		if !global.DryRun {
+			fmt.Println("\n✅ Vault instance and all extensions destroyed successfully!")
+		}
 	},
 }
 

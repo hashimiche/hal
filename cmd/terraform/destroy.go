@@ -5,11 +5,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"hal/internal/global"
 
 	"github.com/spf13/cobra"
 )
+
+// The "Known Universe" of Terraform Enterprise infrastructure
+var tfeEcosystem = []string{
+	"hal-tfe",
+	"hal-tfe-db",
+	"hal-tfe-redis",
+	"hal-tfe-minio",
+}
 
 var destroyCmd = &cobra.Command{
 	Use:   "destroy",
@@ -22,35 +31,49 @@ var destroyCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println("💥 Initializing scorched earth policy for TFE...")
+		fmt.Printf("⚙️  Destroying Terraform Enterprise ecosystem via %s...\n", engine)
 
-		// 1. Kill the containers
-		// We use a slice to ensure we catch all of them in one go
-		containers := []string{"hal-tfe", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio"}
-		for _, container := range containers {
-			fmt.Printf("🛑 Stopping and removing %s...\n", container)
-			_ = exec.Command(engine, "rm", "-f", container).Run()
+		// 1. Destroy all associated containers
+		for _, container := range tfeEcosystem {
+			if global.DryRun {
+				fmt.Printf("[DRY RUN] Would execute: %s rm -f %s\n", engine, container)
+				continue
+			}
+
+			out, err := exec.Command(engine, "rm", "-f", container).CombinedOutput()
+			if err != nil {
+				outputStr := string(out)
+				if !strings.Contains(outputStr, "No such container") && !strings.Contains(outputStr, "no container") {
+					fmt.Printf("⚠️  Failed to destroy '%s': %s\n", container, strings.TrimSpace(outputStr))
+				}
+			} else {
+				if strings.TrimSpace(string(out)) == container {
+					fmt.Printf("  ✅ Destroyed container: %s\n", container)
+				}
+			}
 		}
 
 		// 2. Wipe the local Cert cache
-		// This ensures we don't have hostname mismatches if we changed TFE_HOSTNAME
 		homeDir, _ := os.UserHomeDir()
 		certDir := filepath.Join(homeDir, ".hal", "tfe-certs")
 		if _, err := os.Stat(certDir); err == nil {
-			fmt.Println("🧹 Wiping local TLS certificate cache...")
-			_ = os.RemoveAll(certDir)
+			if global.DryRun {
+				fmt.Printf("[DRY RUN] Would execute: rm -rf %s\n", certDir)
+			} else {
+				fmt.Println("  🧹 Wiping local TLS certificate cache...")
+				_ = os.RemoveAll(certDir)
+			}
 		}
 
-		// 3. Cleanup the network
-		// Docker networks can sometimes cache container IP metadata
-		fmt.Println(" Pruning HAL network...")
-		_ = exec.Command(engine, "network", "rm", "hal-net").Run()
+		// 3. Attempt to clean the network
+		global.CleanNetworkIfEmpty(engine)
 
-		fmt.Println("✨ Environment wiped. You are ready for a clean 'hal terraform deploy'.")
+		if !global.DryRun {
+			fmt.Println("\n✅ TFE environment wiped. You are ready for a clean 'hal terraform deploy'.")
+		}
 	},
 }
 
 func init() {
-	// Attach to the parent 'terraform' command
 	Cmd.AddCommand(destroyCmd)
 }

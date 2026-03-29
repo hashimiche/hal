@@ -52,7 +52,6 @@ var deployCmd = &cobra.Command{
 			return
 		}
 
-		// Detect if we are using Podman to apply specific "relaxed" security flags
 		isPodman := strings.Contains(engine, "podman")
 
 		// 2. FORGE THE TLS CERTIFICATES
@@ -65,13 +64,11 @@ var deployCmd = &cobra.Command{
 		}
 
 		if tfeForce {
-			if global.Debug {
-				fmt.Println("[DEBUG] --force flag detected. Purging existing TFE resources...")
-			}
+			fmt.Println("♻️  Force flag detected. Purging existing TFE resources...")
 			_ = exec.Command(engine, "rm", "-f", "hal-tfe", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio").Run()
 		}
 
-		fmt.Printf(" Deploying Terraform Enterprise %s (PG: %s, Redis: %s) via %s...\n", tfeVersion, pgVersion, redisVersion, engine)
+		fmt.Printf("🚀 Deploying Terraform Enterprise %s (PG: %s, Redis: %s) via %s...\n", tfeVersion, pgVersion, redisVersion, engine)
 
 		// 3. SECURE REGISTRY AUTHENTICATION
 		fmt.Println("🔑 Authenticating with HashiCorp private image registry...")
@@ -86,18 +83,18 @@ var deployCmd = &cobra.Command{
 		global.EnsureNetwork(engine)
 
 		// 5. Deploy PostgreSQL
-		fmt.Printf("  Provisioning TFE PostgreSQL Database...\n")
+		fmt.Printf("⚙️  Provisioning TFE PostgreSQL Database...\n")
 		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-db", "--network", "hal-net",
 			"-e", "POSTGRES_USER=tfe", "-e", "POSTGRES_PASSWORD=tfe_password", "-e", "POSTGRES_DB=tfe",
 			fmt.Sprintf("postgres:%s-alpine", pgVersion)).Run()
 
 		// 6. Deploy Redis
-		fmt.Printf(" Provisioning TFE Redis Cache...\n")
+		fmt.Printf("⚙️  Provisioning TFE Redis Cache...\n")
 		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-redis", "--network", "hal-net",
 			fmt.Sprintf("redis:%s-alpine", redisVersion)).Run()
 
 		// 7. Deploy MinIO (S3 Mock)
-		fmt.Println("  Provisioning TFE Object Storage (MinIO)...")
+		fmt.Println("⚙️  Provisioning TFE Object Storage (MinIO)...")
 		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-minio", "--network", "hal-net",
 			"-p", "9000:9000", "-p", "9001:9001",
 			"-e", "MINIO_ROOT_USER=minioadmin", "-e", "MINIO_ROOT_PASSWORD=minioadmin",
@@ -107,7 +104,7 @@ var deployCmd = &cobra.Command{
 		_ = exec.Command(engine, "exec", "hal-tfe-minio", "sh", "-c", "mkdir -p /data/tfe-data").Run()
 
 		// 8. Deploy TFE Core
-		fmt.Println("  Booting TFE Core Application (This requires heavy compute)...")
+		fmt.Println("⚙️  Booting TFE Core Application (This requires heavy compute)...")
 		tfeArgs := []string{
 			"run", "-d",
 			"--name", "hal-tfe",
@@ -119,25 +116,19 @@ var deployCmd = &cobra.Command{
 			"-v", "/var/run/docker.sock:/var/run/docker.sock",
 		}
 
-		// 🎯 PODMAN/MAC SPECIFIC HARDENING BYPASS
-		// If using Podman, we must disable label confinement so the TFE user (1000)
-		// can actually read the mounted certs and the socket.
 		if isPodman {
 			tfeArgs = append(tfeArgs, "--security-opt", "label=disable")
 			tfeArgs = append(tfeArgs, "--security-opt", "seccomp=unconfined")
 		}
 
-		// Add the volumes with the ':Z' flag for Podman/SELinux compatibility
-		// (Docker ignores ':Z' safely on Mac)
 		tfeArgs = append(tfeArgs, "-v", fmt.Sprintf("%s:/etc/ssl/tfe:Z", certDir))
 
-		// Append the environment variables
 		tfeArgs = append(tfeArgs,
 			"-e", "TFE_OPERATIONAL_MODE=external",
 			"-e", "TFE_HOSTNAME=tfe.localhost",
 			"-e", "TFE_IA_HOSTNAME=hal-tfe",
 			"-e", "TFE_VAULT_ADDR=http://127.0.0.1:8200",
-			"-e", "TFE_VAULT_DISABLE_MLOCK=true", // Required for both Docker/Podman on Mac
+			"-e", "TFE_VAULT_DISABLE_MLOCK=true",
 			"-e", "TFE_IA_INTERNAL_VAULT_ADDR=http://127.0.0.1:8200",
 			"-e", "TFE_RUN_PIPELINE_DOCKER_NETWORK=hal-net",
 			"-e", "TFE_HTTP_PORT=8080",
@@ -145,24 +136,16 @@ var deployCmd = &cobra.Command{
 			"-e", "TFE_TLS_CERT_FILE=/etc/ssl/tfe/cert.pem",
 			"-e", "TFE_TLS_KEY_FILE=/etc/ssl/tfe/key.pem",
 			"-e", "TFE_DISK_CACHE_VOLUME_NAME=hal-tfe-cache",
-
-			// Secrets
 			"-e", "TFE_LICENSE",
 			"-e", "TFE_ENCRYPTION_PASSWORD",
-
-			// Database Connection
 			"-e", "TFE_DATABASE_USER=tfe",
 			"-e", "TFE_DATABASE_PASSWORD",
 			"-e", "TFE_DATABASE_HOST=hal-tfe-db",
 			"-e", "TFE_DATABASE_NAME=tfe",
 			"-e", "TFE_DATABASE_PARAMETERS=sslmode=disable",
-
-			// Redis Connection
 			"-e", "TFE_REDIS_HOST=hal-tfe-redis",
 			"-e", "TFE_REDIS_USE_TLS=false",
 			"-e", "TFE_REDIS_USE_AUTH=false",
-
-			// S3 (MinIO) Connection
 			"-e", "TFE_OBJECT_STORAGE_TYPE=s3",
 			"-e", "TFE_OBJECT_STORAGE_S3_USE_INSTANCE_PROFILE=false",
 			"-e", "TFE_OBJECT_STORAGE_S3_ENDPOINT=http://hal-tfe-minio:9000",
@@ -171,9 +154,7 @@ var deployCmd = &cobra.Command{
 			"-e", "TFE_OBJECT_STORAGE_S3_ACCESS_KEY_ID=minioadmin",
 			"-e", "TFE_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY=minioadmin",
 			"-e", "TFE_OBJECT_STORAGE_S3_FORCE_PATH_STYLE=true",
-
 			"-e", "TFE_CAPACITY_CONCURRENCY=5",
-
 			fmt.Sprintf("images.releases.hashicorp.com/hashicorp/terraform-enterprise:%s", tfeVersion),
 		)
 
@@ -186,25 +167,25 @@ var deployCmd = &cobra.Command{
 		// 9. THE HEALTH CHECK PHASE
 		fmt.Println("⏳ Waiting for TFE to initialize (WARNING: This can take 3-5 minutes!)...")
 
-		// Since it's on HTTPS now, we hit the 8443 health endpoint!
 		if err := waitForService("TFE", "https://tfe.localhost:8443/_health_check", 60); err != nil {
 			handleDockerFailure("hal-tfe", engine)
 			return
 		}
 
-		fmt.Println("✅ Terraform Enterprise 1.x is UP!")
-		fmt.Println("   🔗 UI Address:   https://tfe.localhost:8443")
-		fmt.Println("   🔐 Initial Setup: You will need to create the initial admin user in the UI.")
-		fmt.Println("   ⚠️  Note: Accept the browser warning for your self-signed certificate.")
+		fmt.Println("\n✅ Terraform Enterprise 1.x is UP!")
+		fmt.Println("---------------------------------------------------------")
+		fmt.Println("🔗 UI Address:   https://tfe.localhost:8443")
+		fmt.Println("⚠️  Note:        Accept the browser warning for the self-signed certificate.")
+		fmt.Println("\n💡 Next Step:")
+		fmt.Println("   Run 'hal terraform token' to get your initial admin setup link!")
+		fmt.Println("---------------------------------------------------------")
 	},
 }
 
-// ensureCerts generates a local self-signed RSA certificate natively in Go
 func ensureCerts(certDir string) error {
 	certPath := filepath.Join(certDir, "cert.pem")
 	keyPath := filepath.Join(certDir, "key.pem")
 
-	// If they already exist, we skip generation!
 	if _, err := os.Stat(certPath); err == nil {
 		return nil
 	}
@@ -223,7 +204,7 @@ func ensureCerts(certDir string) error {
 			CommonName:   "localhost",
 		},
 		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
@@ -246,7 +227,6 @@ func ensureCerts(certDir string) error {
 	return nil
 }
 
-// waitForService requires a custom HTTP client to skip TLS verification for our self-signed cert
 func waitForService(name string, url string, maxRetries int) error {
 	customTransport := http.DefaultTransport.(*http.Transport).Clone()
 	customTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}

@@ -2,8 +2,10 @@ package consul
 
 import "github.com/spf13/cobra"
 
-// Cmd is the exported base command for the consul noun
 var Cmd = &cobra.Command{
 	Use:   "consul",
-	Short: "Manage local standalone Consul deployments",
+	Short: "Manage the local Consul Control Plane",
+	Run: func(cmd *cobra.Command, args []string) {
+		consulStatusCmd.Run(cmd, args)
+	},
 }

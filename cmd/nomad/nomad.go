@@ -2,8 +2,10 @@ package nomad
 
 import "github.com/spf13/cobra"
 
-// Cmd is the exported base command for Nomad
 var Cmd = &cobra.Command{
 	Use:   "nomad",
-	Short: "Manage local Nomad deployments",
+	Short: "Manage the local Nomad cluster via Multipass",
+	Run: func(cmd *cobra.Command, args []string) {
+		nomadStatusCmd.Run(cmd, args)
+	},
 }

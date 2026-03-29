@@ -15,7 +15,9 @@ import (
 )
 
 var (
-	k8sDestroy bool
+	k8sEnable  bool
+	k8sDisable bool
+	k8sForce   bool
 	csiMode    bool
 	jwtAuth    bool
 )
@@ -44,50 +46,124 @@ var vaultK8sCmd = &cobra.Command{
 			fmt.Println("❌ Error: 'kind' is not installed or not in PATH.")
 			return
 		}
+		if _, err := exec.LookPath("kubectl"); err != nil {
+			fmt.Println("❌ Error: 'kubectl' is not installed or not in PATH.")
+			return
+		}
 		if _, err := exec.LookPath("helm"); err != nil {
 			fmt.Println("❌ Error: 'helm' is not installed or not in PATH.")
 			return
 		}
 
-		// 1. Try to get the client
 		client, vaultErr := GetHealthyClient()
 
-		// 2. If we are DEPLOYING, we demand Vault is healthy.
-		if !k8sDestroy && vaultErr != nil {
-			fmt.Printf("❌ %v\n", vaultErr)
+		// ==========================================
+		// 1. SMART STATUS MODE (Default behavior)
+		// ==========================================
+		if !k8sEnable && !k8sDisable && !k8sForce {
+			fmt.Println("🔍 Checking Vault / Kubernetes Status...")
+
+			// Check KinD Cluster
+			clusterCheck, _ := exec.Command("kind", "get", "clusters").Output()
+			clusterRunning := strings.Contains(string(clusterCheck), "kind")
+
+			// Check Vault Mounts (if Vault is alive)
+			k8sMounted := false
+			jwtMounted := false
+			if vaultErr == nil {
+				auths, _ := client.Sys().ListAuth()
+				_, k8sMounted = auths["kubernetes/"]
+				_, jwtMounted = auths["jwt-k8s/"]
+			}
+
+			// Check VSO Installation (if KinD is alive)
+			vsoInstalled := false
+			if clusterRunning {
+				vsoCheck, _ := exec.Command("helm", "list", "-n", "vso", "-q").Output()
+				vsoInstalled = strings.Contains(string(vsoCheck), "vault-secrets-operator")
+			}
+
+			// Output Status
+			if clusterRunning {
+				fmt.Printf("  ✅ KinD Cluster  : Active (Network: hal-net)\n")
+			} else {
+				fmt.Printf("  ❌ KinD Cluster  : Not running\n")
+			}
+
+			if vsoInstalled {
+				fmt.Printf("  ✅ VSO Helm App  : Deployed in namespace 'vso'\n")
+			} else {
+				fmt.Printf("  ❌ VSO Helm App  : Not installed\n")
+			}
+
+			if k8sMounted || jwtMounted {
+				authType := "Native"
+				if jwtMounted {
+					authType = "JWT (OIDC)"
+				}
+				fmt.Printf("  ✅ Vault Auth    : Configured (%s mode)\n", authType)
+			} else {
+				fmt.Printf("  ❌ Vault Auth    : Not configured\n")
+			}
+
+			// Smart Assistant Logic
+			fmt.Println("\n💡 Next Step:")
+			if !clusterRunning && !k8sMounted && !jwtMounted {
+				fmt.Println("   To deploy KinD, VSO, and wire up Vault, run:")
+				fmt.Println("   hal vault k8s --enable [--csi]")
+			} else if clusterRunning && vsoInstalled && (k8sMounted || jwtMounted) {
+				fmt.Println("   Demo is ready! Port-forward the web app:")
+				fmt.Println("   Native Sync: kubectl port-forward deployment/hal-web-native -n app1 8080:80")
+				fmt.Println("   CSI Driver : kubectl port-forward deployment/hal-web-csi -n app1 8080:80")
+				fmt.Println("\n   To completely remove this cluster and clean Vault, run:")
+				fmt.Println("   hal vault k8s --disable")
+			} else {
+				fmt.Println("   Environment is partially degraded. To safely reset, run:")
+				fmt.Println("   hal vault k8s --force [--csi]")
+			}
 			return
 		}
 
 		// ==========================================
-		// THE DESTROY LOGIC
+		// 2. TEARDOWN / RESET PATH (--disable / --force)
 		// ==========================================
-		if k8sDestroy {
-			fmt.Println("⚙️  Connecting to Vault API for cleanup...")
-			// Only attempt Vault cleanup if Vault is actually alive
-			if vaultErr == nil && client != nil {
-				fmt.Println("🧹  Cleaning up Vault Identity Entities...")
-				authMounts, err := client.Sys().ListAuth()
-				if err == nil {
-					authPath := "kubernetes/"
-					if jwtAuth {
-						authPath = "jwt-k8s/"
-					}
-					if mount, exists := authMounts[authPath]; exists {
-						accessor := mount.Accessor
-						entitiesList, err := client.Logical().List("identity/entity/id")
-						if err == nil && entitiesList != nil && entitiesList.Data != nil {
-							if keys, ok := entitiesList.Data["keys"].([]interface{}); ok {
-								for _, key := range keys {
-									entityID := key.(string)
-									entityData, err := client.Logical().Read("identity/entity/id/" + entityID)
-									if err == nil && entityData != nil && entityData.Data != nil {
-										if aliases, ok := entityData.Data["aliases"].([]interface{}); ok {
-											for _, aliasObj := range aliases {
-												if alias, ok := aliasObj.(map[string]interface{}); ok {
-													if alias["mount_accessor"] == accessor {
-														fmt.Printf("   🗑️ Deleting ghost entity: %s\n", entityID)
-														_, _ = client.Logical().Delete("identity/entity/id/" + entityID)
-														break
+		if k8sDisable || k8sForce {
+			if global.DryRun {
+				fmt.Println("[DRY RUN] Would execute: kind delete cluster")
+				fmt.Println("[DRY RUN] Would call API to clean up Vault entities and auth mounts")
+			} else {
+				if k8sDisable {
+					fmt.Println("🛑 Tearing down Kubernetes environment...")
+				} else {
+					fmt.Println("♻️  Force flag detected. Destroying KinD cluster for reset...")
+				}
+
+				fmt.Println("⚙️  Connecting to Vault API for cleanup...")
+				if vaultErr == nil && client != nil {
+					fmt.Println("   🧹 Cleaning up Vault Identity Entities...")
+					authMounts, err := client.Sys().ListAuth()
+					if err == nil {
+						authPath := "kubernetes/"
+						if jwtAuth {
+							authPath = "jwt-k8s/"
+						}
+						if mount, exists := authMounts[authPath]; exists {
+							accessor := mount.Accessor
+							entitiesList, err := client.Logical().List("identity/entity/id")
+							if err == nil && entitiesList != nil && entitiesList.Data != nil {
+								if keys, ok := entitiesList.Data["keys"].([]interface{}); ok {
+									for _, key := range keys {
+										entityID := key.(string)
+										entityData, err := client.Logical().Read("identity/entity/id/" + entityID)
+										if err == nil && entityData != nil && entityData.Data != nil {
+											if aliases, ok := entityData.Data["aliases"].([]interface{}); ok {
+												for _, aliasObj := range aliases {
+													if alias, ok := aliasObj.(map[string]interface{}); ok {
+														if alias["mount_accessor"] == accessor {
+															fmt.Printf("      🗑️ Deleted ghost entity: %s\n", entityID)
+															_, _ = client.Logical().Delete("identity/entity/id/" + entityID)
+															break
+														}
 													}
 												}
 											}
@@ -97,164 +173,179 @@ var vaultK8sCmd = &cobra.Command{
 							}
 						}
 					}
-				}
 
-				fmt.Println("⚙️  Cleaning up Vault Configuration...")
-				_ = client.Sys().Unmount("kv-k8s")
-				if jwtAuth {
-					_ = client.Sys().DisableAuth("jwt-k8s")
+					fmt.Println("   🧹 Unmounting KV and Auth Engines...")
+					_ = client.Sys().Unmount("kv-k8s")
+					if jwtAuth {
+						_ = client.Sys().DisableAuth("jwt-k8s")
+					} else {
+						_ = client.Sys().DisableAuth("kubernetes")
+					}
+					_ = client.Sys().DeletePolicy("app1-read")
 				} else {
-					_ = client.Sys().DisableAuth("kubernetes")
+					fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
 				}
-				_ = client.Sys().DeletePolicy("app1-read")
 
-			} else {
-				fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
+				fmt.Println("⚙️  Destroying KinD Cluster...")
+				_ = exec.Command("kind", "delete", "cluster").Run()
+
+				fmt.Println("✅ Kubernetes environment destroyed successfully!")
 			}
 
-			fmt.Println("⚙️  Destroying KinD Cluster...")
-			_ = exec.Command("kind", "delete", "cluster").Run()
-
-			fmt.Println("✅ Kubernetes environment and Ghost Entities destroyed successfully!")
-			return
-		}
-
-		// ==========================================
-		// THE SMART DEPLOY LOGIC
-		// ==========================================
-		clusterCheck, _ := exec.Command("kind", "get", "clusters").Output()
-		if strings.Contains(string(clusterCheck), "kind") {
-			fmt.Println("⚡ KinD cluster already running, skipping boot sequence...")
-		} else {
-			fmt.Println("⚙️  Booting KinD Cluster (attached directly to hal-net)...")
-			startCmd := exec.Command("kind", "create", "cluster")
-			env := os.Environ()
-			if isPodman {
-				env = append(env, "KIND_EXPERIMENTAL_PROVIDER=podman")
-			}
-			env = append(env, "KIND_EXPERIMENTAL_DOCKER_NETWORK=hal-net")
-			startCmd.Env = env
-			startCmd.Stdout = os.Stdout
-			startCmd.Stderr = os.Stderr
-
-			if err := startCmd.Run(); err != nil {
-				fmt.Printf("❌ Failed to start KinD: %v\n", err)
+			if k8sDisable && !global.DryRun {
 				return
 			}
 		}
 
-		fmt.Println("⚙️  Ensuring Kubernetes Namespaces exist...")
-		_ = exec.Command("kubectl", "create", "namespace", "vso").Run()
-		_ = exec.Command("kubectl", "create", "namespace", "app1").Run()
+		// ==========================================
+		// 3. DEPLOY / ENABLE PATH (--enable / --force)
+		// ==========================================
+		if k8sEnable || k8sForce {
+			if vaultErr != nil {
+				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
+				return
+			}
 
-		fmt.Println("⚙️  Configuring Vault KV Engine and Secrets...")
-		_ = client.Sys().Unmount("kv-k8s")
-		_ = client.Sys().Mount("kv-k8s", &vault.MountInput{
-			Type:    "kv",
-			Options: map[string]string{"version": "2"},
-		})
-		_, _ = client.Logical().Write("kv-k8s/data/app1", map[string]interface{}{
-			"data": map[string]interface{}{"mysecret": "I'm sorry, Dave. I'm afraid I can't do that."},
-		})
-		policyDef := `
+			if global.DryRun {
+				fmt.Println("[DRY RUN] Would execute: kind create cluster --network hal-net")
+				fmt.Println("[DRY RUN] Would execute: helm install vault-secrets-operator")
+				fmt.Println("[DRY RUN] Would call API to configure kubernetes auth and kv engine")
+				return
+			}
+
+			clusterCheck, _ := exec.Command("kind", "get", "clusters").Output()
+			if strings.Contains(string(clusterCheck), "kind") {
+				fmt.Println("⚡ KinD cluster already running, skipping boot sequence...")
+			} else {
+				fmt.Println("🚀 Booting KinD Cluster (attached directly to hal-net)...")
+				startCmd := exec.Command("kind", "create", "cluster")
+				env := os.Environ()
+				if isPodman {
+					env = append(env, "KIND_EXPERIMENTAL_PROVIDER=podman")
+				}
+				env = append(env, "KIND_EXPERIMENTAL_DOCKER_NETWORK=hal-net")
+				startCmd.Env = env
+				startCmd.Stdout = os.Stdout
+				startCmd.Stderr = os.Stderr
+
+				if err := startCmd.Run(); err != nil {
+					fmt.Printf("❌ Failed to start KinD: %v\n", err)
+					return
+				}
+			}
+
+			fmt.Println("⚙️  Ensuring Kubernetes Namespaces exist...")
+			_ = exec.Command("kubectl", "create", "namespace", "vso").Run()
+			_ = exec.Command("kubectl", "create", "namespace", "app1").Run()
+
+			fmt.Println("⚙️  Configuring Vault KV Engine and Secrets...")
+			_ = client.Sys().Unmount("kv-k8s")
+			_ = client.Sys().Mount("kv-k8s", &vault.MountInput{
+				Type:    "kv",
+				Options: map[string]string{"version": "2"},
+			})
+			_, _ = client.Logical().Write("kv-k8s/data/app1", map[string]interface{}{
+				"data": map[string]interface{}{"mysecret": "I'm sorry, Dave. I'm afraid I can't do that."},
+			})
+			policyDef := `
 path "kv-k8s/data/app1" { capabilities = ["read"] }
 path "sys/license/status" { capabilities = ["read"] }
 `
-		_ = client.Sys().PutPolicy("app1-read", policyDef)
+			_ = client.Sys().PutPolicy("app1-read", policyDef)
 
-		fmt.Println("⚙️  Extracting K8s API CA and generating TokenReviewer SA...")
-		_ = exec.Command("kubectl", "create", "sa", "vault-reviewer", "-n", "default").Run()
-		_ = exec.Command("kubectl", "create", "clusterrolebinding", "vault-reviewer-binding",
-			"--clusterrole=system:auth-delegator",
-			"--serviceaccount=default:vault-reviewer").Run()
+			fmt.Println("⚙️  Extracting K8s API CA and generating TokenReviewer SA...")
+			_ = exec.Command("kubectl", "create", "sa", "vault-reviewer", "-n", "default").Run()
+			_ = exec.Command("kubectl", "create", "clusterrolebinding", "vault-reviewer-binding",
+				"--clusterrole=system:auth-delegator",
+				"--serviceaccount=default:vault-reviewer").Run()
 
-		caOut, _ := exec.Command("kubectl", "config", "view", "--raw", "--minify", "--flatten", "-o", "jsonpath={.clusters[].cluster.certificate-authority-data}").Output()
-		decodedCA, _ := base64.StdEncoding.DecodeString(string(caOut))
-		caCert := string(decodedCA)
+			caOut, _ := exec.Command("kubectl", "config", "view", "--raw", "--minify", "--flatten", "-o", "jsonpath={.clusters[].cluster.certificate-authority-data}").Output()
+			decodedCA, _ := base64.StdEncoding.DecodeString(string(caOut))
+			caCert := string(decodedCA)
 
-		tokenOut, _ := exec.Command("kubectl", "create", "token", "vault-reviewer", "-n", "default", "--duration=87600h").Output()
-		reviewerToken := strings.TrimSpace(string(tokenOut))
+			tokenOut, _ := exec.Command("kubectl", "create", "token", "vault-reviewer", "-n", "default", "--duration=87600h").Output()
+			reviewerToken := strings.TrimSpace(string(tokenOut))
 
-		kindIPOut, _ := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "kind-control-plane").Output()
-		kindIP := strings.TrimSpace(string(kindIPOut))
-		if kindIP == "" {
-			kindIP = "kind-control-plane"
-		}
-
-		fmt.Println("⚙️  Enabling Native Kubernetes Auth Engine...")
-		_ = client.Sys().EnableAuthWithOptions("kubernetes", &vault.EnableAuthOptions{Type: "kubernetes"})
-
-		_, err = client.Logical().Write("auth/kubernetes/config", map[string]interface{}{
-			"kubernetes_host":        fmt.Sprintf("https://%s:6443", kindIP),
-			"kubernetes_ca_cert":     caCert,
-			"token_reviewer_jwt":     reviewerToken,
-			"disable_iss_validation": true,
-		})
-		if err != nil {
-			fmt.Printf("❌ Vault rejected the Kubernetes configuration: %v\n", err)
-		}
-
-		_, _ = client.Logical().Write("auth/kubernetes/role/app1-role", map[string]interface{}{
-			"bound_service_account_names":      "app1-sa",
-			"bound_service_account_namespaces": "app1",
-			"bound_audiences":                  []string{"vault"},
-			"token_policies":                   []string{"app1-read"},
-			"token_ttl":                        "1h",
-		})
-
-		fmt.Println("⚙️  Deploying Vault Secrets Operator via Helm...")
-		_ = exec.Command("helm", "repo", "add", "hashicorp", "https://helm.releases.hashicorp.com").Run()
-		_ = exec.Command("helm", "repo", "update").Run()
-
-		helmArgs := []string{"upgrade", "--install", "vault-secrets-operator", "hashicorp/vault-secrets-operator", "-n", "vso"}
-
-		if csiMode {
-			if isVaultEnterprise(client) {
-				fmt.Println("🛡️  Vault Enterprise detected! Enabling CSI Driver...")
-				helmArgs = append(helmArgs, "--set", "csi.enabled=true")
-			} else {
-				fmt.Println("⚠️  Warning: CSI Driver requested but Vault Enterprise not detected.")
-				fmt.Println("⚠️  Downgrading to standard Native Sync deployment to ensure success.")
-				csiMode = false
+			kindIPOut, _ := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "kind-control-plane").Output()
+			kindIP := strings.TrimSpace(string(kindIPOut))
+			if kindIP == "" {
+				kindIP = "kind-control-plane"
 			}
-		}
 
-		if err := exec.Command("helm", helmArgs...).Run(); err != nil {
-			fmt.Printf("❌ Failed to install VSO: %v\n", err)
-		}
+			fmt.Println("⚙️  Enabling Native Kubernetes Auth Engine...")
+			_ = client.Sys().EnableAuthWithOptions("kubernetes", &vault.EnableAuthOptions{Type: "kubernetes"})
 
-		fmt.Println("⏳ Waiting for K8s API to establish VSO CRDs...")
-		crds := []string{
-			"crd/vaultconnections.secrets.hashicorp.com",
-			"crd/vaultauths.secrets.hashicorp.com",
-			"crd/vaultstaticsecrets.secrets.hashicorp.com",
-		}
-		if csiMode {
-			crds = append(crds, "crd/csisecrets.secrets.hashicorp.com")
-		}
-		for _, crd := range crds {
-			_ = exec.Command("kubectl", "wait", "--for=condition=Established", crd, "--timeout=60s").Run()
-		}
+			_, err = client.Logical().Write("auth/kubernetes/config", map[string]interface{}{
+				"kubernetes_host":        fmt.Sprintf("https://%s:6443", kindIP),
+				"kubernetes_ca_cert":     caCert,
+				"token_reviewer_jwt":     reviewerToken,
+				"disable_iss_validation": true,
+			})
+			if err != nil {
+				fmt.Printf("❌ Vault rejected the Kubernetes configuration: %v\n", err)
+			}
 
-		fmt.Println("⏳ Waiting for VSO Controller Pods to become Ready...")
-		_ = exec.Command("kubectl", "wait", "--for=condition=Ready", "pod", "-l", "app.kubernetes.io/name=vault-secrets-operator", "-n", "vso", "--timeout=120s").Run()
+			_, _ = client.Logical().Write("auth/kubernetes/role/app1-role", map[string]interface{}{
+				"bound_service_account_names":      "app1-sa",
+				"bound_service_account_namespaces": "app1",
+				"bound_audiences":                  []string{"vault"},
+				"token_policies":                   []string{"app1-read"},
+				"token_ttl":                        "1h",
+			})
 
-		fmt.Println("⏳ Giving Webhooks 5 seconds to wire up TLS...")
-		time.Sleep(5 * time.Second)
+			fmt.Println("⚙️  Deploying Vault Secrets Operator via Helm...")
+			_ = exec.Command("helm", "repo", "add", "hashicorp", "https://helm.releases.hashicorp.com").Run()
+			_ = exec.Command("helm", "repo", "update").Run()
 
-		fmt.Println("⚙️  Applying Kubernetes Manifests...")
-		_ = exec.Command("kubectl", "create", "sa", "app1-sa", "-n", "app1").Run()
+			helmArgs := []string{"upgrade", "--install", "vault-secrets-operator", "hashicorp/vault-secrets-operator", "-n", "vso"}
 
-		ipOut, _ := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "hal-vault").Output()
-		vaultIP := strings.TrimSpace(string(ipOut))
-		if vaultIP == "" {
-			vaultIP = "hal-vault"
-		}
+			if csiMode {
+				if isVaultEnterprise(client) {
+					fmt.Println("🛡️  Vault Enterprise detected! Enabling CSI Driver...")
+					helmArgs = append(helmArgs, "--set", "csi.enabled=true")
+				} else {
+					fmt.Println("⚠️  Warning: CSI Driver requested but Vault Enterprise not detected.")
+					fmt.Println("⚠️  Downgrading to standard Native Sync deployment to ensure success.")
+					csiMode = false
+				}
+			}
 
-		var appManifests string
+			if err := exec.Command("helm", helmArgs...).Run(); err != nil {
+				fmt.Printf("❌ Failed to install VSO: %v\n", err)
+			}
 
-		if csiMode {
-			appManifests = fmt.Sprintf(`
+			fmt.Println("⏳ Waiting for K8s API to establish VSO CRDs (up to 60s)...")
+			crds := []string{
+				"crd/vaultconnections.secrets.hashicorp.com",
+				"crd/vaultauths.secrets.hashicorp.com",
+				"crd/vaultstaticsecrets.secrets.hashicorp.com",
+			}
+			if csiMode {
+				crds = append(crds, "crd/csisecrets.secrets.hashicorp.com")
+			}
+			for _, crd := range crds {
+				_ = exec.Command("kubectl", "wait", "--for=condition=Established", crd, "--timeout=60s").Run()
+			}
+
+			fmt.Println("⏳ Waiting for VSO Controller Pods to become Ready (up to 120s)...")
+			_ = exec.Command("kubectl", "wait", "--for=condition=Ready", "pod", "-l", "app.kubernetes.io/name=vault-secrets-operator", "-n", "vso", "--timeout=120s").Run()
+
+			fmt.Println("⏳ Giving Webhooks 5 seconds to wire up TLS...")
+			time.Sleep(5 * time.Second)
+
+			fmt.Println("⚙️  Applying Kubernetes Manifests...")
+			_ = exec.Command("kubectl", "create", "sa", "app1-sa", "-n", "app1").Run()
+
+			ipOut, _ := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "hal-vault").Output()
+			vaultIP := strings.TrimSpace(string(ipOut))
+			if vaultIP == "" {
+				vaultIP = "hal-vault"
+			}
+
+			var appManifests string
+
+			if csiMode {
+				appManifests = fmt.Sprintf(`
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultConnection
@@ -346,8 +437,8 @@ spec:
               
               nginx -g 'daemon off;'
 `, vaultIP)
-		} else {
-			appManifests = fmt.Sprintf(`
+			} else {
+				appManifests = fmt.Sprintf(`
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultConnection
@@ -426,23 +517,28 @@ spec:
               </body></html>" > /usr/share/nginx/html/index.html;
               nginx -g 'daemon off;'
 `, vaultIP)
-		}
+			}
 
-		applyK8s(appManifests)
+			applyK8s(appManifests)
 
-		fmt.Println("\n✅ Kubernetes Secret Zero Environment Ready!")
-		fmt.Println("---------------------------------------------------------")
-		if csiMode {
-			fmt.Println("🛡️  [CSI DRIVER DEMO]")
-			fmt.Println("   kubectl port-forward deployment/hal-web-csi -n app1 8080:80")
-		} else {
-			fmt.Println("🌐 [NATIVE SYNC DEMO]")
-			fmt.Println("   kubectl port-forward deployment/hal-web-native -n app1 8080:80")
+			fmt.Println("\n✅ Kubernetes Secret Zero Environment Ready!")
+			fmt.Println("---------------------------------------------------------")
+			if csiMode {
+				fmt.Println("🛡️  [CSI DRIVER DEMO]")
+				fmt.Println("   kubectl port-forward deployment/hal-web-csi -n app1 8080:80")
+			} else {
+				fmt.Println("🌐 [NATIVE SYNC DEMO]")
+				fmt.Println("   kubectl port-forward deployment/hal-web-native -n app1 8080:80")
+			}
+			fmt.Println("\n   Then open your browser to: http://localhost:8080")
+			fmt.Println("---------------------------------------------------------")
 		}
-		fmt.Println("\n   Then open your browser to: http://localhost:8080")
-		fmt.Println("---------------------------------------------------------")
 	},
 }
+
+// -----------------------------------------------------------------------------
+// Helper Functions
+// -----------------------------------------------------------------------------
 
 func applyK8s(yamlContent string) {
 	cmd := exec.Command("kubectl", "apply", "-f", "-")
@@ -455,8 +551,14 @@ func applyK8s(yamlContent string) {
 }
 
 func init() {
-	vaultK8sCmd.Flags().BoolVar(&k8sDestroy, "destroy", false, "Destroy KinD and clean up Vault configurations")
+	// Standard Lifecycle Flags
+	vaultK8sCmd.Flags().BoolVarP(&k8sEnable, "enable", "e", false, "Deploy KinD and configure Vault Secrets Operator")
+	vaultK8sCmd.Flags().BoolVarP(&k8sDisable, "disable", "d", false, "Destroy KinD and clean up Vault configurations")
+	vaultK8sCmd.Flags().BoolVarP(&k8sForce, "force", "f", false, "Force a clean redeployment of the cluster")
+
+	// Feature-Specific Flags
 	vaultK8sCmd.Flags().BoolVar(&csiMode, "csi", false, "Use the VSO CSI Driver (Requires Vault Enterprise)")
 	vaultK8sCmd.Flags().BoolVar(&jwtAuth, "jwt", false, "Use the advanced jwt-k8s OIDC architecture (experimental)")
+
 	Cmd.AddCommand(vaultK8sCmd)
 }

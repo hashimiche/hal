@@ -4,5 +4,8 @@ import "github.com/spf13/cobra"
 
 var Cmd = &cobra.Command{
 	Use:   "obs",
-	Short: "Manage the local Observability stack (Prometheus, Grafana, Loki, Tempo)",
+	Short: "Manage the local PLG Observability stack",
+	Run: func(cmd *cobra.Command, args []string) {
+		statusCmd.Run(cmd, args)
+	},
 }

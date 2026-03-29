@@ -9,35 +9,38 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var boundaryEcosystem = []string{
+	"hal-boundary",
+	"hal-boundary-backend",
+	"hal-boundary-target-mariadb",
+}
+
 var destroyCmd = &cobra.Command{
 	Use:   "destroy",
-	Short: "Destroy Boundary and any associated backend/target databases or VMs",
+	Short: "Destroy Boundary and all associated target resources",
 	Run: func(cmd *cobra.Command, args []string) {
-
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
 			return
 		}
 
-		fmt.Println("💥 Destroying Boundary environment...")
+		fmt.Printf("⚙️  Destroying Boundary ecosystem via %s...\n", engine)
 
-		if global.DryRun {
-			fmt.Println("[DRY RUN] Would remove Docker containers and Multipass VMs")
-			return
+		for _, container := range boundaryEcosystem {
+			out, err := exec.Command(engine, "rm", "-f", container).Output()
+			if err == nil && string(out) != "" {
+				fmt.Printf("  ✅ Destroyed container: %s\n", container)
+			}
 		}
 
-		// Nuke Boundary Core and BOTH Postgres databases in one swift command
-		_ = exec.Command(engine, "rm", "-f", "hal-boundary", "hal-boundary-backend", "hal-boundary-target-db").Run()
-
-		// Nuke SSH Target
+		// Handle Multipass target cleanup gracefully
 		_ = exec.Command("multipass", "delete", "hal-boundary-ssh").Run()
 		_ = exec.Command("multipass", "purge").Run()
+		fmt.Println("  ✅ Destroyed SSH VM (if it existed)")
 
-		// Attempt to clean up the global grid
 		global.CleanNetworkIfEmpty(engine)
-
-		fmt.Println("✅ Boundary and all associated targets destroyed successfully!")
+		fmt.Println("✅ Boundary environment destroyed successfully!")
 	},
 }
 

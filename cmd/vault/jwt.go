@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
 	"time"
 
@@ -18,13 +17,15 @@ import (
 )
 
 var (
-	jwtDestroy    bool
+	jwtEnable     bool
+	jwtDisable    bool
+	jwtForce      bool
 	gitlabVersion string
 )
 
 var vaultJwtCmd = &cobra.Command{
 	Use:   "jwt",
-	Short: "Deploy GitLab CE and simulate an enterprise Secret Zero CI/CD pipeline",
+	Short: "Simulate an enterprise Secret Zero CI/CD pipeline with GitLab CE",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
@@ -33,167 +34,231 @@ var vaultJwtCmd = &cobra.Command{
 			return
 		}
 
-		// 1. Try to get the client
 		client, vaultErr := GetHealthyClient()
 
-		// 2. If we are DEPLOYING, we demand Vault is healthy.
-		if !jwtDestroy && vaultErr != nil {
-			fmt.Printf("❌ %v\n", vaultErr)
-			return
-		}
-
 		// ==========================================
-		// THE DESTROY LOGIC (--destroy)
+		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if jwtDestroy {
-			fmt.Println("⚙️  Removing GitLab CE and Runner containers...")
-			_ = exec.Command(engine, "rm", "-f", "hal-gitlab", "hal-gitlab-runner").Run()
+		if !jwtEnable && !jwtDisable && !jwtForce {
+			fmt.Println("🔍 Checking Vault JWT / GitLab Status...")
 
-			fmt.Println("⚙️  Connecting to Vault API for cleanup...")
-			// Only attempt Vault cleanup if Vault is actually alive
-			if vaultErr == nil && client != nil {
-				fmt.Println("⚙️  Disabling 'jwt/' auth path...")
-				_ = client.Sys().DisableAuth("jwt")
+			// Check Docker
+			gitlabExists := (exec.Command(engine, "inspect", "hal-gitlab").Run() == nil)
+			runnerExists := (exec.Command(engine, "inspect", "hal-gitlab-runner").Run() == nil)
 
-				fmt.Println("⚙️  Removing 'kv-jwt/' secrets engine...")
-				_ = client.Sys().Unmount("kv-jwt")
-
-				fmt.Println("⚙️  Removing CI/CD policies and generated identities...")
-				_ = client.Sys().DeletePolicy("cicd-read")
-				_, _ = client.Logical().Delete("identity/entity/name/root")
-			} else {
-				fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
+			// Check Vault API (if Vault is alive)
+			jwtMounted := false
+			if vaultErr == nil {
+				auths, _ := client.Sys().ListAuth()
+				_, jwtMounted = auths["jwt/"]
 			}
 
-			fmt.Println("✅ Secret Zero environment destroyed successfully!")
+			// Output Status
+			if gitlabExists {
+				fmt.Printf("  ✅ GitLab CE     : Active (http://127.0.0.1:8080)\n")
+			} else {
+				fmt.Printf("  ❌ GitLab CE     : Not running\n")
+			}
+
+			if runnerExists {
+				fmt.Printf("  ✅ GitLab Runner : Active\n")
+			} else {
+				fmt.Printf("  ❌ GitLab Runner : Not running\n")
+			}
+
+			if jwtMounted {
+				fmt.Printf("  ✅ Vault JWT API : Configured and Mounted\n")
+			} else {
+				fmt.Printf("  ❌ Vault JWT API : Not configured\n")
+			}
+
+			// Smart Assistant Logic
+			fmt.Println("\n💡 Next Step:")
+			if !gitlabExists && !jwtMounted {
+				fmt.Println("   To deploy the GitLab CI/CD environment, run:")
+				fmt.Println("   hal vault jwt --enable")
+			} else if gitlabExists && runnerExists && jwtMounted {
+				fmt.Println("   Demo is ready! View the pipeline at:")
+				fmt.Println("   http://127.0.0.1:8080/root/secret-zero/-/pipelines")
+				fmt.Println("\n   To completely remove this demo environment, run:")
+				fmt.Println("   hal vault jwt --disable")
+			} else {
+				fmt.Println("   Environment is partially degraded. To safely reset, run:")
+				fmt.Println("   hal vault jwt --force")
+			}
 			return
 		}
 
 		// ==========================================
-		// THE DEPLOY LOGIC (Default)
+		// 2. TEARDOWN / RESET PATH (--disable / --force)
 		// ==========================================
-		fmt.Printf("⚙️  Booting GitLab CE (gitlab/gitlab-ce:%s)...\n", gitlabVersion)
-		_ = exec.Command(engine, "rm", "-f", "hal-gitlab", "hal-gitlab-runner").Run()
+		if jwtDisable || jwtForce {
+			if global.DryRun {
+				fmt.Println("[DRY RUN] Would execute: docker rm -f hal-gitlab hal-gitlab-runner")
+				fmt.Println("[DRY RUN] Would call API to disable: auth/jwt and kv-jwt")
+			} else {
+				if jwtDisable {
+					fmt.Println("🛑 Tearing down GitLab CI/CD environment...")
+				} else {
+					fmt.Println("♻️  Force flag detected. Destroying environment for reset...")
+				}
 
-		gitlabArgs := []string{
-			"run", "-d", "--name", "hal-gitlab",
-			"--network", "hal-net",
-			"--network-alias", "gitlab.localhost",
-			"-p", "8080:8080",
-			"--shm-size", "256m",
-			"--privileged",
-			"--platform", "linux/arm64",
-			"-e", "GITLAB_OMNIBUS_CONFIG=external_url 'http://gitlab.localhost:8080'; puma['port'] = 8081; gitlab_rails['initial_root_password'] = 'halpassword';",
-			fmt.Sprintf("gitlab/gitlab-ce:%s", gitlabVersion),
+				_ = exec.Command(engine, "rm", "-f", "hal-gitlab", "hal-gitlab-runner").Run()
+
+				if vaultErr == nil && client != nil {
+					_ = client.Sys().DisableAuth("jwt")
+					_ = client.Sys().Unmount("kv-jwt")
+					_ = client.Sys().DeletePolicy("cicd-read")
+					// We don't delete the root identity as it might be used by other things.
+				}
+				fmt.Println("✅ GitLab containers removed and Vault API cleaned up.")
+			}
+
+			if jwtDisable && !global.DryRun {
+				return
+			}
 		}
 
-		if err := exec.Command(engine, gitlabArgs...).Run(); err != nil {
-			fmt.Printf("❌ Failed to start GitLab: %v\n", err)
-			return
-		}
+		// ==========================================
+		// 3. DEPLOY / ENABLE PATH (--enable / --force)
+		// ==========================================
+		if jwtEnable || jwtForce {
+			if vaultErr != nil {
+				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
+				return
+			}
 
-		fmt.Println("⚙️  Waiting for GitLab to initialize (This takes 3 to 5 minutes)...")
-		if err := waitForGitLab("http://127.0.0.1:8080", 90); err != nil {
-			fmt.Println("\n❌ GitLab failed to initialize within the time limit.")
-			return
-		}
-		fmt.Println("\n✅ GitLab API is online!")
+			if global.DryRun {
+				fmt.Println("[DRY RUN] Would execute Docker run commands for GitLab and Runner.")
+				fmt.Println("[DRY RUN] Would call GitLab APIs to configure project and pipeline.")
+				fmt.Println("[DRY RUN] Would configure Vault JWT auth method.")
+				return
+			}
 
-		// 1. Authenticate via OAuth
-		fmt.Println("⚙️  Authenticating root account via API...")
-		apiToken := getGitLabToken("http://127.0.0.1:8080/oauth/token")
-		if apiToken == "" {
-			fmt.Println("❌ Failed to retrieve GitLab API token.")
-			return
-		}
+			fmt.Printf("🚀 Booting GitLab CE (gitlab/gitlab-ce:%s)...\n", gitlabVersion)
 
-		// 2. Create the Project
-		fmt.Println("⚙️  Creating 'secret-zero' repository...")
-		projectResp := gitlabPost("http://127.0.0.1:8080/api/v4/projects", apiToken, map[string]interface{}{
-			"name":                   "secret-zero",
-			"initialize_with_readme": true,
-			"default_branch":         "main",
-			"visibility":             "public",
-		})
-		var proj map[string]interface{}
-		json.Unmarshal(projectResp, &proj)
-		projectID := fmt.Sprintf("%v", proj["id"])
+			// Docker cleanup just in case (though force should have handled it)
+			_ = exec.Command(engine, "rm", "-f", "hal-gitlab", "hal-gitlab-runner").Run()
 
-		// 🎯 NEW: Protect the 'v*' tags so only Admins/Maintainers can trigger the Vault secret
-		fmt.Println("⚙️  Applying security guardrails: Protecting 'v*' tags...")
-		gitlabPost(fmt.Sprintf("http://127.0.0.1:8080/api/v4/projects/%s/protected_tags", projectID), apiToken, map[string]interface{}{
-			"name":                "v*",
-			"create_access_level": 40, // 40 = Maintainer/Admin level
-		})
+			gitlabArgs := []string{
+				"run", "-d", "--name", "hal-gitlab",
+				"--network", "hal-net",
+				"--network-alias", "gitlab.localhost",
+				"-p", "8080:8080",
+				"--shm-size", "256m",
+				"--privileged",
+				"-e", "GITLAB_OMNIBUS_CONFIG=external_url 'http://gitlab.localhost:8080'; puma['port'] = 8081; gitlab_rails['initial_root_password'] = 'halpassword';",
+				fmt.Sprintf("gitlab/gitlab-ce:%s", gitlabVersion),
+			}
 
-		// 3. Create and Register the Instance Runner
-		fmt.Println("⚙️  Provisioning GitLab Runner...")
-		runnerResp := gitlabPost("http://127.0.0.1:8080/api/v4/user/runners", apiToken, map[string]interface{}{
-			"runner_type":  "instance_type",
-			"description":  "hal-runner",
-			"run_untagged": true,
-		})
-		var runInfo map[string]interface{}
-		json.Unmarshal(runnerResp, &runInfo)
-		runnerToken := runInfo["token"].(string)
+			// Note: Removed --platform linux/arm64. If you need it specifically for M1/M2 macs,
+			// you should pass it as a flag or detect architecture, but hardcoding it breaks linux/amd64 users.
+			if err := exec.Command(engine, gitlabArgs...).Run(); err != nil {
+				fmt.Printf("❌ Failed to start GitLab: %v\n", err)
+				return
+			}
 
-		runnerArgs := []string{
-			"run", "-d", "--name", "hal-gitlab-runner",
-			"--network", "hal-net",
-			"gitlab/gitlab-runner:alpine",
-		}
-		_ = exec.Command(engine, runnerArgs...).Run()
+			fmt.Println("⏳ Waiting for GitLab to initialize (This usually takes 3-5 minutes)...")
+			if err := waitForGitLab("http://127.0.0.1:8080", 90); err != nil {
+				fmt.Println("\n❌ GitLab failed to initialize within the time limit.")
+				return
+			}
+			fmt.Println("\n✅ GitLab API is online!")
 
-		// 🎯 FIX: Install dependencies globally into the runner container
-		fmt.Println("⚙️  Installing CI dependencies inside runner...")
-		_ = exec.Command(engine, "exec", "-u", "root", "hal-gitlab-runner", "apk", "add", "--no-cache", "curl", "jq").Run()
+			// 1. Authenticate via OAuth
+			fmt.Println("⚙️  Authenticating root account via API...")
+			apiToken := getGitLabToken("http://127.0.0.1:8080/oauth/token")
+			if apiToken == "" {
+				fmt.Println("❌ Failed to retrieve GitLab API token.")
+				return
+			}
 
-		// Register the runner as a shell executor
-		_ = exec.Command(engine, "exec", "hal-gitlab-runner", "gitlab-runner", "register",
-			"--non-interactive",
-			"--url", "http://gitlab.localhost:8080",
-			"--token", runnerToken,
-			"--executor", "shell",
-			"--clone-url", "http://hal-gitlab:8080",
-		).Run()
+			// 2. Create the Project
+			fmt.Println("⚙️  Creating 'secret-zero' repository...")
+			projectResp := gitlabPost("http://127.0.0.1:8080/api/v4/projects", apiToken, map[string]interface{}{
+				"name":                   "secret-zero",
+				"initialize_with_readme": true,
+				"default_branch":         "main",
+				"visibility":             "public",
+			})
+			var proj map[string]interface{}
+			json.Unmarshal(projectResp, &proj)
+			projectID := fmt.Sprintf("%v", proj["id"])
 
-		// 4. Configure Vault
-		fmt.Println("⚙️  Configuring Vault JWT Auth, KV Engine, and Strict Tag Policies...")
+			// Protect tags
+			fmt.Println("🔒 Applying security guardrails: Protecting 'v*' tags...")
+			gitlabPost(fmt.Sprintf("http://127.0.0.1:8080/api/v4/projects/%s/protected_tags", projectID), apiToken, map[string]interface{}{
+				"name":                "v*",
+				"create_access_level": 40, // 40 = Maintainer/Admin level
+			})
 
-		_ = client.Sys().Mount("kv-jwt", &vault.MountInput{
-			Type:    "kv",
-			Options: map[string]string{"version": "2"},
-		})
+			// 3. Create and Register the Instance Runner
+			fmt.Println("⚙️  Provisioning GitLab Runner...")
+			runnerResp := gitlabPost("http://127.0.0.1:8080/api/v4/user/runners", apiToken, map[string]interface{}{
+				"runner_type":  "instance_type",
+				"description":  "hal-runner",
+				"run_untagged": true,
+			})
+			var runInfo map[string]interface{}
+			json.Unmarshal(runnerResp, &runInfo)
+			runnerToken := runInfo["token"].(string)
 
-		_, _ = client.Logical().Write("kv-jwt/data/cicd", map[string]interface{}{
-			"data": map[string]interface{}{"secret": "zero"},
-		})
+			runnerArgs := []string{
+				"run", "-d", "--name", "hal-gitlab-runner",
+				"--network", "hal-net",
+				"gitlab/gitlab-runner:alpine",
+			}
+			_ = exec.Command(engine, runnerArgs...).Run()
 
-		_ = client.Sys().PutPolicy("cicd-read", `path "kv-jwt/data/cicd" { capabilities = ["read"] }`)
-		_ = client.Sys().EnableAuthWithOptions("jwt", &vault.EnableAuthOptions{Type: "jwt"})
+			// Install dependencies inside runner
+			fmt.Println("⚙️  Installing CI dependencies (curl, jq) inside runner...")
+			_ = exec.Command(engine, "exec", "-u", "root", "hal-gitlab-runner", "apk", "add", "--no-cache", "curl", "jq").Run()
 
-		_, _ = client.Logical().Write("auth/jwt/config", map[string]interface{}{
-			"jwks_url":     "http://gitlab.localhost:8080/oauth/discovery/keys",
-			"bound_issuer": "http://gitlab.localhost:8080",
-		})
+			// Register the runner
+			_ = exec.Command(engine, "exec", "hal-gitlab-runner", "gitlab-runner", "register",
+				"--non-interactive",
+				"--url", "http://gitlab.localhost:8080",
+				"--token", runnerToken,
+				"--executor", "shell",
+				"--clone-url", "http://hal-gitlab:8080",
+			).Run()
 
-		// 🎯 NEW: Set bound_claims_type to "glob" to allow wildcard matching on the ref!
-		_, _ = client.Logical().Write("auth/jwt/role/cicd-role", map[string]interface{}{
-			"role_type":         "jwt",
-			"user_claim":        "user_login",
-			"bound_audiences":   []string{"vault"},
-			"bound_claims_type": "glob", // Enables wildcard matching
-			"bound_claims": map[string]interface{}{
-				"project_path": "root/secret-zero",
-				"ref":          "v*", // Matches v1.0.0, v2.1, etc.
-			},
-			"token_policies": []string{"cicd-read"},
-		})
+			// 4. Configure Vault
+			fmt.Println("🛡️  Configuring Vault JWT Auth and strict Tag Policies...")
 
-		// 5. Commit the Pipeline
-		fmt.Println("⚙️  Automating GitOps: Pushing pipeline YAML...")
+			_ = client.Sys().Mount("kv-jwt", &vault.MountInput{
+				Type:    "kv",
+				Options: map[string]string{"version": "2"},
+			})
 
-		pipelineYAML := `vault-auth:
+			_, _ = client.Logical().Write("kv-jwt/data/cicd", map[string]interface{}{
+				"data": map[string]interface{}{"secret": "zero"},
+			})
+
+			_ = client.Sys().PutPolicy("cicd-read", `path "kv-jwt/data/cicd" { capabilities = ["read"] }`)
+			_ = client.Sys().EnableAuthWithOptions("jwt", &vault.EnableAuthOptions{Type: "jwt"})
+
+			_, _ = client.Logical().Write("auth/jwt/config", map[string]interface{}{
+				"jwks_url":     "http://gitlab.localhost:8080/oauth/discovery/keys",
+				"bound_issuer": "http://gitlab.localhost:8080",
+			})
+
+			_, _ = client.Logical().Write("auth/jwt/role/cicd-role", map[string]interface{}{
+				"role_type":         "jwt",
+				"user_claim":        "user_login",
+				"bound_audiences":   []string{"vault"},
+				"bound_claims_type": "glob",
+				"bound_claims": map[string]interface{}{
+					"project_path": "root/secret-zero",
+					"ref":          "v*",
+				},
+				"token_policies": []string{"cicd-read"},
+			})
+
+			// 5. Commit the Pipeline
+			fmt.Println("🤖 Automating GitOps: Pushing pipeline YAML to trigger run...")
+
+			pipelineYAML := `vault-auth:
   id_tokens:
     VAULT_ID_TOKEN:
       aud: vault
@@ -217,43 +282,36 @@ var vaultJwtCmd = &cobra.Command{
       echo "✅ SUCCESS! The secret retrieved is: $SECRET_VALUE"
 `
 
-		gitlabPost(fmt.Sprintf("http://127.0.0.1:8080/api/v4/projects/%s/repository/commits", projectID), apiToken, map[string]interface{}{
-			"branch":         "main",
-			"commit_message": "Add Vault pipeline",
-			"actions": []map[string]string{
-				{
-					"action":    "create",
-					"file_path": ".gitlab-ci.yml",
-					"content":   pipelineYAML,
+			gitlabPost(fmt.Sprintf("http://127.0.0.1:8080/api/v4/projects/%s/repository/commits", projectID), apiToken, map[string]interface{}{
+				"branch":         "main",
+				"commit_message": "Add Vault pipeline",
+				"actions": []map[string]string{
+					{
+						"action":    "create",
+						"file_path": ".gitlab-ci.yml",
+						"content":   pipelineYAML,
+					},
 				},
-			},
-		})
+			})
 
-		fmt.Println("\n✅ Enterprise Secret Zero Environment Ready!")
-		fmt.Println("---------------------------------------------------------")
-		fmt.Println("🔗 GitLab UI:    http://127.0.0.1:8080/root/secret-zero/-/pipelines")
-		fmt.Println("   Login:        root / halpassword")
-		fmt.Println("\n💡 THE DEMO WORKFLOW:")
-		fmt.Println("   1. A pipeline just automatically triggered on the 'main' branch.")
-		fmt.Println("   2. Check the logs: It FAILED because Vault rejected the JWT claims.")
-		fmt.Println("   3. Go to Code -> Tags, and create a new tag (e.g., 'v1.0.0' or 'v2').")
-		fmt.Println("      🔒 Note: Tags starting with 'v*' are strictly protected. Only Admins can create them!")
-		fmt.Println("   4. Watch the new pipeline run. It will SUCCEED and print the secret!")
-		fmt.Println("---------------------------------------------------------")
+			fmt.Println("\n✅ Enterprise Secret Zero Environment Ready!")
+			fmt.Println("---------------------------------------------------------")
+			fmt.Println("🔗 GitLab UI:    http://127.0.0.1:8080/root/secret-zero/-/pipelines")
+			fmt.Println("   Login:        root / halpassword")
+			fmt.Println("\n💡 THE DEMO WORKFLOW:")
+			fmt.Println("   1. A pipeline just automatically triggered on the 'main' branch.")
+			fmt.Println("   2. Check the logs: It FAILED because Vault rejected the JWT claims.")
+			fmt.Println("   3. Go to Code -> Tags, and create a new tag (e.g., 'v1.0.0' or 'v2').")
+			fmt.Println("      🔒 Note: Tags starting with 'v*' are strictly protected. Only Admins can create them!")
+			fmt.Println("   4. Watch the new pipeline run. It will SUCCEED and print the secret!")
+			fmt.Println("---------------------------------------------------------")
+		}
 	},
 }
 
-func getVaultClient() *vault.Client {
-	config := vault.DefaultConfig()
-	if os.Getenv("VAULT_ADDR") == "" {
-		config.Address = "http://127.0.0.1:8200"
-	}
-	client, _ := vault.NewClient(config)
-	if os.Getenv("VAULT_TOKEN") == "" {
-		client.SetToken("root")
-	}
-	return client
-}
+// -----------------------------------------------------------------------------
+// Helper Functions (Kept exactly as you wrote them)
+// -----------------------------------------------------------------------------
 
 func waitForGitLab(baseURL string, maxRetries int) error {
 	client := http.Client{Timeout: 3 * time.Second}
@@ -305,7 +363,13 @@ func gitlabPost(urlStr string, token string, payload map[string]interface{}) []b
 }
 
 func init() {
-	vaultJwtCmd.Flags().BoolVar(&jwtDestroy, "destroy", false, "Remove GitLab and strip the JWT configuration from Vault")
-	vaultJwtCmd.Flags().StringVar(&gitlabVersion, "gitlab-version", "18.10.0-ce.0", "Version of the GitLab CE container image to deploy")
+	// 1. Standard Lifecycle Flags
+	vaultJwtCmd.Flags().BoolVarP(&jwtEnable, "enable", "e", false, "Deploy GitLab CE and configure Vault JWT")
+	vaultJwtCmd.Flags().BoolVarP(&jwtDisable, "disable", "d", false, "Remove GitLab CE and strip JWT from Vault")
+	vaultJwtCmd.Flags().BoolVarP(&jwtForce, "force", "f", false, "Force a clean redeployment of the entire environment")
+
+	// 2. Feature-Specific Flags
+	vaultJwtCmd.Flags().StringVar(&gitlabVersion, "gitlab-version", "16.11.2-ce.0", "Version of the GitLab CE container image to deploy")
+
 	Cmd.AddCommand(vaultJwtCmd)
 }

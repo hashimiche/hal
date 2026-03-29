@@ -22,21 +22,23 @@ var tokenCmd = &cobra.Command{
 
 		fmt.Println("🔑 Reaching into TFE to retrieve the Admin Token...")
 
-		// 🎯 THE FIX: Changed 'tfe-admin retrieve-iact' to 'tfectl admin token'
 		out, err := exec.Command(engine, "exec", "hal-tfe", "tfectl", "admin", "token").CombinedOutput()
 		if err != nil {
 			fmt.Printf("❌ Failed to retrieve token. Is TFE fully booted? Error: %v\n", err)
 			if strings.Contains(string(out), "No such container") {
-				fmt.Println("💡 It looks like hal-tfe isn't running. Did you run 'hal terraform deploy'?")
+				fmt.Println("💡 It looks like hal-tfe isn't running. Run 'hal terraform status' to verify.")
 			}
 			return
 		}
 
-		fmt.Println("\n✅ Initial Admin Creation Token:")
-		fmt.Println("--------------------------------------------------")
-		fmt.Println(strings.TrimSpace(string(out)))
-		fmt.Println("--------------------------------------------------")
-		fmt.Printf("🔗 Paste this at: https://tfe.localhost/admin/account/new?token=%s\n", strings.TrimSpace(string(out)))
+		token := strings.TrimSpace(string(out))
+
+		fmt.Println("\n✅ Initial Admin Creation Token Retrieved!")
+		fmt.Println("---------------------------------------------------------")
+		fmt.Printf("   Token: %s\n\n", token)
+		fmt.Println("🔗 Click here to complete the setup:")
+		fmt.Printf("   https://tfe.localhost:8443/admin/account/new?token=%s\n", token)
+		fmt.Println("---------------------------------------------------------")
 	},
 }
 

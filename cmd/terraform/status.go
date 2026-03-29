@@ -21,58 +21,55 @@ var statusCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println("📊 Analyzing Terraform Enterprise (FDO) environment...")
+		fmt.Println("🔍 Checking Terraform Enterprise (FDO) Status...")
 
-		// Define our topology
 		components := []struct {
 			Name      string
 			Container string
-			Icon      string
 		}{
-			{"TFE Core (Application)", "hal-tfe", ""},
-			{"Database (Postgres)", "hal-tfe-db", " "},
-			{"Cache (Redis)", "hal-tfe-redis", ""},
-			{"Object Storage (MinIO)", "hal-tfe-minio", " "},
+			{"Database (Postgres)", "hal-tfe-db"},
+			{"Cache (Redis)", "hal-tfe-redis"},
+			{"Object Storage (MinIO)", "hal-tfe-minio"},
+			{"TFE Core (Application)", "hal-tfe"},
 		}
-
-		fmt.Printf("%-30s %s\n", "  Component", "Status")
-		fmt.Println("---------------------------------------------------------")
 
 		allRunning := true
 		someExist := false
 
-		// Loop through each component to check its real state in the engine
 		for _, c := range components {
 			out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", c.Container).CombinedOutput()
 			status := strings.TrimSpace(string(out))
 
-			// If the container doesn't exist at all
 			if err != nil || strings.Contains(status, "No such object") || strings.Contains(status, "no such container") {
-				fmt.Printf("%s %-27s 👻 Not deployed\n", c.Icon, c.Name)
+				fmt.Printf("  ❌ %-23s : Not deployed\n", c.Name)
 				allRunning = false
 			} else {
 				someExist = true
 				if status == "running" {
-					fmt.Printf("%s %-27s ✅ Running\n", c.Icon, c.Name)
+					fmt.Printf("  ✅ %-23s : Active (%s)\n", c.Name, c.Container)
 				} else {
-					fmt.Printf("%s %-27s ❌ %s\n", c.Icon, c.Name, strings.ToUpper(status))
+					fmt.Printf("  ⚠️  %-23s : %s\n", c.Name, strings.ToUpper(status))
 					allRunning = false
 				}
 			}
 		}
 
-		fmt.Println("---------------------------------------------------------")
-
-		// Health assessment
-		if allRunning {
-			fmt.Println("\n All systems green! The TFE flavor is fully operational.")
-			fmt.Println("🔗 UI Address: https://tfe.localhost")
-		} else if someExist {
-			fmt.Println("\n⚠️  Environment is partially deployed or some services are stopped.")
-			fmt.Println("💡 Use 'hal terraform deploy' to restart missing services.")
+		// Smart Assistant Logic
+		fmt.Println("\n💡 Next Step:")
+		if !someExist {
+			fmt.Println("   To deploy a fresh Terraform Enterprise environment, run:")
+			fmt.Println("   export TFE_LICENSE='<your_license_string>'")
+			fmt.Println("   hal terraform deploy")
+		} else if allRunning {
+			fmt.Println("   All systems green! TFE is fully operational.")
+			fmt.Println("   🔗 UI Address: https://tfe.localhost:8443")
+			fmt.Println("\n   If you need the initial admin token, run:")
+			fmt.Println("   hal terraform token")
 		} else {
-			fmt.Println("\n🕳️  No TFE instance detected on this machine.")
-			fmt.Println("💡 Start an environment with 'hal terraform deploy'.")
+			fmt.Println("   Environment is partially degraded or stopped. To safely reset, run:")
+			fmt.Println("   hal terraform deploy --force")
+			fmt.Println("\n   Or to tear everything down completely, run:")
+			fmt.Println("   hal terraform destroy")
 		}
 	},
 }
