@@ -15,11 +15,11 @@ builds:
     main: ./main.go
 
 archives:
-  - format: tar.gz
-    # This ensures Windows uses .zip instead of .tar.gz, matching your old script
+  # FIX 1: Plural 'formats'
+  - formats: ["tar.gz"]
     format_overrides:
       - goos: windows
-        format: zip
+        formats: ["zip"]
     name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
@@ -27,22 +27,21 @@ archives:
       {{- else if eq .Arch "arm64" }}arm64
       {{- else }}{{ .Arch }}{{ end }}
 
-# This block automatically creates the GitHub Release and attaches the zip/tar files
 release:
   github:
-    owner: hashimiche 
+    owner: yourusername # CHANGE THIS
     name: hal
 
-# This is the magic Homebrew block!
-brews:
+# FIX 2: Moved from 'brews' to 'homebrew_casks'
+homebrew_casks:
   - repository:
-      owner: hashimiche 
+      owner: yourusername # CHANGE THIS
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    directory: Formula
-    homepage: "https://github.com/hashimiche/hal" 
-    description: "HAL 9000 - Hashicorp Academy Labs"
+    homepage: "https://github.com/yourusername/hal" # CHANGE THIS
+    description: "HAL 9000 - Local HashiCorp Infrastructure Orchestrator"
     
-    # This tells Homebrew how to install it on the user's Mac
-    install: |
-      bin.install "hal"
+    # In Casks, we don't use ruby `install` blocks. 
+    # We just explicitly list the binaries to symlink.
+    binaries:
+      - "hal"
