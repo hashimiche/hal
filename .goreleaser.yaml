@@ -29,16 +29,16 @@ archives:
 
 release:
   github:
-    owner: yourusername # CHANGE THIS
+    owner: hashimiche 
     name: hal
 
 # FIX 2: Moved from 'brews' to 'homebrew_casks'
 homebrew_casks:
   - repository:
-      owner: yourusername # CHANGE THIS
+      owner: hashimiche 
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    homepage: "https://github.com/yourusername/hal" # CHANGE THIS
+    homepage: "https://github.com/hashimiche/hal" 
     description: "HAL 9000 - Local HashiCorp Infrastructure Orchestrator"
     
     # In Casks, we don't use ruby `install` blocks. 
