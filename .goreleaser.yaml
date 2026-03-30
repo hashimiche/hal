@@ -15,7 +15,6 @@ builds:
     main: ./main.go
 
 archives:
-  # FIX 1: Plural 'formats'
   - formats: ["tar.gz"]
     format_overrides:
       - goos: windows
@@ -29,19 +28,17 @@ archives:
 
 release:
   github:
-    owner: hashimiche 
+    owner: hashimiche
     name: hal
 
-# FIX 2: Moved from 'brews' to 'homebrew_casks'
-homebrew_casks:
+# 🎯 The "We'll deal with it later" block: Using 'brews' to bypass Apple Quarantine
+brews:
   - repository:
-      owner: hashimiche 
+      owner: hashimiche
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    homepage: "https://github.com/hashimiche/hal" 
-    description: "HAL 9000 - Local HashiCorp Infrastructure Orchestrator"
-    
-    # In Casks, we don't use ruby `install` blocks. 
-    # We just explicitly list the binaries to symlink.
-    binaries:
-      - "hal"
+    directory: Formula
+    homepage: "https://github.com/hashimiche/hal"
+    description: "HAL - Hashicorp Academy Labs"
+    install: |
+      bin.install "hal"
