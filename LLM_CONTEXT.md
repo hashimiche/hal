@@ -1,7 +1,7 @@
-# HAL 9000 CLI - Project Context for LLM Assistance
+# HAL CLI - Project Context for LLM Assistance
 
 ## 📌 Project Overview
-"HAL 9000" (`hal`) is a Go-based CLI tool built with the Cobra framework. It acts as an orchestrator for local HashiCorp product sandboxes (Vault, Boundary, Consul, Nomad, Terraform, plus Observability). It relies heavily on Docker/KinD/Multipass to deploy infrastructure and uses native Go API clients to configure them.
+Hashicorp Academy Labs, `hal`, is a Go-based CLI tool built with the Cobra framework. It acts as an orchestrator for local HashiCorp product sandboxes (Vault, Boundary, Consul, Nomad, Terraform, plus Observability). It relies heavily on Docker/KinD/Multipass to deploy infrastructure and uses native Go API clients to configure them.
 
 ## 🛠️ Tech Stack & Dependencies
 - **Language:** Go 1.26+

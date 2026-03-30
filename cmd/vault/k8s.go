@@ -429,7 +429,7 @@ spec:
               HAL_SECRET=$(cat /mnt/secrets/static_secret_0_mysecret)
               
               echo "<html><body style='background-color:#0d1a26;color:#00ffff;font-family:monospace;text-align:center;padding-top:20%%;'>
-              <h1>HAL 9000 Vault Systems</h1>
+              <h1>HAL Vault Systems</h1>
               <h2>[CSI] Ephemeral Mount Successful!</h2>
               <p style='color:#aaaaaa;'>Secret loaded securely from memory. Zero footprint in etcd.</p>
               <p style='font-size:24px;color:#ff3333;'>$HAL_SECRET</p>
@@ -510,7 +510,7 @@ spec:
           args:
             - |
               echo "<html><body style='background-color:#1a1a1a;color:#00ff00;font-family:monospace;text-align:center;padding-top:20%%;'>
-              <h1>HAL 9000 Vault Systems</h1>
+              <h1>HAL Vault Systems</h1>
               <h2>[NATIVE] K8s Sync (Auto-Reload Active)</h2>
               <p style='color:#aaaaaa;'>Secret injected directly into standard Kubernetes etcd via VSO.</p>
               <p style='font-size:24px;color:#ff3333;'>$HAL_SECRET</p>

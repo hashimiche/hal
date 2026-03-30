@@ -165,7 +165,7 @@ var vaultLdapCmd = &cobra.Command{
 				"--network", "hal-net",
 				"-p", "1389:389",
 				"--platform", "linux/amd64",
-				"-e", "LDAP_ORGANISATION=HAL9000",
+				"-e", "LDAP_ORGANISATION=HAL",
 				"-e", "LDAP_DOMAIN=hal.local",
 				"-e", "LDAP_ADMIN_PASSWORD=admin",
 				"-e", "LDAP_READONLY_USER=true",

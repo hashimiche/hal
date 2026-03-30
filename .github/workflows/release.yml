@@ -1,4 +1,4 @@
-name: Release HAL 9000
+name: Release HAL - Hashicorp Academy Labs
 
 on:
   push:

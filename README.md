@@ -1,4 +1,8 @@
-# 🔴 HAL - Hashicorp Academy Labs
+<div style="text-align: center;">
+  <img src="hal_logo.png" alt="hal logo" width="200" height="200">
+</div>
+
+# HAL - Hashicorp Academy Labs
 
 **HAL** is a fast, local orchestrator for HashiCorp product sandboxes. Built in Go, it instantly spins up complex, containerized lab environments (Vault, Boundary, Consul, Nomad, Terraform, and Observability) right on your local machine using Docker, KinD, and Multipass.
 
