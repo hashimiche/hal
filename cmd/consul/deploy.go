@@ -65,7 +65,7 @@ var deployCmd = &cobra.Command{
 		}
 
 		fmt.Println("✅ Standalone Consul Server is up!")
-		fmt.Println("   🔗 UI Address: http://consul.hashicorp:8500")
+		fmt.Println("   🔗 UI Address: http://consul.localhost:8500")
 		fmt.Println("\n💡 Tip: Use this to test the KV store or learn the API.")
 		fmt.Println("   (For real workloads, use 'hal nomad deploy --with-consul' instead!)")
 	},

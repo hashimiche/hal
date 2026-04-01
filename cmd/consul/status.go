@@ -29,7 +29,7 @@ var consulStatusCmd = &cobra.Command{
 		if err != nil {
 			fmt.Println("  ⚪ hal-consul : Down (hal consul deploy to start)")
 		} else if status == "running" {
-			fmt.Println("  ✅ hal-consul : Up   (http://127.0.0.1:8500)")
+			fmt.Println("  ✅ hal-consul : Up   (http://consul.localhost:8500)")
 		} else {
 			fmt.Printf("  ⚠️  hal-consul : %s\n", strings.ToUpper(status))
 		}

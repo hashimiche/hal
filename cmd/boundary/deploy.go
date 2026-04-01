@@ -114,7 +114,8 @@ var deployCmd = &cobra.Command{
 		}
 		fmt.Println("---------------------------------------------------------")
 		fmt.Println("💡 Next Step: Deploy some targets to connect to!")
-		fmt.Println("   hal boundary db -e")
+		fmt.Println("   hal boundary mariadb -e")
+		fmt.Println("   hal boundary mariadb -e --with-vault (for dynamic credentials, Vault must be running)")
 		fmt.Println("   hal boundary ssh -e")
 	},
 }

@@ -1,54 +1,103 @@
 ---
 name: audit
-description: Enable and configure Vault audit devices, including Loki integration. Use this skill whenever the user asks to track Vault usage, see who accessed a secret, enable logging, stream logs to Loki/Grafana, or configure audit devices. Triggers on phrases like "enable audit", "setup logging", "stream to loki", "where are the logs", or "deploy hal audit".
+description: Enable, disable, verify, and explain Vault audit devices in the local hal lab. Use this skill when the user asks to enable audit logging, stream Vault logs to Loki/Grafana, find where audit logs are stored, reset audit devices, or troubleshoot why Vault is blocking on audit writes. Triggers include "enable audit", "vault logging", "stream to loki", "where are the audit logs", "hal vault audit", and "reset audit device".
 ---
 
 # Hal Vault Audit Configurator
 
-This skill uses the `hal` CLI to enable audit logging on the local Vault container. It uses a robust, passive Docker Volume architecture to seamlessly ship logs to the PLG (Prometheus, Loki, Grafana) observability stack without risking Vault network timeouts.
+Use this skill to manage Vault audit devices in the local HAL lab.
+
+## Lab Assumptions
+
+- Vault runs locally at `http://127.0.0.1:8200`
+- The default root token is `root`
+- Prefer `hal` commands for lifecycle actions
+- For day-2 inspection after deployment, provide exact `vault read` or `docker exec` commands rather than telling the user to edit Go code
+
+## What This Skill Covers
+
+- Enabling or disabling Vault audit logging
+- Explaining the Loki/Promtail shared-volume pattern used by the lab
+- Verifying mounted audit devices and their target paths
+- Showing the user how to inspect or tail the logs safely
+- Troubleshooting blocked Vault behavior caused by audit device write failures
 
 ## Workflow
 
-### Step 1: Execute the Hal deployment
+### Step 1: Choose the correct lifecycle action
 
-Determine if the user just wants basic logging or if they are integrating with the `hal obs` stack, then run the appropriate `hal` CLI command.
+Use the smart status mode first if the user is unsure what is already configured:
 
-    # For standard, local file-based audit logging:
-    hal vault audit enable
+    hal vault audit
 
-    # For observability integration (mounts the shared volume for Promtail):
-    hal vault audit enable --loki
+Then run the appropriate lifecycle command:
 
-*(Note: If the user wants to turn off auditing, use `hal vault audit disable`).*
+    hal vault audit --enable
+    hal vault audit --enable --loki
+    hal vault audit --force --loki
+    hal vault audit --disable
 
-### Step 2: Enrich with Vault MCP Context
+If the user specifically asks for Loki/Grafana integration, prefer `--loki` because the code mounts `/vault/logs/audit.log` inside the Vault container and lets Promtail read the file passively.
 
-Verify the configuration using the official HashiCorp Vault MCP server. 
+### Step 2: Verify the resulting state
 
-Use the Vault MCP tools to query the following endpoint against `http://127.0.0.1:8200`:
-1. **List Audit Devices:** `sys/audit`
+If Vault MCP is available, inspect:
 
-### Step 3: Present structured results
+1. `sys/audit`
+
+If MCP is not available, use CLI verification commands:
+
+    export VAULT_ADDR='http://127.0.0.1:8200'
+    export VAULT_TOKEN='root'
+
+    vault read sys/audit
+    docker exec -it hal-vault ls -l /vault/logs
+    docker exec -it hal-vault tail -n 20 /vault/logs/audit.log
+
+### Step 3: Explain the architecture clearly
+
+State that the HAL lab favors the file audit device pointed at `/vault/logs/audit.log`.
+
+Why this matters:
+
+- Vault writes locally to disk inside the container
+- Promtail reads the shared Docker volume passively
+- If Loki or Promtail is unavailable, Vault does not block on a remote network hop
+- If local disk is full and Vault cannot write the file, Vault can block operations until the device is disabled or storage is cleaned up
+
+### Step 4: Present structured results
 
 **Tier 1 — Success Summary**
-Provide a brief confirmation of the enabled audit device. If the `--loki` flag was used, explicitly mention the shared Docker volume architecture.
+Provide a brief confirmation of the enabled audit device and whether Loki integration is in use.
 
 **Tier 2 — Configuration Details Table**
-Extract the data you found via the MCP query:
+Include the real mounted path and file target when available:
 
 | Device Path | Type | Target | Purpose |
 |-------------|------|--------|---------|
 | `file/` | `file` | `/vault/logs/audit.log` | Primary local log / Loki source |
 
 **Tier 3 — Actionable Insights & Testing**
-Explain the architecture and provide commands to view the logs.
+Provide at least one of these commands:
 
-> **Architecture Note:**
-> Vault blocks all operations if it cannot write to its audit devices. By using a shared Docker volume (`hal-vault-logs`), `hal` ensures that Vault natively writes to a file, and Promtail passively reads it. If Loki or Promtail crashes, Vault remains completely unaffected and will continue serving requests.
+    export VAULT_ADDR='http://127.0.0.1:8200'
+    export VAULT_TOKEN='root'
 
-    # To tail the live Vault audit logs directly from the container:
+    vault read sys/audit
     docker exec -it hal-vault tail -f /vault/logs/audit.log
 
-### Handling Edge Cases
+If the user also has observability deployed, mention that Grafana/Loki can query the same log stream after `hal obs deploy`.
 
-1. **Blocked Vault (Audit Failure):** If Vault completely locks up and refuses API requests, it means the local Docker disk is full and `/vault/logs/audit.log` cannot be written to. Instruct the user to run `hal vault deploy --destroy` to clear out the volume and start fresh.
+## Expected Lab State
+
+- Audit path defaults to `file/`
+- File target defaults to `/vault/logs/audit.log`
+- `--force` disables the device first, then re-enables it
+- Disabling the file device also purges the old log file inside the container
+
+## Handling Edge Cases
+
+1. **Vault is offline:** Instruct the user to run `hal vault deploy` first.
+2. **Blocked Vault due to audit write failure:** Explain that Vault can block operations if it cannot write to the audit sink. Check disk space and the log file target.
+3. **Stale audit configuration:** Use `hal vault audit --force --loki` to reset the device cleanly.
+4. **User wants raw log analysis rather than configuration:** Switch to the `audit-analysis` skill.

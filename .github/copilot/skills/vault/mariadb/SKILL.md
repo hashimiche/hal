@@ -1,56 +1,78 @@
 ---
 name: mariadb
-description: Deploy and configure a local Vault MariaDB database secrets engine. Use this skill whenever the user asks to test database secrets, dynamic credentials for MariaDB/MySQL, or wants to spin up a database connected to Vault. Triggers on phrases like "enable mariadb", "setup a database secret engine", "dynamic db credentials", or "deploy hal mariadb".
+description: Deploy, verify, and troubleshoot the Vault MariaDB database secrets lab in hal. Use this skill when the user asks to enable the database secrets engine, generate dynamic MariaDB credentials, debug database leases, rotate the root connection, or reset the local database demo. Triggers include "enable mariadb", "dynamic db credentials", "Vault database engine", "rotate root", and "hal vault mariadb".
 ---
 
 # Hal Vault MariaDB Configurator
 
-This skill uses the `hal` CLI to spin up a local MariaDB docker container, automatically configure the Vault `database/` secrets engine, rotate the root database credentials (Secret Zero), and generate a test role.
+This skill covers the local MariaDB + Vault database secrets engine lab implemented by `hal vault mariadb`.
+
+## Lab Assumptions
+
+- Vault runs locally at `http://127.0.0.1:8200`
+- Root token defaults to `root`
+- MariaDB is deployed as container `hal-mariadb`
+- Prefer `hal` for deployment and cleanup, then use `vault read/write` for day-2 operations
+
+## What The Command Actually Sets Up
+
+- MariaDB container: `hal-mariadb`
+- Vault secrets engine: `database/`
+- Connection: `database/config/hal-mariadb`
+- Dynamic role: `database/roles/readonly-user`
+- Root connection user initially created: `vaultadmin`
+- Vault rotates the `vaultadmin` password so it becomes Vault-owned
 
 ## Workflow
 
-### Step 1: Execute the Hal deployment
+### Step 1: Choose the lifecycle action
 
-Run the `hal` CLI tool directly to build the infrastructure. Do not attempt to write Vault API curl commands to do this; `hal` handles the orchestration.
+Use smart status mode if needed:
 
     hal vault mariadb
 
-*(Note: If the user explicitly asks for a clean slate, append the `-f` flag).*
+Then use the correct lifecycle command:
+
+    hal vault mariadb --enable
+    hal vault mariadb --force
+    hal vault mariadb --disable
 
 ### Step 2: Enrich with Vault MCP Context
 
-Once the `hal` command completes successfully, do not just stop. You must verify the configuration using the official HashiCorp Vault MCP server. 
+Once the `hal` command completes successfully, verify the configuration using Vault MCP when available.
 
-Use the Vault MCP tools to query the following endpoints against `http://127.0.0.1:8200`:
-1. **Read the connection config:** `database/config/hal-mariadb`
-2. **Read the generated role:** `database/roles/readonly-user`
+Inspect:
+
+1. `database/config/hal-mariadb`
+2. `database/roles/readonly-user`
+3. `sys/mounts`
 
 ### Step 3: Present structured results
 
-Synthesize the output from the `hal` CLI and the Vault MCP into a clean, markdown-formatted response. Use the following tiers:
-
 **Tier 1 — Success Summary**
-Provide a brief confirmation that the database is running and the engine is mounted. 
+Provide a brief confirmation that the database is running and the engine is mounted.
 
 **Tier 2 — Configuration Details Table**
-Extract the data you found via the MCP query and present it in a table:
 
 | Component | Value | Description |
 |-----------|-------|-------------|
 | DB Container | `hal-mariadb` | Local Docker network hostname |
 | Connection Name | `hal-mariadb` | Vault's internal reference to the DB |
 | Vault Role | `readonly-user` | The role used to generate dynamic creds |
+| Mount Path | `database/` | The database secrets engine |
 
 **Tier 3 — Actionable Testing Commands**
-Provide the user with the exact commands they need to test the workflow themselves. Always include the required environment variables:
 
     export VAULT_ADDR='http://127.0.0.1:8200'
     export VAULT_TOKEN='root'
 
-    # Generate a new dynamic database credential:
     vault read database/creds/readonly-user
+    vault read database/config/hal-mariadb
+    vault read database/roles/readonly-user
 
-### Handling Edge Cases
+## Handling Edge Cases
 
-1. **Vault is not running:** If the `hal vault mariadb` command fails because it cannot reach `127.0.0.1:8200`, instruct the user to run `hal vault deploy` first, then stop.
-2. **Port Conflicts:** If Docker fails to bind port `3306`, advise the user to kill any existing local MySQL/MariaDB instances.
+1. **Vault is not running:** Instruct the user to run `hal vault deploy` first.
+2. **Port conflicts:** If Docker fails to bind port `3306`, advise the user to stop any local MySQL or MariaDB service.
+3. **Dangling leases prevent cleanup:** Explain that the code force-revokes `database/` leases during teardown.
+4. **User wants to change SQL statements or TTLs after deployment:** Provide exact `vault write database/roles/readonly-user ...` commands rather than suggesting Go edits.

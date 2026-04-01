@@ -1,29 +1,60 @@
 ---
 name: jwt
-description: Deploy and configure the Vault JWT authentication method. Use this skill whenever the user asks to test JWT authentication, configure GitHub Actions / GitLab CI pipelines with Vault, or enable the JWT auth backend. Triggers on phrases like "enable jwt", "setup github actions auth", "configure jwt", or "deploy hal jwt".
+description: Deploy, verify, and troubleshoot the Vault JWT auth lab in hal. Use this skill when the user asks to enable JWT auth, configure CI/CD authentication with Vault, debug bound claims, test GitLab or pipeline logins, or reset the JWT demo. Triggers include "enable jwt", "configure jwt", "gitlab vault auth", "pipeline auth", "bound claims", and "hal vault jwt".
 ---
 
 # Hal Vault JWT Configurator
 
-This skill uses the `hal` CLI to enable the JWT auth method in a local Vault instance and configure a test role for pipeline authentication.
+This skill covers the local GitLab-backed JWT auth demo implemented by `hal vault jwt`.
+
+## Lab Assumptions
+
+- Vault runs at `http://127.0.0.1:8200`
+- Root token defaults to `root`
+- The JWT demo deploys GitLab CE and a runner, then configures Vault JWT auth
+- Prefer `hal` for lifecycle actions and `vault read/write` for post-deploy inspection
+
+## What The Command Actually Sets Up
+
+- GitLab container: `hal-gitlab`
+- GitLab runner: `hal-gitlab-runner`
+- Vault auth mount: `jwt/`
+- KV engine: `kv-jwt/`
+- Policy: `cicd-read`
+- Role: `auth/jwt/role/cicd-role`
+- Bound issuer: `http://gitlab.localhost:8080`
 
 ## Workflow
 
-### Step 1: Execute the Hal deployment
+### Step 1: Choose the lifecycle action
 
-Run the `hal` CLI tool directly to configure the auth method. 
+Use smart status mode if needed:
 
     hal vault jwt
 
-*(Note: If the user explicitly asks for a clean slate, append the `-f` flag).*
+Then use the correct lifecycle command:
 
-### Step 2: Enrich with Vault MCP Context
+    hal vault jwt --enable
+    hal vault jwt --force
+    hal vault jwt --disable
 
-Once the `hal` command completes successfully, verify the configuration using the official HashiCorp Vault MCP server. 
+### Step 2: Verify the resulting Vault config
 
-Use the Vault MCP tools to query the following endpoints against `http://127.0.0.1:8200`:
-1. **Read the JWT config:** `auth/jwt/config`
-2. **Read the generated roles:** `auth/jwt/role` (and fetch the specific role details if a role exists)
+If Vault MCP is available, inspect:
+
+1. `auth/jwt/config`
+2. `auth/jwt/role/cicd-role`
+3. `sys/auth`
+4. `sys/mounts`
+
+If MCP is unavailable, use:
+
+    export VAULT_ADDR='http://127.0.0.1:8200'
+    export VAULT_TOKEN='root'
+
+    vault read auth/jwt/config
+    vault read auth/jwt/role/cicd-role
+    vault list auth/jwt/role
 
 ### Step 3: Present structured results
 
@@ -33,24 +64,26 @@ Synthesize the output from the `hal` CLI and the Vault MCP into a clean, markdow
 Provide a brief confirmation that the JWT auth method is enabled and configured.
 
 **Tier 2 — Configuration Details Table**
-Extract the data you found via the MCP query and present it in a table:
 
 | Component | Value | Description |
 |-----------|-------|-------------|
 | Auth Path | `auth/jwt/` | The mount point for the JWT auth method |
-| Bound Issuer | [Extract from MCP] | The trusted token issuer (e.g., GitHub/GitLab) |
-| OIDC Discovery URL | [Extract from MCP] | The URL used to fetch public keys |
+| Bound Issuer | `http://gitlab.localhost:8080` | The trusted GitLab issuer |
+| JWKS URL | `http://gitlab.localhost:8080/oauth/discovery/keys` | Public key source |
+| Role | `cicd-role` | The role used by the GitLab pipeline |
+| Policy | `cicd-read` | Read access to the demo secret |
 
 **Tier 3 — Actionable Testing Commands**
-Provide the user with the exact commands they need to inspect the workflow themselves:
 
     export VAULT_ADDR='http://127.0.0.1:8200'
     export VAULT_TOKEN='root'
 
-    # Check the JWT backend configuration:
     vault read auth/jwt/config
+    vault read auth/jwt/role/cicd-role
 
-### Handling Edge Cases
+## Handling Edge Cases
 
-1. **Vault is not running:** If the command fails because it cannot reach `127.0.0.1:8200`, instruct the user to run `hal vault deploy` first.
-2. **Missing Claims:** If the user is troubleshooting a failed login, remind them to check the `bound_claims` on the role using `vault read auth/jwt/role/<role-name>`.
+1. **Vault is not running:** Instruct the user to run `hal vault deploy` first.
+2. **GitLab is not ready yet:** Tell the user the GitLab boot sequence can take several minutes.
+3. **Missing or mismatched claims:** Point the user to `vault read auth/jwt/role/cicd-role` and compare `bound_claims`, `bound_claims_type`, and `bound_audiences`.
+4. **User wants to modify the configured role after deployment:** Provide exact `vault write auth/jwt/role/...` commands rather than suggesting Go code edits.

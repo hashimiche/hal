@@ -147,7 +147,7 @@ var vaultJwtCmd = &cobra.Command{
 				"-p", "8080:8080",
 				"--shm-size", "256m",
 				"--privileged",
-				"-e", "GITLAB_OMNIBUS_CONFIG=external_url 'http://gitlab.localhost:8080'; puma['port'] = 8081; gitlab_rails['initial_root_password'] = 'halpassword';",
+				"-e", "GITLAB_OMNIBUS_CONFIG=external_url 'http://gitlab.localhost:8080'; puma['port'] = 8081; gitlab_rails['initial_root_password'] = 'password';",
 				fmt.Sprintf("gitlab/gitlab-ce:%s", gitlabVersion),
 			}
 
@@ -297,7 +297,7 @@ var vaultJwtCmd = &cobra.Command{
 			fmt.Println("\n✅ Enterprise Secret Zero Environment Ready!")
 			fmt.Println("---------------------------------------------------------")
 			fmt.Println("🔗 GitLab UI:    http://127.0.0.1:8080/root/secret-zero/-/pipelines")
-			fmt.Println("   Login:        root / halpassword")
+			fmt.Println("   Login:        root / password")
 			fmt.Println("\n💡 THE DEMO WORKFLOW:")
 			fmt.Println("   1. A pipeline just automatically triggered on the 'main' branch.")
 			fmt.Println("   2. Check the logs: It FAILED because Vault rejected the JWT claims.")

@@ -320,7 +320,7 @@ objectClass: organizationalPerson
 objectClass: inetOrgPerson
 cn: alice
 sn: Admin
-userPassword: alicepass
+userPassword: password
 
 dn: cn=bob,ou=users,dc=hal,dc=local
 objectClass: top
@@ -329,7 +329,7 @@ objectClass: organizationalPerson
 objectClass: inetOrgPerson
 cn: bob
 sn: Reader
-userPassword: bobpass
+userPassword: password
 
 dn: cn=app-service,ou=users,dc=hal,dc=local
 objectClass: top

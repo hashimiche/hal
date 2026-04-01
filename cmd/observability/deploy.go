@@ -57,15 +57,84 @@ var deployCmd = &cobra.Command{
 		configDir := filepath.Join(homeDir, ".hal", "obs")
 		_ = os.MkdirAll(configDir, 0755)
 
-		// [ ... Keep your exact Prom/Loki/Promtail/Grafana config string writing here ... ]
-		// (Omitted the raw strings for brevity, keep your exact strings from your provided file)
+		promConfig := `global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: 'vault'
+    metrics_path: '/v1/sys/metrics'
+    params:
+      format: ['prometheus']
+    static_configs:
+      - targets: ['hal-vault:8200']
+`
+		_ = os.WriteFile(filepath.Join(configDir, "prometheus.yml"), []byte(promConfig), 0644)
 
+		lokiConfig := `auth_enabled: false
+server:
+  http_listen_port: 3100
+common:
+  path_prefix: /tmp/loki
+  storage:
+    filesystem:
+      chunks_directory: /tmp/loki/chunks
+      rules_directory: /tmp/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+`
+		_ = os.WriteFile(filepath.Join(configDir, "loki-config.yaml"), []byte(lokiConfig), 0644)
+
+		promtailConfig := `server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+positions:
+  filename: /tmp/positions.yaml
+clients:
+  - url: http://hal-loki:3100/loki/api/v1/push
+scrape_configs:
+  - job_name: vault-audit
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: vault-audit
+          __path__: /vault/logs/audit.log
+`
+		_ = os.WriteFile(filepath.Join(configDir, "promtail-config.yaml"), []byte(promtailConfig), 0644)
+
+		grafanaDatasources := `apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://hal-prometheus:9090
+    isDefault: true
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://hal-loki:3100
+`
+		_ = os.WriteFile(filepath.Join(configDir, "datasources.yml"), []byte(grafanaDatasources), 0644)
+
+		// Helper function to boot containers and catch errors
 		bootContainer := func(name string, args ...string) {
 			fmt.Printf("⚙️  Booting %s...\n", name)
 			out, err := exec.Command(engine, args...).CombinedOutput()
 			if err != nil {
-				fmt.Printf("❌ Failed to boot %s!\n   Error: %v\n   Docker Output: %s\n", name, err, string(out))
-				os.Exit(1)
+				fmt.Printf("❌ Failed to boot %s!\n", name)
+				fmt.Printf("   Error: %v\n", err)
+				fmt.Printf("   Docker Output: %s\n", string(out))
+				os.Exit(1) // Stop the CLI if a core component fails
 			}
 		}
 
@@ -77,9 +146,9 @@ var deployCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Println("✅ Observability Stack Deployed Successfully!")
 		fmt.Println("---------------------------------------------------------")
-		fmt.Println("🔗 Grafana:    http://localhost:3000 (Auto-logged in as Admin)")
-		fmt.Println("🔗 Prometheus: http://localhost:9090")
-		fmt.Println("🔗 Loki API:   http://localhost:3100/ready")
+		fmt.Println("🔗 Grafana:    http://grafana.localhost:3000 (Auto-logged in as Admin)")
+		fmt.Println("🔗 Prometheus: http://prometheus.localhost:9090")
+		fmt.Println("🔗 Loki API:   http://loki.localhost:3100/ready")
 		fmt.Println("---------------------------------------------------------")
 		fmt.Println("💡 Tip: Go to Grafana -> Dashboards -> New -> Import.")
 		fmt.Println("   Use HashiCorp official dashboard ID: 12904 for Vault!")

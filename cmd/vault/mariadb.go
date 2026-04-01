@@ -38,7 +38,7 @@ var vaultMariadbCmd = &cobra.Command{
 			fmt.Println("🔍 Checking Vault Database Engine Status...")
 
 			// Check Docker
-			dbExists := (exec.Command(engine, "inspect", "hal-mariadb").Run() == nil)
+			dbExists := (exec.Command(engine, "inspect", "hal-vault-mariadb").Run() == nil)
 
 			// Check Vault API (if Vault is alive)
 			dbMounted := false
@@ -67,7 +67,7 @@ var vaultMariadbCmd = &cobra.Command{
 				fmt.Println("   hal vault mariadb --enable")
 			} else if dbExists && dbMounted {
 				fmt.Println("   Demo is ready! Request a dynamic credential:")
-				fmt.Println("   vault read database/creds/readonly-user")
+				fmt.Println("   vault read database/creds/dba-role")
 				fmt.Println("\n   To completely remove this database environment, run:")
 				fmt.Println("   hal vault mariadb --disable")
 			} else {
@@ -82,7 +82,7 @@ var vaultMariadbCmd = &cobra.Command{
 		// ==========================================
 		if mariadbDisable || mariadbForce {
 			if global.DryRun {
-				fmt.Println("[DRY RUN] Would execute: docker rm -f hal-mariadb")
+				fmt.Println("[DRY RUN] Would execute: docker rm -f hal-vault-mariadb")
 				fmt.Println("[DRY RUN] Would call API to force-revoke leases and unmount 'database/'")
 			} else {
 				if mariadbDisable {
@@ -101,7 +101,7 @@ var vaultMariadbCmd = &cobra.Command{
 				}
 
 				fmt.Println("⚙️  Removing MariaDB container...")
-				_ = exec.Command(engine, "rm", "-f", "hal-mariadb").Run()
+				_ = exec.Command(engine, "rm", "-f", "hal-vault-mariadb").Run()
 
 				if mariadbDisable {
 					fmt.Println("✅ MariaDB environment destroyed successfully!")
@@ -130,10 +130,10 @@ var vaultMariadbCmd = &cobra.Command{
 			}
 
 			fmt.Printf("🚀 Booting MariaDB Database (mariadb:%s)...\n", mariadbVersion)
-			_ = exec.Command(engine, "rm", "-f", "hal-mariadb").Run()
+			_ = exec.Command(engine, "rm", "-f", "hal-vault-mariadb").Run()
 
 			dbArgs := []string{
-				"run", "-d", "--name", "hal-mariadb",
+				"run", "-d", "--name", "hal-vault-mariadb",
 				"--network", "hal-net",
 				"--network-alias", "mariadb.localhost",
 				"-p", "3306:3306",
@@ -154,13 +154,14 @@ var vaultMariadbCmd = &cobra.Command{
 			fmt.Println("\n✅ MariaDB is online and accepting connections!")
 
 			// 🎯 BEST PRACTICE 1: Create a least-privileged vaultadmin account
-			fmt.Println("⚙️  Provisioning least-privileged 'vaultadmin' account...")
+			// Updated to ALL PRIVILEGES so it can generate DBA users for Boundary
+			fmt.Println("⚙️  Provisioning least-privileged 'vaultadmin' broker account...")
 			setupSQL := `
 				CREATE USER 'vaultadmin'@'%' IDENTIFIED BY 'temp-vault-pass';
-				GRANT SELECT, CREATE USER ON *.* TO 'vaultadmin'@'%' WITH GRANT OPTION;
+				GRANT ALL PRIVILEGES ON *.* TO 'vaultadmin'@'%' WITH GRANT OPTION;
 				FLUSH PRIVILEGES;
 			`
-			err = exec.Command(engine, "exec", "hal-mariadb", "mariadb", "-u", "root", "-pvaultroot", "-e", setupSQL).Run()
+			err = exec.Command(engine, "exec", "hal-vault-mariadb", "mariadb", "-u", "root", "-pvaultroot", "-e", setupSQL).Run()
 			if err != nil {
 				fmt.Printf("❌ Failed to provision vaultadmin account: %v\n", err)
 				return
@@ -180,10 +181,10 @@ var vaultMariadbCmd = &cobra.Command{
 
 			// 2. Configure Vault Connection
 			fmt.Println("⚙️  Wiring Vault to MariaDB via the 'vaultadmin' account...")
-			_, err = client.Logical().Write("database/config/hal-mariadb", map[string]interface{}{
+			_, err = client.Logical().Write("database/config/hal-vault-mariadb", map[string]interface{}{
 				"plugin_name":    "mysql-database-plugin",
-				"connection_url": "{{username}}:{{password}}@tcp(hal-mariadb:3306)/",
-				"allowed_roles":  "readonly-user",
+				"connection_url": "{{username}}:{{password}}@tcp(hal-vault-mariadb:3306)/",
+				"allowed_roles":  "dba-role",
 				"username":       "vaultadmin",
 				"password":       "temp-vault-pass",
 			})
@@ -194,17 +195,17 @@ var vaultMariadbCmd = &cobra.Command{
 
 			// 🎯 BEST PRACTICE 2: Rotate the Vault Admin Password
 			fmt.Println("⚙️  Executing Password Rotation (Vault is taking exclusive ownership)...")
-			_, err = client.Logical().Write("database/rotate-root/hal-mariadb", map[string]interface{}{})
+			_, err = client.Logical().Write("database/rotate-root/hal-vault-mariadb", map[string]interface{}{})
 			if err != nil {
 				fmt.Printf("❌ Failed to rotate Vault connection password: %v\n", err)
 				return
 			}
 
-			// 3. Create the Role
+			// 3. Create the Role (Updated for DBA to match Boundary integration)
 			fmt.Println("⚙️  Injecting Dynamic SQL Creation Statements...")
-			_, err = client.Logical().Write("database/roles/readonly-user", map[string]interface{}{
-				"db_name":             "hal-mariadb",
-				"creation_statements": "CREATE USER '{{name}}'@'%' IDENTIFIED BY '{{password}}'; GRANT SELECT ON *.* TO '{{name}}'@'%';",
+			_, err = client.Logical().Write("database/roles/dba-role", map[string]interface{}{
+				"db_name":             "hal-vault-mariadb",
+				"creation_statements": "CREATE USER '{{name}}'@'%' IDENTIFIED BY '{{password}}'; GRANT ALL PRIVILEGES ON *.* TO '{{name}}'@'%';",
 				"default_ttl":         "1h",
 				"max_ttl":             "24h",
 			})
@@ -217,7 +218,7 @@ var vaultMariadbCmd = &cobra.Command{
 			fmt.Println("⚙️  Requesting temporary JIT (Just-In-Time) credentials from Vault...")
 			time.Sleep(2 * time.Second)
 
-			secret, err := client.Logical().Read("database/creds/readonly-user")
+			secret, err := client.Logical().Read("database/creds/dba-role")
 			if err != nil || secret == nil {
 				fmt.Printf("❌ Failed to generate credentials: %v\n", err)
 				return
@@ -236,7 +237,7 @@ var vaultMariadbCmd = &cobra.Command{
 			fmt.Println("   2. Vault immediately rotated the 'vaultadmin' password. Nobody knows it!")
 			fmt.Println("   3. Vault used that account to dynamically create the JIT user above.")
 			fmt.Println("   4. Try logging in: `mysql -h 127.0.0.1 -P 3306 -u " + username + " -p" + password + "`")
-			fmt.Println("   5. This user only has SELECT privileges and will self-destruct in 1 hour.")
+			fmt.Println("   5. This user has DBA privileges and will self-destruct in 1 hour.")
 			fmt.Println("---------------------------------------------------------")
 		}
 	},
@@ -248,7 +249,7 @@ var vaultMariadbCmd = &cobra.Command{
 
 func waitForMariaDB(engine string, maxRetries int) error {
 	for i := 0; i < maxRetries; i++ {
-		cmd := exec.Command(engine, "exec", "hal-mariadb", "mariadb-admin", "ping", "-h", "127.0.0.1", "-u", "root", "-pvaultroot", "--silent")
+		cmd := exec.Command(engine, "exec", "hal-vault-mariadb", "mariadb-admin", "ping", "-h", "127.0.0.1", "-u", "root", "-pvaultroot", "--silent")
 		if err := cmd.Run(); err == nil {
 			return nil
 		}

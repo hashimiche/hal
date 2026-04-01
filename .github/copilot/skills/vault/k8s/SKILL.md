@@ -1,51 +1,86 @@
 ---
 name: k8s
-description: Deploy and configure the Vault Kubernetes authentication method. Use this skill whenever the user asks to test pod authentication, configure k8s auth, or enable the Kubernetes auth backend. Triggers on phrases like "enable k8s auth", "setup kubernetes", "pod identity", or "deploy hal k8s".
+description: Deploy, verify, and troubleshoot the Vault Kubernetes auth lab in hal. Use this skill when the user asks to enable k8s auth, test pod authentication, wire Vault Secrets Operator to a local cluster, use native Kubernetes auth or JWT mode, or reset the KinD demo. Triggers include "enable k8s auth", "vault kubernetes", "vault secrets operator", "kind", "pod identity", and "hal vault k8s".
 ---
 
 # Hal Vault Kubernetes Configurator
 
-This skill uses the `hal` CLI to enable the Kubernetes auth method, allowing simulated local Kubernetes pods to authenticate to Vault using their Service Account Tokens.
+This skill covers the KinD + Vault Secrets Operator lab implemented by `hal vault k8s`.
+
+## Lab Assumptions
+
+- Vault runs locally at `http://127.0.0.1:8200`
+- Root token defaults to `root`
+- The lab uses KinD, `kubectl`, and `helm`
+- Native mode mounts `kubernetes/`
+- Some flows may also use `jwt-k8s/` depending on the command options and lab mode
+
+## What The Command Actually Sets Up
+
+- KinD cluster attached to `hal-net`
+- `vso` and `app1` namespaces
+- KV mount: `kv-k8s/`
+- Policy: `app1-read`
+- Vault auth role: `auth/kubernetes/role/app1-role`
+- Vault Secrets Operator Helm release in namespace `vso`
+- Demo application in namespace `app1`
 
 ## Workflow
 
-### Step 1: Execute the Hal deployment
+### Step 1: Choose the lifecycle action
 
-Run the `hal` CLI tool directly to configure the auth method.
+Use smart status mode if needed:
 
     hal vault k8s
 
-### Step 2: Enrich with Vault MCP Context
+Then use one of these:
 
-Verify the configuration using the official HashiCorp Vault MCP server. 
+    hal vault k8s --enable
+    hal vault k8s --enable --csi
+    hal vault k8s --force
+    hal vault k8s --disable
 
-Use the Vault MCP tools to query the following endpoints against `http://127.0.0.1:8200`:
-1. **Read the K8s config:** `auth/kubernetes/config`
-2. **Read the generated roles:** `auth/kubernetes/role`
+### Step 2: Verify the resulting state
+
+If Vault MCP is available, inspect:
+
+1. `auth/kubernetes/config`
+2. `auth/kubernetes/role/app1-role`
+3. `kv-k8s/data/app1`
+
+Also verify the cluster side with CLI:
+
+    kubectl get ns
+    kubectl get pods -n vso
+    kubectl get pods -n app1
+    helm list -n vso
 
 ### Step 3: Present structured results
 
 **Tier 1 — Success Summary**
-Provide a brief confirmation that the Kubernetes auth method is enabled and pointing to the local cluster endpoint.
+Provide a brief confirmation that KinD, VSO, and Vault auth are configured.
 
 **Tier 2 — Configuration Details Table**
-Extract the data you found via the MCP query:
 
 | Component | Value | Description |
 |-----------|-------|-------------|
 | Auth Path | `auth/kubernetes/` | The mount point |
-| K8s Host | [Extract from MCP] | The Kubernetes API server address |
-| Vault Role | [Extract from MCP] | The role mapping K8s Service Accounts to Vault policies |
+| Vault Role | `app1-role` | Maps the `app1-sa` service account to Vault policies |
+| Policy | `app1-read` | Grants read access to the demo secret |
+| KV Mount | `kv-k8s/` | Stores the example application secret |
 
 **Tier 3 — Actionable Testing Commands**
-Provide the user with the commands to inspect the setup:
 
     export VAULT_ADDR='http://127.0.0.1:8200'
     export VAULT_TOKEN='root'
 
-    # Inspect the Kubernetes API connection config:
     vault read auth/kubernetes/config
+    vault read auth/kubernetes/role/app1-role
+    vault kv get kv-k8s/app1
 
-### Handling Edge Cases
+## Handling Edge Cases
 
-1. **Token Reviewer Errors:** If testing a login fails, advise the user that the Vault container must have network access to the local Kubernetes API (e.g., `kubernetes.default.svc`) to verify the Service Account JWTs.
+1. **Missing local dependencies:** If `kind`, `kubectl`, or `helm` is not installed, say so explicitly.
+2. **Token reviewer errors:** Explain that Vault must be able to reach the KinD API endpoint and validate service account tokens.
+3. **CSI requested on OSS Vault:** Explain that the code downgrades to standard native sync if Vault Enterprise is not detected.
+4. **User wants to tune roles after deployment:** Provide exact `vault write auth/kubernetes/role/...` commands.
