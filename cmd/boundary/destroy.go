@@ -40,6 +40,9 @@ var destroyCmd = &cobra.Command{
 		fmt.Println("  ✅ Destroyed SSH VM (if it existed)")
 
 		global.CleanNetworkIfEmpty(engine)
+		if err := global.RemoveObsPromTargetFile("boundary"); err != nil {
+			fmt.Printf("⚠️  Could not remove Boundary observability target file: %v\n", err)
+		}
 		fmt.Println("✅ Boundary environment destroyed successfully!")
 	},
 }

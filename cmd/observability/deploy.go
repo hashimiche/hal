@@ -55,7 +55,11 @@ var deployCmd = &cobra.Command{
 		fmt.Println("⚙️  Generating PLG stack configurations...")
 		homeDir, _ := os.UserHomeDir()
 		configDir := filepath.Join(homeDir, ".hal", "obs")
+		targetsDir := filepath.Join(configDir, "targets")
+		dashboardsDir := filepath.Join(configDir, "dashboards")
 		_ = os.MkdirAll(configDir, 0755)
+		_ = os.MkdirAll(targetsDir, 0755)
+		_ = os.MkdirAll(dashboardsDir, 0755)
 
 		promConfig := `global:
   scrape_interval: 15s
@@ -64,8 +68,28 @@ scrape_configs:
     metrics_path: '/v1/sys/metrics'
     params:
       format: ['prometheus']
-    static_configs:
-      - targets: ['hal-vault:8200']
+		file_sd_configs:
+			- files: ['/etc/prometheus/targets/vault.json']
+	- job_name: 'consul'
+		metrics_path: '/v1/agent/metrics'
+		params:
+			format: ['prometheus']
+		file_sd_configs:
+			- files: ['/etc/prometheus/targets/consul.json']
+	- job_name: 'nomad'
+		metrics_path: '/v1/metrics'
+		params:
+			format: ['prometheus']
+		file_sd_configs:
+			- files: ['/etc/prometheus/targets/nomad.json']
+	- job_name: 'boundary'
+		metrics_path: '/v1/metrics'
+		file_sd_configs:
+			- files: ['/etc/prometheus/targets/boundary.json']
+	- job_name: 'terraform-enterprise'
+		metrics_path: '/metrics'
+		file_sd_configs:
+			- files: ['/etc/prometheus/targets/terraform.json']
 `
 		_ = os.WriteFile(filepath.Join(configDir, "prometheus.yml"), []byte(promConfig), 0644)
 
@@ -126,6 +150,19 @@ datasources:
 `
 		_ = os.WriteFile(filepath.Join(configDir, "datasources.yml"), []byte(grafanaDatasources), 0644)
 
+		grafanaDashboardsProvisioning := `apiVersion: 1
+providers:
+	- name: 'hal'
+		orgId: 1
+		folder: 'HAL'
+		type: file
+		disableDeletion: false
+		editable: true
+		options:
+			path: /var/lib/grafana/dashboards
+`
+		_ = os.WriteFile(filepath.Join(configDir, "dashboards.yml"), []byte(grafanaDashboardsProvisioning), 0644)
+
 		// Helper function to boot containers and catch errors
 		bootContainer := func(name string, args ...string) {
 			fmt.Printf("⚙️  Booting %s...\n", name)
@@ -138,10 +175,10 @@ datasources:
 			}
 		}
 
-		bootContainer("Prometheus", "run", "-d", "--name", "hal-prometheus", "--network", "hal-net", "-p", "9090:9090", "-v", filepath.Join(configDir, "prometheus.yml")+":/etc/prometheus/prometheus.yml", "prom/prometheus:"+promVer)
+		bootContainer("Prometheus", "run", "-d", "--name", "hal-prometheus", "--network", "hal-net", "-p", "9090:9090", "-v", filepath.Join(configDir, "prometheus.yml")+":/etc/prometheus/prometheus.yml", "-v", targetsDir+":/etc/prometheus/targets", "prom/prometheus:"+promVer)
 		bootContainer("Loki", "run", "-d", "--name", "hal-loki", "--network", "hal-net", "-p", "3100:3100", "-v", filepath.Join(configDir, "loki-config.yaml")+":/etc/loki/local-config.yaml", "grafana/loki:"+lokiVer, "-config.file=/etc/loki/local-config.yaml")
 		bootContainer("Promtail", "run", "-d", "--name", "hal-promtail", "--network", "hal-net", "-v", "hal-vault-logs:/vault/logs:ro", "-v", filepath.Join(configDir, "promtail-config.yaml")+":/etc/promtail/config.yml", "grafana/promtail:"+promtailVer, "-config.file=/etc/promtail/config.yml")
-		bootContainer("Grafana", "run", "-d", "--name", "hal-grafana", "--network", "hal-net", "-p", "3000:3000", "-v", filepath.Join(configDir, "datasources.yml")+":/etc/grafana/provisioning/datasources/datasources.yml", "-e", "GF_AUTH_ANONYMOUS_ENABLED=true", "-e", "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin", "grafana/grafana:"+grafanaVer)
+		bootContainer("Grafana", "run", "-d", "--name", "hal-grafana", "--network", "hal-net", "-p", "3000:3000", "-v", filepath.Join(configDir, "datasources.yml")+":/etc/grafana/provisioning/datasources/datasources.yml", "-v", filepath.Join(configDir, "dashboards.yml")+":/etc/grafana/provisioning/dashboards/dashboards.yml", "-v", dashboardsDir+":/var/lib/grafana/dashboards", "-e", "GF_AUTH_ANONYMOUS_ENABLED=true", "-e", "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin", "grafana/grafana:"+grafanaVer)
 
 		fmt.Println()
 		fmt.Println("✅ Observability Stack Deployed Successfully!")

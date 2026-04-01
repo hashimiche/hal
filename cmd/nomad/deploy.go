@@ -123,6 +123,12 @@ var deployCmd = &cobra.Command{
 		fmt.Println("\n✅ Environment is fully verified and ready!")
 		fmt.Printf("   🔗 Nomad UI:  http://%s:4646\n", ip)
 
+		if engine, err := global.DetectEngine(); err == nil {
+			if obsErr := global.UpsertObsPromTargetIfRunning(engine, "nomad", []string{fmt.Sprintf("%s:4646", ip)}); obsErr != nil {
+				fmt.Printf("⚠️  Observability target registration skipped: %v\n", obsErr)
+			}
+		}
+
 		if nomadJoinConsul {
 			fmt.Println("   🟢 Nomad is successfully tethered to the global Consul Control Plane!")
 		}

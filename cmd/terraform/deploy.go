@@ -175,6 +175,9 @@ var deployCmd = &cobra.Command{
 		fmt.Println("\n✅ Terraform Enterprise 1.x is UP!")
 		fmt.Println("---------------------------------------------------------")
 		fmt.Println("🔗 UI Address:   https://tfe.localhost:8443")
+		if err := global.UpsertObsPromTargetIfRunning(engine, "terraform", []string{"hal-tfe:8080"}); err != nil {
+			fmt.Printf("⚠️  Observability target registration skipped: %v\n", err)
+		}
 		fmt.Println("⚠️  Note:        Accept the browser warning for the self-signed certificate.")
 		fmt.Println("\n💡 Next Step:")
 		fmt.Println("   Run 'hal terraform token' to get your initial admin setup link!")

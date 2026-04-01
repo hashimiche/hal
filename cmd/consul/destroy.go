@@ -27,6 +27,9 @@ var destroyCmd = &cobra.Command{
 		}
 
 		global.CleanNetworkIfEmpty(engine)
+		if err := global.RemoveObsPromTargetFile("consul"); err != nil {
+			fmt.Printf("⚠️  Could not remove Consul observability target file: %v\n", err)
+		}
 		fmt.Println("✅ Consul environment destroyed successfully!")
 	},
 }

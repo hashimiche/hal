@@ -77,6 +77,10 @@ var vaultDestroyCmd = &cobra.Command{
 		// 3. Attempt to clean the network (Only deletes hal-net if NO containers are using it)
 		global.CleanNetworkIfEmpty(engine)
 
+		if err := global.RemoveObsPromTargetFile("vault"); err != nil {
+			fmt.Printf("⚠️  Could not remove Vault observability target file: %v\n", err)
+		}
+
 		if !global.DryRun {
 			fmt.Println("\n✅ Vault instance and all extensions destroyed successfully!")
 		}
