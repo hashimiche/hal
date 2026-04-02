@@ -2,9 +2,7 @@ package observability
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 
 	"hal/internal/global"
 
@@ -37,11 +35,9 @@ var destroyCmd = &cobra.Command{
 			}
 		}
 
-		homeDir, _ := os.UserHomeDir()
-		configDir := filepath.Join(homeDir, ".hal", "obs")
-		if _, err := os.Stat(configDir); err == nil {
-			fmt.Println("  🧹 Wiping local PLG configurations...")
-			_ = os.RemoveAll(configDir)
+		fmt.Println("  🧹 Wiping local PLG configurations...")
+		if err := global.RemoveObsState(); err != nil {
+			fmt.Printf("  ⚠️  Failed to wipe local PLG configurations: %v\n", err)
 		}
 
 		global.CleanNetworkIfEmpty(engine)

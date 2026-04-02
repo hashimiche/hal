@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"hal/internal/global"
 )
 
 type globalTeardownResult struct {
 	DockerContainersRemoved int
 	KindClustersDeleted     int
 	MultipassVMsDeleted     int
+	ObsStateCleaned         bool
 	Warnings                []string
 }
 
@@ -74,6 +77,12 @@ func runGlobalTeardown() globalTeardownResult {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("multipass purge failed: %v", err))
 			}
 		}
+	}
+
+	if err := global.RemoveObsState(); err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("observability state cleanup failed: %v", err))
+	} else {
+		result.ObsStateCleaned = true
 	}
 
 	return result

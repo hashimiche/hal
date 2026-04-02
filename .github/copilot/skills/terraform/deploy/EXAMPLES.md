@@ -47,3 +47,13 @@ Assistant:
     curl -k -I https://tfe.localhost:8443/app
 
 Assistant: HAL deploy includes a local proxy layer that rewrites TFE canonical redirects for `:8443`, so `/app` should stop self-looping without changing host sysctl settings.
+
+## Example 5: Backfill TFE Monitoring Without Redeploy
+
+User: TFE is already deployed. I added obs after the fact and only want monitoring wired.
+
+Assistant:
+
+    hal terraform deploy --configure-obs
+
+Assistant: This refreshes only the Prometheus target and Grafana dashboard artifacts without redeploying TFE.

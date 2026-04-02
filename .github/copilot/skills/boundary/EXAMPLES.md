@@ -40,3 +40,11 @@ Assistant:
 
     hal boundary destroy
     hal boundary deploy
+
+## Example 5: Backfill Boundary Monitoring Without Redeploy
+
+User: Boundary is already up. I only want Prometheus/Grafana wiring now.
+
+Assistant:
+
+    hal boundary deploy --configure-obs

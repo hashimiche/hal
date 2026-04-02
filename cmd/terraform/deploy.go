@@ -22,17 +22,48 @@ import (
 )
 
 var (
-	tfeVersion   string
-	tfePassword  string
-	pgVersion    string
-	redisVersion string
-	tfeForce     bool
+	tfeVersion          string
+	tfePassword         string
+	pgVersion           string
+	redisVersion        string
+	tfeForce            bool
+	tfeConfigureObs     bool
+	deployTFEOrg        string
+	deployTFEProject    string
+	deployTFEAdminUser  string
+	deployTFEAdminEmail string
+	deployTFEAdminPass  string
 )
 
 var deployCmd = &cobra.Command{
 	Use:   "deploy",
 	Short: "Deploy a local Terraform Enterprise 1.x (FDO) instance via Docker",
 	Run: func(cmd *cobra.Command, args []string) {
+		engine, err := global.DetectEngine()
+		if err != nil {
+			fmt.Printf("❌ Error: %v\n", err)
+			return
+		}
+
+		if tfeConfigureObs {
+			if !global.IsContainerRunning(engine, "hal-tfe") {
+				fmt.Println("❌ Terraform Enterprise is not running. Deploy it first before configuring observability artifacts.")
+				fmt.Println("   💡 Run 'hal terraform deploy' and then retry with '--configure-obs' if needed.")
+				return
+			}
+			if !global.IsObsReady(engine) {
+				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
+				fmt.Println("   💡 Run 'hal obs deploy' first, then retry '--configure-obs'.")
+				return
+			}
+
+			fmt.Println("🩺 Configuring observability artifacts for Terraform Enterprise...")
+			for _, warning := range global.RegisterObsArtifacts("terraform", []string{"hal-tfe:9090"}) {
+				fmt.Printf("⚠️  %s\n", warning)
+			}
+			fmt.Println("✅ Terraform Enterprise observability artifacts refreshed.")
+			return
+		}
 
 		// 1. STRICT LICENSE ENFORCEMENT
 		license := os.Getenv("TFE_LICENSE")
@@ -45,12 +76,6 @@ var deployCmd = &cobra.Command{
 
 		os.Setenv("TFE_ENCRYPTION_PASSWORD", tfePassword)
 		os.Setenv("TFE_DATABASE_PASSWORD", "tfe_password")
-
-		engine, err := global.DetectEngine()
-		if err != nil {
-			fmt.Printf("❌ Error: %v\n", err)
-			return
-		}
 
 		isPodman := strings.Contains(engine, "podman")
 
@@ -130,6 +155,9 @@ var deployCmd = &cobra.Command{
 		tfeArgs = append(tfeArgs,
 			"-e", "TFE_OPERATIONAL_MODE=external",
 			"-e", fmt.Sprintf("TFE_HOSTNAME=%s", tfeHostname),
+			"-e", "TFE_METRICS_ENABLE=true",
+			"-e", "TFE_METRICS_HTTP_PORT=9090",
+			"-e", "TFE_METRICS_HTTPS_PORT=9091",
 			"-e", "TFE_IA_HOSTNAME=hal-tfe",
 			"-e", "TFE_VAULT_ADDR=http://127.0.0.1:8200",
 			"-e", "TFE_VAULT_DISABLE_MLOCK=true",
@@ -220,12 +248,31 @@ http {
 		fmt.Println("\n✅ Terraform Enterprise 1.x is UP!")
 		fmt.Println("---------------------------------------------------------")
 		fmt.Printf("🔗 UI Address:   %s\n", uiURL)
-		for _, warning := range global.RegisterObsArtifacts("terraform", []string{"hal-tfe:8080"}) {
+		fmt.Printf("👤 Admin User:   %s\n", deployTFEAdminUser)
+		fmt.Printf("🔑 Admin Pass:   %s\n", deployTFEAdminPass)
+		token, _, err := ensureTFEFoundation(engine, tfeFoundationConfig{
+			BaseURL:       uiURL,
+			OrgName:       deployTFEOrg,
+			ProjectName:   deployTFEProject,
+			AdminUsername: deployTFEAdminUser,
+			AdminEmail:    deployTFEAdminEmail,
+			AdminPassword: deployTFEAdminPass,
+		})
+		if err != nil {
+			fmt.Printf("⚠️  TFE foundation bootstrap incomplete: %v\n", err)
+			fmt.Println("   💡 If admin already exists, export TFE_API_TOKEN once and rerun 'hal tf deploy'.")
+		} else {
+			fmt.Println("✅ TFE foundation ready: admin token + org/project are configured.")
+			if token != "" {
+				fmt.Println("   📄 Token cache: ~/.hal/tfe-app-api-token")
+			}
+		}
+		for _, warning := range global.RegisterObsArtifacts("terraform", []string{"hal-tfe:9090"}) {
 			fmt.Printf("⚠️  %s\n", warning)
 		}
 		fmt.Println("⚠️  Note:        Accept the browser warning for the self-signed certificate.")
 		fmt.Println("\n💡 Next Step:")
-		fmt.Println("   Run 'hal terraform token' to get your initial admin setup link!")
+		fmt.Println("   Run 'hal terraform workspace -e' to bootstrap org/project/workspace wiring.")
 		fmt.Println("---------------------------------------------------------")
 	},
 }
@@ -308,6 +355,12 @@ func init() {
 	deployCmd.Flags().StringVar(&pgVersion, "pg-version", "16", "PostgreSQL version for TFE backend")
 	deployCmd.Flags().StringVar(&redisVersion, "redis-version", "7", "Redis version for TFE background jobs")
 	deployCmd.Flags().StringVarP(&tfePassword, "password", "p", "hal-secret-encryption-password", "TFE Encryption Password")
+	deployCmd.Flags().StringVar(&deployTFEOrg, "tfe-org", "hal", "Terraform Enterprise organization name to auto-bootstrap during deploy")
+	deployCmd.Flags().StringVar(&deployTFEProject, "tfe-project", "Dave", "Terraform Enterprise project name to auto-bootstrap during deploy")
+	deployCmd.Flags().StringVar(&deployTFEAdminUser, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
+	deployCmd.Flags().StringVar(&deployTFEAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
+	deployCmd.Flags().StringVar(&deployTFEAdminPass, "tfe-admin-password", "hal3000FTW", "Initial TFE admin password used when bootstrapping via IACT")
 	deployCmd.Flags().BoolVarP(&tfeForce, "force", "f", false, "Force redeploy")
+	deployCmd.Flags().BoolVar(&tfeConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Terraform Enterprise")
 	Cmd.AddCommand(deployCmd)
 }

@@ -24,6 +24,8 @@ Handle hal vault deploy requests with a stable lifecycle pattern.
 - Deploy path now runs shared observability artifact registration.
 - Prometheus target file is written when obs is active.
 - Vault dashboard is downloaded/imported automatically into Grafana folder HAL (no manual import step needed).
+- If Vault is already running and obs comes later, use `hal vault deploy --configure-obs` to backfill only monitoring artifacts.
+- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs deploy` first.
 
 ## Edge Cases
 

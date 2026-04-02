@@ -12,6 +12,14 @@ Assistant:
 Assistant: I report whether servers and clients are healthy before any workload submission.
 Assistant: If `hal obs deploy` is already up, I also mention Nomad target and dashboard registration are automatic.
 
+## Example 4: Backfill Nomad Monitoring Without Redeploy
+
+User: Nomad is already deployed. Just wire its metrics and dashboard.
+
+Assistant:
+
+    hal nomad deploy --configure-obs
+
 ## Example 2: Partial Recovery After Unstable Allocations
 
 User: Nomad deploy succeeded, but jobs are flapping.

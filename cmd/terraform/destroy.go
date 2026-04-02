@@ -15,6 +15,7 @@ import (
 // The "Known Universe" of Terraform Enterprise infrastructure
 var tfeEcosystem = []string{
 	"hal-tfe",
+	"hal-tfe-proxy",
 	"hal-tfe-db",
 	"hal-tfe-redis",
 	"hal-tfe-minio",
@@ -70,6 +71,12 @@ var destroyCmd = &cobra.Command{
 
 		if err := global.RemoveObsPromTargetFile("terraform"); err != nil {
 			fmt.Printf("⚠️  Could not remove Terraform observability target file: %v\n", err)
+		}
+
+		if err := global.RemoveCachedTFEAPIToken(); err != nil {
+			fmt.Printf("⚠️  Could not remove cached TFE API token: %v\n", err)
+		} else {
+			fmt.Println("  🧹 Removed cached TFE API token.")
 		}
 
 		if !global.DryRun {

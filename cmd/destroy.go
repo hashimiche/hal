@@ -36,6 +36,7 @@ var destroyCmd = &cobra.Command{
 		fmt.Printf("   - Docker containers removed: %d\n", result.DockerContainersRemoved)
 		fmt.Printf("   - KinD clusters deleted:     %d\n", result.KindClustersDeleted)
 		fmt.Printf("   - Multipass VMs deleted:     %d\n", result.MultipassVMsDeleted)
+		fmt.Printf("   - Obs state cleaned:         %t\n", result.ObsStateCleaned)
 		if len(result.Warnings) > 0 {
 			fmt.Println("\n⚠️  Teardown warnings:")
 			for _, warning := range result.Warnings {

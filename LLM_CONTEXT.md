@@ -48,6 +48,8 @@ For product-level destroy flows, prefer deleting the known local ecosystem direc
     - Product deploy commands auto-register Prometheus targets when obs is running.
     - Official dashboards are auto-downloaded and imported into Grafana folder `HAL`.
     - Dashboard JSON is normalized so panel datasources resolve to local `hal-prometheus`.
+    - Product deploy commands also support `--configure-obs` to backfill monitoring artifacts without redeploying the product.
+    - `--configure-obs` should require the obs stack to already be running; it is a refresh action, not a pre-staging action.
 - Global teardown logic is centralized for `hal destroy` and `hal daisy`.
     - KinD cleanup includes default cluster name `kind` plus `hal-*` clusters.
     - Leftover KinD containers are removed by cluster label as a fallback.

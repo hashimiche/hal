@@ -62,3 +62,16 @@ func IsConsulRunning(engine string) bool {
 	out, _ := exec.Command(engine, "ps", "-q", "-f", "name=hal-consul$").Output()
 	return strings.TrimSpace(string(out)) != ""
 }
+
+func IsContainerRunning(engine string, container string) bool {
+	out, err := exec.Command(engine, "inspect", "-f", "{{.State.Running}}", container).Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "true"
+}
+
+func MultipassInstanceExists(name string) bool {
+	err := exec.Command("multipass", "info", name).Run()
+	return err == nil
+}

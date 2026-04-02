@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/integrations"
 
 	vault "github.com/hashicorp/vault/api"
 	"github.com/spf13/cobra"
@@ -122,8 +123,22 @@ var vaultOidcCmd = &cobra.Command{
 					fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
 				}
 
-				fmt.Println("⚙️  Removing Keycloak container...")
-				_ = exec.Command(engine, "rm", "-f", "hal-keycloak").Run()
+				if oidcForce {
+					fmt.Println("⚙️  Removing Keycloak container...")
+					_ = exec.Command(engine, "rm", "-f", "hal-keycloak").Run()
+					_ = global.ClearSharedService("keycloak")
+				} else {
+					remaining, err := global.RemoveSharedServiceConsumer("keycloak", "vault-oidc")
+					if err != nil {
+						fmt.Printf("⚠️  Could not update shared service ownership metadata: %v\n", err)
+					}
+					if len(remaining) == 0 {
+						fmt.Println("⚙️  Removing Keycloak container...")
+						_ = exec.Command(engine, "rm", "-f", "hal-keycloak").Run()
+					} else {
+						fmt.Printf("ℹ️  Keeping Keycloak running for other consumers: %s\n", strings.Join(remaining, ", "))
+					}
+				}
 
 				if oidcDisable {
 					fmt.Println("✅ OIDC integration, KV engine, and identity data successfully removed!")
@@ -214,33 +229,37 @@ var vaultOidcCmd = &cobra.Command{
 			_ = os.WriteFile(realmPath, []byte(realmJSON), 0644)
 
 			fmt.Printf("🚀 Booting Keycloak container (quay.io/keycloak/keycloak:%s)...\n", keycloakVersion)
-			_ = exec.Command(engine, "rm", "-f", "hal-keycloak").Run()
+			if global.IsContainerRunning(engine, "hal-keycloak") {
+				fmt.Println("ℹ️  Reusing existing Keycloak shared service.")
+			} else {
 
-			kcArgs := []string{
-				"run", "-d",
-				"--name", "hal-keycloak",
-				"--network", "hal-net",
-				"--network-alias", "keycloak.localhost",
-				"-p", "8081:8081",
-				"-e", "KEYCLOAK_ADMIN=admin",
-				"-e", "KEYCLOAK_ADMIN_PASSWORD=admin",
-				"-e", "KC_HTTP_PORT=8081",
-			}
+				kcArgs := []string{
+					"run", "-d",
+					"--name", "hal-keycloak",
+					"--network", "hal-net",
+					"--network-alias", "keycloak.localhost",
+					"-p", "8081:8081",
+					"-e", "KEYCLOAK_ADMIN=admin",
+					"-e", "KEYCLOAK_ADMIN_PASSWORD=admin",
+					"-e", "KC_HTTP_PORT=8081",
+				}
 
-			volFlag := fmt.Sprintf("%s:/opt/keycloak/data/import/hal-realm.json", realmPath)
-			if isPodman {
-				volFlag += ":Z"
-			}
-			kcArgs = append(kcArgs, "-v", volFlag)
-			kcArgs = append(kcArgs, fmt.Sprintf("quay.io/keycloak/keycloak:%s", keycloakVersion), "start-dev", "--import-realm")
+				volFlag := fmt.Sprintf("%s:/opt/keycloak/data/import/hal-realm.json", realmPath)
+				if isPodman {
+					volFlag += ":Z"
+				}
+				kcArgs = append(kcArgs, "-v", volFlag)
+				kcArgs = append(kcArgs, fmt.Sprintf("quay.io/keycloak/keycloak:%s", keycloakVersion), "start-dev", "--import-realm")
 
-			if err := exec.Command(engine, kcArgs...).Run(); err != nil {
-				fmt.Printf("❌ Failed to boot Keycloak: %v\n", err)
-				return
+				if err := exec.Command(engine, kcArgs...).Run(); err != nil {
+					fmt.Printf("❌ Failed to boot Keycloak: %v\n", err)
+					return
+				}
 			}
 
 			fmt.Println("⏳ Waiting for Keycloak OIDC endpoints to become active...")
-			if err := waitForKeycloak("http://127.0.0.1:8081/realms/hal/.well-known/openid-configuration", 45); err != nil {
+			keycloakOIDC := integrations.KeycloakRealm("http://127.0.0.1:8081", "hal")
+			if err := waitForKeycloak(keycloakOIDC.DiscoveryURL, 45); err != nil {
 				fmt.Println("❌ Keycloak failed to start in time.")
 				return
 			}
@@ -277,8 +296,9 @@ path "kv-oidc/metadata/team1" { capabilities = ["read", "list"] }
 			_ = client.Sys().EnableAuthWithOptions("oidc", &vault.EnableAuthOptions{Type: "oidc"})
 
 			// 5. Configure OIDC
+			vaultKeycloakOIDC := integrations.KeycloakRealm("http://keycloak.localhost:8081", "hal")
 			_, err = client.Logical().Write("auth/oidc/config", map[string]interface{}{
-				"oidc_discovery_url": "http://keycloak.localhost:8081/realms/hal",
+				"oidc_discovery_url": vaultKeycloakOIDC.DiscoveryURL,
 				"oidc_client_id":     "vault",
 				"oidc_client_secret": "supersecret",
 				"default_role":       "default",
@@ -314,6 +334,9 @@ path "kv-oidc/metadata/team1" { capabilities = ["read", "list"] }
 			fmt.Println("\n👤 Test Users:  alice / password (Admin)")
 			fmt.Println("                bob   / password (Read-Only on kv-oidc/team1)")
 			fmt.Println("---------------------------------------------------------")
+			if err := global.AddSharedServiceConsumer("keycloak", "vault-oidc"); err != nil {
+				fmt.Printf("⚠️  Could not persist shared ownership metadata: %v\n", err)
+			}
 		}
 	},
 }

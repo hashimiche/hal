@@ -13,17 +13,45 @@ import (
 )
 
 var (
-	nomadVersion    string
-	nomadCPUs       string
-	nomadMem        string
-	nomadJoinConsul bool // The new unified Control Plane flag
-	nomadForce      bool
+	nomadVersion      string
+	nomadCPUs         string
+	nomadMem          string
+	nomadJoinConsul   bool // The new unified Control Plane flag
+	nomadForce        bool
+	nomadConfigureObs bool
 )
 
 var deployCmd = &cobra.Command{
 	Use:   "deploy",
 	Short: "Deploy a local Nomad cluster via Multipass",
 	Run: func(cmd *cobra.Command, args []string) {
+		if nomadConfigureObs {
+			if !global.MultipassInstanceExists("hal-nomad") {
+				fmt.Println("❌ Nomad VM is not present. Deploy it first before configuring observability artifacts.")
+				fmt.Println("   💡 Run 'hal nomad deploy' and then retry with '--configure-obs' if needed.")
+				return
+			}
+			engine, err := global.DetectEngine()
+			if err != nil {
+				fmt.Printf("❌ Error: %v\n", err)
+				return
+			}
+			if !global.IsObsReady(engine) {
+				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
+				fmt.Println("   💡 Run 'hal obs deploy' first, then retry '--configure-obs'.")
+				return
+			}
+
+			ipOut, _ := exec.Command("multipass", "info", "hal-nomad", "--format", "csv").Output()
+			ip := extractMultipassIP(string(ipOut))
+			fmt.Println("🩺 Configuring observability artifacts for Nomad...")
+			for _, warning := range global.RegisterObsArtifacts("nomad", []string{fmt.Sprintf("%s:4646", ip)}) {
+				fmt.Printf("⚠️  %s\n", warning)
+			}
+			fmt.Println("✅ Nomad observability artifacts refreshed.")
+			return
+		}
+
 		if err := exec.Command("multipass", "version").Run(); err != nil {
 			fmt.Println("❌ Error: Multipass is not installed or not running.")
 			return
@@ -184,6 +212,7 @@ func init() {
 	deployCmd.Flags().StringVar(&nomadCPUs, "cpus", "2", "Number of CPUs for the VM")
 	deployCmd.Flags().StringVar(&nomadMem, "mem", "2G", "Amount of RAM for the VM")
 	deployCmd.Flags().BoolVarP(&nomadForce, "force", "f", false, "Force redeploy")
+	deployCmd.Flags().BoolVar(&nomadConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Nomad")
 
 	// The unified global join flag
 	deployCmd.Flags().BoolVarP(&nomadJoinConsul, "join-consul", "c", false, "Tether Nomad to the global HAL Consul instance")

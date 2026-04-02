@@ -36,6 +36,16 @@ Assistant:
 
 Assistant: Vault deploy re-registers the Prometheus target and re-imports the Vault dashboard into folder HAL automatically.
 
+## Example 5: Backfill Vault Monitoring Without Redeploy
+
+User: I deployed Vault earlier, then added obs later. Just wire monitoring.
+
+Assistant:
+
+    hal vault deploy --configure-obs
+
+Assistant: This refreshes only the Prometheus target and Grafana dashboard artifacts without redeploying Vault.
+
 ## Example 3: Deploy Then Feature Enable
 
 User: Start Vault, then set up OIDC.

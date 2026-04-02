@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	consulVersion string
-	consulForce   bool
+	consulVersion      string
+	consulForce        bool
+	consulConfigureObs bool
 )
 
 var deployCmd = &cobra.Command{
@@ -24,6 +25,26 @@ var deployCmd = &cobra.Command{
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
+			return
+		}
+
+		if consulConfigureObs {
+			if !global.IsContainerRunning(engine, "hal-consul") {
+				fmt.Println("❌ Consul is not running. Deploy it first before configuring observability artifacts.")
+				fmt.Println("   💡 Run 'hal consul deploy' and then retry with '--configure-obs' if needed.")
+				return
+			}
+			if !global.IsObsReady(engine) {
+				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
+				fmt.Println("   💡 Run 'hal obs deploy' first, then retry '--configure-obs'.")
+				return
+			}
+
+			fmt.Println("🩺 Configuring observability artifacts for Consul...")
+			for _, warning := range global.RegisterObsArtifacts("consul", []string{"hal-consul:8500"}) {
+				fmt.Printf("⚠️  %s\n", warning)
+			}
+			fmt.Println("✅ Consul observability artifacts refreshed.")
 			return
 		}
 
@@ -77,6 +98,7 @@ var deployCmd = &cobra.Command{
 func init() {
 	deployCmd.Flags().StringVarP(&consulVersion, "version", "v", "1.15.0", "Consul version to deploy")
 	deployCmd.Flags().BoolVarP(&consulForce, "force", "f", false, "Force redeploy")
+	deployCmd.Flags().BoolVar(&consulConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Consul")
 
 	Cmd.AddCommand(deployCmd)
 }

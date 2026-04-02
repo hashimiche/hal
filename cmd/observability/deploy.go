@@ -92,6 +92,8 @@ var deployCmd = &cobra.Command{
 			"      - files: ['/etc/prometheus/targets/boundary.json']",
 			"  - job_name: 'terraform-enterprise'",
 			"    metrics_path: '/metrics'",
+			"    params:",
+			"      format: ['prometheus']",
 			"    file_sd_configs:",
 			"      - files: ['/etc/prometheus/targets/terraform.json']",
 		}, "\n") + "\n"

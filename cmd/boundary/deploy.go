@@ -13,10 +13,11 @@ import (
 )
 
 var (
-	boundaryVersion    string
-	pgVersion          string
-	boundaryForce      bool
-	boundaryJoinConsul bool
+	boundaryVersion      string
+	pgVersion            string
+	boundaryForce        bool
+	boundaryJoinConsul   bool
+	boundaryConfigureObs bool
 )
 
 var deployCmd = &cobra.Command{
@@ -27,6 +28,26 @@ var deployCmd = &cobra.Command{
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
+			return
+		}
+
+		if boundaryConfigureObs {
+			if !global.IsContainerRunning(engine, "hal-boundary") {
+				fmt.Println("❌ Boundary is not running. Deploy it first before configuring observability artifacts.")
+				fmt.Println("   💡 Run 'hal boundary deploy' and then retry with '--configure-obs' if needed.")
+				return
+			}
+			if !global.IsObsReady(engine) {
+				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
+				fmt.Println("   💡 Run 'hal obs deploy' first, then retry '--configure-obs'.")
+				return
+			}
+
+			fmt.Println("🩺 Configuring observability artifacts for Boundary...")
+			for _, warning := range global.RegisterObsArtifacts("boundary", []string{"hal-boundary:9200"}) {
+				fmt.Printf("⚠️  %s\n", warning)
+			}
+			fmt.Println("✅ Boundary observability artifacts refreshed.")
 			return
 		}
 
@@ -157,6 +178,7 @@ func init() {
 	deployCmd.Flags().StringVarP(&boundaryVersion, "version", "v", "0.15.2", "Boundary version to deploy")
 	deployCmd.Flags().StringVar(&pgVersion, "pg-version", "16", "PostgreSQL version for Boundary backend")
 	deployCmd.Flags().BoolVarP(&boundaryForce, "force", "f", false, "Force redeploy")
+	deployCmd.Flags().BoolVar(&boundaryConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Boundary")
 	deployCmd.Flags().BoolVarP(&boundaryJoinConsul, "join-consul", "c", false, "Tether Boundary to the global HAL Consul instance")
 
 	Cmd.AddCommand(deployCmd)

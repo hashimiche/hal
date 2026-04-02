@@ -24,6 +24,8 @@ Handle hal terraform deploy requests with a stable lifecycle pattern.
 - Terraform deploy uses shared observability artifact registration.
 - TFE metrics target file is refreshed automatically when obs is active.
 - Official Terraform Enterprise dashboard is imported automatically into Grafana folder HAL.
+- If TFE is already running and obs comes later, use `hal terraform deploy --configure-obs` to backfill only monitoring artifacts.
+- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs deploy` first.
 
 ## Edge Cases
 

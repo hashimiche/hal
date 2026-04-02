@@ -14,10 +14,11 @@ import (
 )
 
 var (
-	vaultVersion    string
-	vaultEdition    string // ce or ent
-	vaultForce      bool
-	vaultJoinConsul bool
+	vaultVersion      string
+	vaultEdition      string // ce or ent
+	vaultForce        bool
+	vaultJoinConsul   bool
+	vaultConfigureObs bool
 )
 
 var deployCmd = &cobra.Command{
@@ -28,6 +29,26 @@ var deployCmd = &cobra.Command{
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
+			return
+		}
+
+		if vaultConfigureObs {
+			if !global.IsContainerRunning(engine, "hal-vault") {
+				fmt.Println("❌ Vault is not running. Deploy it first before configuring observability artifacts.")
+				fmt.Println("   💡 Run 'hal vault deploy' and then retry with '--configure-obs' if needed.")
+				return
+			}
+			if !global.IsObsReady(engine) {
+				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
+				fmt.Println("   💡 Run 'hal obs deploy' first, then retry '--configure-obs'.")
+				return
+			}
+
+			fmt.Println("🩺 Configuring observability artifacts for Vault...")
+			for _, warning := range global.RegisterObsArtifacts("vault", []string{"hal-vault:8200"}) {
+				fmt.Printf("⚠️  %s\n", warning)
+			}
+			fmt.Println("✅ Vault observability artifacts refreshed.")
 			return
 		}
 
@@ -188,6 +209,7 @@ func init() {
 	deployCmd.Flags().StringVarP(&vaultVersion, "version", "v", "1.21", "Vault version to deploy")
 	deployCmd.Flags().StringVarP(&vaultEdition, "edition", "e", "ce", "Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise)")
 	deployCmd.Flags().BoolVarP(&vaultForce, "force", "f", false, "Force redeploy")
+	deployCmd.Flags().BoolVar(&vaultConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Vault")
 
 	// The unified global join flag
 	deployCmd.Flags().BoolVarP(&vaultJoinConsul, "join-consul", "c", false, "Tether Vault to the global HAL Consul instance")

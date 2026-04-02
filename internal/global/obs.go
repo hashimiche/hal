@@ -50,9 +50,35 @@ func ObsDashboardsDir() string {
 	return filepath.Join(base, "dashboards")
 }
 
+func RemoveObsState() error {
+	base := obsBaseDir()
+	if base == "" {
+		return nil
+	}
+	if err := os.RemoveAll(base); err != nil {
+		return err
+	}
+	return nil
+}
+
 func IsObsRunning(engine string) bool {
 	out, _ := exec.Command(engine, "ps", "-q", "-f", "name=hal-prometheus$").Output()
 	return strings.TrimSpace(string(out)) != ""
+}
+
+func IsObsReady(engine string) bool {
+	return IsObsRunning(engine) && isGrafanaRunning(engine)
+}
+
+func ObsMissingComponents(engine string) []string {
+	missing := []string{}
+	if !IsObsRunning(engine) {
+		missing = append(missing, "Prometheus")
+	}
+	if !isGrafanaRunning(engine) {
+		missing = append(missing, "Grafana")
+	}
+	return missing
 }
 
 func isGrafanaRunning(engine string) bool {
