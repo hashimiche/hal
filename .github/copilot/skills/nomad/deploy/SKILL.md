@@ -17,6 +17,13 @@ Handle hal nomad deploy requests with a stable lifecycle pattern.
 
 - Confirm command output and summarize the resulting lab state.
 - If applicable, suggest the next expected command in the lifecycle.
+- If observability is running, call out that target/dashboard artifacts are handled automatically.
+
+## Observability Notes
+
+- Nomad deploy now calls shared observability artifact registration.
+- Prometheus target file is refreshed automatically when obs is active.
+- Official Nomad dashboard is imported automatically into Grafana folder HAL.
 
 ## Edge Cases
 

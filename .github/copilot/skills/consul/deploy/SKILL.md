@@ -17,6 +17,13 @@ Handle hal consul deploy requests with a stable lifecycle pattern.
 
 - Confirm command output and summarize the resulting lab state.
 - If applicable, suggest the next expected command in the lifecycle.
+- If observability is already running, mention that Consul target/dashboard artifacts are handled automatically.
+
+## Observability Notes
+
+- Consul deploy uses shared observability artifact registration.
+- When `hal obs deploy` is up, Prometheus target updates are automatic.
+- Official Consul dashboard import is automatic in Grafana folder HAL.
 
 ## Edge Cases
 

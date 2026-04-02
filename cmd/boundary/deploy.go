@@ -112,8 +112,8 @@ var deployCmd = &cobra.Command{
 		if boundaryJoinConsul {
 			fmt.Println("   🟢 Tethered:   Global Consul Control Plane")
 		}
-		if err := global.UpsertObsPromTargetIfRunning(engine, "boundary", []string{"hal-boundary:9200"}); err != nil {
-			fmt.Printf("⚠️  Observability target registration skipped: %v\n", err)
+		for _, warning := range global.RegisterObsArtifacts("boundary", []string{"hal-boundary:9200"}) {
+			fmt.Printf("⚠️  %s\n", warning)
 		}
 		fmt.Println("---------------------------------------------------------")
 		fmt.Println("💡 Next Step: Deploy some targets to connect to!")

@@ -8,9 +8,11 @@ Assistant:
 
     hal vault deploy
 
-Assistant: I verify service health and entry points.
+Assistant: I verify service health and entry points, then mention observability wiring.
 
     hal vault status
+
+Assistant: If `hal obs deploy` is already active, Vault metrics are auto-registered in Prometheus and the Vault dashboard is auto-imported into Grafana folder HAL.
 
 ## Example 2: Redeploy After Bad State
 
@@ -22,6 +24,17 @@ Assistant:
     hal vault status
 
 Assistant: If instability persists, I recommend a full destroy then deploy cycle.
+
+## Example 4: Deploy With Observability Already Up
+
+User: Vault is up now, but I also want metrics and dashboards ready.
+
+Assistant:
+
+    hal obs deploy
+    hal vault deploy -f
+
+Assistant: Vault deploy re-registers the Prometheus target and re-imports the Vault dashboard into folder HAL automatically.
 
 ## Example 3: Deploy Then Feature Enable
 

@@ -10,6 +10,7 @@ Assistant:
     hal consul status
 
 Assistant: I summarize whether the server and UI endpoint are reachable, then provide the next command to continue with dependent services.
+Assistant: If obs is already deployed, I also mention that Consul target registration and dashboard import are automatic.
 
 ## Example 2: Drift Recovery After Host Restart
 

@@ -17,8 +17,22 @@ Handle hal terraform deploy requests with a stable lifecycle pattern.
 
 - Confirm command output and summarize the resulting lab state.
 - If applicable, suggest the next expected command in the lifecycle.
+- If observability is running, mention automatic target/dashboard artifact updates.
+
+## Observability Notes
+
+- Terraform deploy uses shared observability artifact registration.
+- TFE metrics target file is refreshed automatically when obs is active.
+- Official Terraform Enterprise dashboard is imported automatically into Grafana folder HAL.
 
 ## Edge Cases
 
 - If prerequisites are missing, explain exactly what to install or start first.
 - If resources are partially deployed, suggest force or cleanup path when supported.
+
+## Networking Notes
+
+- HAL deploys a small local ingress proxy (`hal-tfe-proxy`) in front of TFE.
+- This avoids requiring privileged host port 443 on rootless Podman.
+- User-facing URL remains `https://tfe.localhost:8443` in this mode.
+- Deploy validation should include both health endpoint and `/app` reachability (to catch redirect loops).

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -31,18 +30,18 @@ var destroyCmd = &cobra.Command{
 		}
 
 		fmt.Println("\n🛑 Initiating global infrastructure teardown...")
-
-		// 2. Synchronous Destruction Logging
-		fmt.Println("♻️  Purging HAL Docker containers...")
-		_ = exec.Command("sh", "-c", "docker ps -a -q --filter name=hal- | xargs -r docker rm -f").Run()
-
-		fmt.Println("♻️  Purging HAL KinD clusters...")
-		_ = exec.Command("kind", "delete", "cluster", "--name", "hal-k8s").Run()
-
-		fmt.Println("♻️  Purging HAL Multipass VMs...")
-		_ = exec.Command("sh", "-c", "multipass list --format csv | grep hal- | cut -d, -f1 | xargs -I {} multipass delete {} --purge").Run()
+		result := runGlobalTeardown()
 
 		fmt.Println("\n✅ All HAL infrastructure has been successfully destroyed.")
+		fmt.Printf("   - Docker containers removed: %d\n", result.DockerContainersRemoved)
+		fmt.Printf("   - KinD clusters deleted:     %d\n", result.KindClustersDeleted)
+		fmt.Printf("   - Multipass VMs deleted:     %d\n", result.MultipassVMsDeleted)
+		if len(result.Warnings) > 0 {
+			fmt.Println("\n⚠️  Teardown warnings:")
+			for _, warning := range result.Warnings {
+				fmt.Printf("   - %s\n", warning)
+			}
+		}
 	},
 }
 

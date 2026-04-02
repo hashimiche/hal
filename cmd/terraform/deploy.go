@@ -54,6 +54,11 @@ var deployCmd = &cobra.Command{
 
 		isPodman := strings.Contains(engine, "podman")
 
+		// 🎯 Hostname stripped of ports for Rails, but URLs keep it for the Proxy
+		tfeHostname := "tfe.localhost"
+		healthURL := "https://tfe.localhost:8443/_health_check"
+		uiURL := "https://tfe.localhost:8443"
+
 		// 2. FORGE THE TLS CERTIFICATES
 		fmt.Println("🔐 Forging local TLS certificates for TFE...")
 		homeDir, _ := os.UserHomeDir()
@@ -65,7 +70,8 @@ var deployCmd = &cobra.Command{
 
 		if tfeForce {
 			fmt.Println("♻️  Force flag detected. Purging existing TFE resources...")
-			_ = exec.Command(engine, "rm", "-f", "hal-tfe", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio").Run()
+			// 🎯 Included the proxy in the teardown list
+			_ = exec.Command(engine, "rm", "-f", "hal-tfe", "hal-tfe-proxy", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio").Run()
 		}
 
 		fmt.Printf("🚀 Deploying Terraform Enterprise %s (PG: %s, Redis: %s) via %s...\n", tfeVersion, pgVersion, redisVersion, engine)
@@ -103,7 +109,7 @@ var deployCmd = &cobra.Command{
 		time.Sleep(3 * time.Second)
 		_ = exec.Command(engine, "exec", "hal-tfe-minio", "sh", "-c", "mkdir -p /data/tfe-data").Run()
 
-		// 8. Deploy TFE Core
+		// 8. Deploy TFE Core (NO EXPOSED HOST PORTS!)
 		fmt.Println("⚙️  Booting TFE Core Application (This requires heavy compute)...")
 		tfeArgs := []string{
 			"run", "-d",
@@ -111,8 +117,6 @@ var deployCmd = &cobra.Command{
 			"--network", "hal-net",
 			"--privileged",
 			"--add-host", "hal-tfe:127.0.0.1",
-			"-p", "8080:8080",
-			"-p", "8443:8443",
 			"-v", "/var/run/docker.sock:/var/run/docker.sock",
 		}
 
@@ -125,14 +129,14 @@ var deployCmd = &cobra.Command{
 
 		tfeArgs = append(tfeArgs,
 			"-e", "TFE_OPERATIONAL_MODE=external",
-			"-e", "TFE_HOSTNAME=tfe.localhost",
+			"-e", fmt.Sprintf("TFE_HOSTNAME=%s", tfeHostname),
 			"-e", "TFE_IA_HOSTNAME=hal-tfe",
 			"-e", "TFE_VAULT_ADDR=http://127.0.0.1:8200",
 			"-e", "TFE_VAULT_DISABLE_MLOCK=true",
 			"-e", "TFE_IA_INTERNAL_VAULT_ADDR=http://127.0.0.1:8200",
 			"-e", "TFE_RUN_PIPELINE_DOCKER_NETWORK=hal-net",
-			"-e", "TFE_HTTP_PORT=8080",
-			"-e", "TFE_HTTPS_PORT=8443",
+			"-e", "TFE_HTTP_PORT=8080", // 🎯 Unprivileged internal default
+			"-e", "TFE_HTTPS_PORT=8443", // 🎯 Unprivileged internal default
 			"-e", "TFE_TLS_CERT_FILE=/etc/ssl/tfe/cert.pem",
 			"-e", "TFE_TLS_KEY_FILE=/etc/ssl/tfe/key.pem",
 			"-e", "TFE_DISK_CACHE_VOLUME_NAME=hal-tfe-cache",
@@ -164,19 +168,60 @@ var deployCmd = &cobra.Command{
 			return
 		}
 
+		// 8.5 Deploy the Magic Redirect Fixer (AFTER TFE BOOTS!)
+		fmt.Println("⚙️  Deploying TFE Ingress Proxy (The Redirect Fixer)...")
+		nginxConfig := `events {}
+http {
+	server {
+		listen 8443 ssl;
+		server_name tfe.localhost;
+		
+		ssl_certificate /etc/ssl/tfe/cert.pem;
+		ssl_certificate_key /etc/ssl/tfe/key.pem;
+		
+		location / {
+			# 🎯 Direct pass. Works perfectly in both Docker and Podman!
+			proxy_pass https://hal-tfe:8443;
+			
+			proxy_set_header Host tfe.localhost;
+			proxy_set_header X-Forwarded-Host tfe.localhost:8443;
+			proxy_set_header X-Forwarded-Port 8443;
+			proxy_set_header X-Real-IP $remote_addr;
+			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+			proxy_set_header X-Forwarded-Proto https;
+			
+			# 🎯 Skip validating TFE's internal self-signed cert
+			proxy_ssl_verify off;
+			
+			# 🎯 Rewrite canonical redirects to the externally reachable :8443 endpoint.
+			proxy_redirect ~^https://tfe\.localhost(?::443)?(/.*)$ https://tfe.localhost:8443$1;
+			proxy_redirect ~^https://hal-tfe(?::8443)?(/.*)$ https://tfe.localhost:8443$1;
+		}
+	}
+}`
+		proxyConfPath := filepath.Join(homeDir, ".hal", "tfe-proxy.conf")
+		_ = os.WriteFile(proxyConfPath, []byte(nginxConfig), 0644)
+
+		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-proxy", "--network", "hal-net",
+			"-p", "8443:8443", // 🎯 Only the proxy exposes port 8443 to the host OS
+			"-v", fmt.Sprintf("%s:/etc/ssl/tfe:ro", certDir),
+			"-v", fmt.Sprintf("%s:/etc/nginx/nginx.conf:ro", proxyConfPath),
+			"nginx:alpine").Run()
+
 		// 9. THE HEALTH CHECK PHASE
 		fmt.Println("⏳ Waiting for TFE to initialize (WARNING: This can take 3-5 minutes!)...")
 
-		if err := waitForService("TFE", "https://tfe.localhost:8443/_health_check", 60); err != nil {
+		// This will naturally hit the Proxy, which routes to TFE
+		if err := waitForService("TFE", healthURL, 60); err != nil {
 			handleDockerFailure("hal-tfe", engine)
 			return
 		}
 
 		fmt.Println("\n✅ Terraform Enterprise 1.x is UP!")
 		fmt.Println("---------------------------------------------------------")
-		fmt.Println("🔗 UI Address:   https://tfe.localhost:8443")
-		if err := global.UpsertObsPromTargetIfRunning(engine, "terraform", []string{"hal-tfe:8080"}); err != nil {
-			fmt.Printf("⚠️  Observability target registration skipped: %v\n", err)
+		fmt.Printf("🔗 UI Address:   %s\n", uiURL)
+		for _, warning := range global.RegisterObsArtifacts("terraform", []string{"hal-tfe:8080"}) {
+			fmt.Printf("⚠️  %s\n", warning)
 		}
 		fmt.Println("⚠️  Note:        Accept the browser warning for the self-signed certificate.")
 		fmt.Println("\n💡 Next Step:")

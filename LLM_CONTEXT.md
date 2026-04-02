@@ -44,6 +44,14 @@ For product-level destroy flows, prefer deleting the known local ecosystem direc
 - Boundary target setup has version-sensitive API behavior around auth methods, grant strings, target host-source actions, and brokered credential source attachment.
 - Terraform Enterprise local deployment depends on a mocked PostgreSQL, Redis, and MinIO stack and uses local TLS material under `~/.hal/tfe-certs`.
 - Shared runtime helpers live under `internal/global`, especially engine detection and network management.
+- Observability product integration is centralized through shared artifact registration in `internal/global/obs.go`.
+    - Product deploy commands auto-register Prometheus targets when obs is running.
+    - Official dashboards are auto-downloaded and imported into Grafana folder `HAL`.
+    - Dashboard JSON is normalized so panel datasources resolve to local `hal-prometheus`.
+- Global teardown logic is centralized for `hal destroy` and `hal daisy`.
+    - KinD cleanup includes default cluster name `kind` plus `hal-*` clusters.
+    - Leftover KinD containers are removed by cluster label as a fallback.
+- `hal daisy` is a cinematic tribute teardown flow with minimum-duration rendering and reverse random memory-bar decay.
 
 ## Maintenance Rule
 

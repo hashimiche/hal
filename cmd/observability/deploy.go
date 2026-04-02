@@ -3,9 +3,12 @@ package observability
 import (
 	"fmt"
 	"hal/internal/global"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -61,36 +64,37 @@ var deployCmd = &cobra.Command{
 		_ = os.MkdirAll(targetsDir, 0755)
 		_ = os.MkdirAll(dashboardsDir, 0755)
 
-		promConfig := `global:
-  scrape_interval: 15s
-scrape_configs:
-  - job_name: 'vault'
-    metrics_path: '/v1/sys/metrics'
-    params:
-      format: ['prometheus']
-		file_sd_configs:
-			- files: ['/etc/prometheus/targets/vault.json']
-	- job_name: 'consul'
-		metrics_path: '/v1/agent/metrics'
-		params:
-			format: ['prometheus']
-		file_sd_configs:
-			- files: ['/etc/prometheus/targets/consul.json']
-	- job_name: 'nomad'
-		metrics_path: '/v1/metrics'
-		params:
-			format: ['prometheus']
-		file_sd_configs:
-			- files: ['/etc/prometheus/targets/nomad.json']
-	- job_name: 'boundary'
-		metrics_path: '/v1/metrics'
-		file_sd_configs:
-			- files: ['/etc/prometheus/targets/boundary.json']
-	- job_name: 'terraform-enterprise'
-		metrics_path: '/metrics'
-		file_sd_configs:
-			- files: ['/etc/prometheus/targets/terraform.json']
-`
+		promConfig := strings.Join([]string{
+			"global:",
+			"  scrape_interval: 15s",
+			"scrape_configs:",
+			"  - job_name: 'vault'",
+			"    metrics_path: '/v1/sys/metrics'",
+			"    params:",
+			"      format: ['prometheus']",
+			"    file_sd_configs:",
+			"      - files: ['/etc/prometheus/targets/vault.json']",
+			"  - job_name: 'consul'",
+			"    metrics_path: '/v1/agent/metrics'",
+			"    params:",
+			"      format: ['prometheus']",
+			"    file_sd_configs:",
+			"      - files: ['/etc/prometheus/targets/consul.json']",
+			"  - job_name: 'nomad'",
+			"    metrics_path: '/v1/metrics'",
+			"    params:",
+			"      format: ['prometheus']",
+			"    file_sd_configs:",
+			"      - files: ['/etc/prometheus/targets/nomad.json']",
+			"  - job_name: 'boundary'",
+			"    metrics_path: '/v1/metrics'",
+			"    file_sd_configs:",
+			"      - files: ['/etc/prometheus/targets/boundary.json']",
+			"  - job_name: 'terraform-enterprise'",
+			"    metrics_path: '/metrics'",
+			"    file_sd_configs:",
+			"      - files: ['/etc/prometheus/targets/terraform.json']",
+		}, "\n") + "\n"
 		_ = os.WriteFile(filepath.Join(configDir, "prometheus.yml"), []byte(promConfig), 0644)
 
 		lokiConfig := `auth_enabled: false
@@ -136,30 +140,33 @@ scrape_configs:
 `
 		_ = os.WriteFile(filepath.Join(configDir, "promtail-config.yaml"), []byte(promtailConfig), 0644)
 
-		grafanaDatasources := `apiVersion: 1
-datasources:
-  - name: Prometheus
-    type: prometheus
-    access: proxy
-    url: http://hal-prometheus:9090
-    isDefault: true
-  - name: Loki
-    type: loki
-    access: proxy
-    url: http://hal-loki:3100
-`
+		grafanaDatasources := strings.Join([]string{
+			"apiVersion: 1",
+			"datasources:",
+			"  - name: Prometheus",
+			"    uid: hal-prometheus",
+			"    type: prometheus",
+			"    access: proxy",
+			"    url: http://hal-prometheus:9090",
+			"    isDefault: true",
+			"  - name: Loki",
+			"    uid: hal-loki",
+			"    type: loki",
+			"    access: proxy",
+			"    url: http://hal-loki:3100",
+		}, "\n") + "\n"
 		_ = os.WriteFile(filepath.Join(configDir, "datasources.yml"), []byte(grafanaDatasources), 0644)
 
 		grafanaDashboardsProvisioning := `apiVersion: 1
 providers:
-	- name: 'hal'
-		orgId: 1
-		folder: 'HAL'
-		type: file
-		disableDeletion: false
-		editable: true
-		options:
-			path: /var/lib/grafana/dashboards
+  - name: 'hal'
+    orgId: 1
+    folder: 'HAL'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
 `
 		_ = os.WriteFile(filepath.Join(configDir, "dashboards.yml"), []byte(grafanaDashboardsProvisioning), 0644)
 
@@ -180,6 +187,13 @@ providers:
 		bootContainer("Promtail", "run", "-d", "--name", "hal-promtail", "--network", "hal-net", "-v", "hal-vault-logs:/vault/logs:ro", "-v", filepath.Join(configDir, "promtail-config.yaml")+":/etc/promtail/config.yml", "grafana/promtail:"+promtailVer, "-config.file=/etc/promtail/config.yml")
 		bootContainer("Grafana", "run", "-d", "--name", "hal-grafana", "--network", "hal-net", "-p", "3000:3000", "-v", filepath.Join(configDir, "datasources.yml")+":/etc/grafana/provisioning/datasources/datasources.yml", "-v", filepath.Join(configDir, "dashboards.yml")+":/etc/grafana/provisioning/dashboards/dashboards.yml", "-v", dashboardsDir+":/var/lib/grafana/dashboards", "-e", "GF_AUTH_ANONYMOUS_ENABLED=true", "-e", "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin", "grafana/grafana:"+grafanaVer)
 
+		fmt.Println("⏳ Waiting for Prometheus, Loki, and Grafana health checks...")
+		if err := waitForObsHealth(engine); err != nil {
+			fmt.Printf("⚠️  Stack started but health checks are not fully ready yet: %v\n", err)
+			fmt.Println("   You can still check logs with: hal obs status")
+			return
+		}
+
 		fmt.Println()
 		fmt.Println("✅ Observability Stack Deployed Successfully!")
 		fmt.Println("---------------------------------------------------------")
@@ -187,9 +201,70 @@ providers:
 		fmt.Println("🔗 Prometheus: http://prometheus.localhost:9090")
 		fmt.Println("🔗 Loki API:   http://loki.localhost:3100/ready")
 		fmt.Println("---------------------------------------------------------")
-		fmt.Println("💡 Tip: Go to Grafana -> Dashboards -> New -> Import.")
-		fmt.Println("   Use HashiCorp official dashboard ID: 12904 for Vault!")
 	},
+}
+
+func waitForObsHealth(engine string) error {
+	timeout := time.After(90 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		promReady := probeHTTP("http://127.0.0.1:9090/-/ready")
+		lokiReady := probeHTTP("http://127.0.0.1:3100/ready")
+		grafanaReady := probeHTTP("http://127.0.0.1:3000/api/health")
+		allReady := promReady && lokiReady && grafanaReady
+
+		fmt.Printf("\r   readiness: Prometheus %s | Loki %s | Grafana %s   ", readinessLabel(promReady), readinessLabel(lokiReady), readinessLabel(grafanaReady))
+		if allReady {
+			fmt.Print("\n")
+			return nil
+		}
+
+		exitedContainer, stateErr := firstNonRunningObsContainer(engine)
+		if stateErr == nil && exitedContainer != "" {
+			fmt.Print("\n")
+			return fmt.Errorf("%s is not running", exitedContainer)
+		}
+
+		select {
+		case <-timeout:
+			fmt.Print("\n")
+			return fmt.Errorf("timeout while waiting for endpoints to report ready")
+		case <-ticker.C:
+		}
+	}
+}
+
+func readinessLabel(ok bool) string {
+	if ok {
+		return "ready"
+	}
+	return "starting"
+}
+
+func firstNonRunningObsContainer(engine string) (string, error) {
+	containers := []string{"hal-prometheus", "hal-loki", "hal-promtail", "hal-grafana"}
+	for _, c := range containers {
+		out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", c).CombinedOutput()
+		if err != nil {
+			return c, nil
+		}
+		if strings.TrimSpace(string(out)) != "running" {
+			return c, nil
+		}
+	}
+	return "", nil
+}
+
+func probeHTTP(url string) bool {
+	client := http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
 func init() {

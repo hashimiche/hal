@@ -139,8 +139,8 @@ var deployCmd = &cobra.Command{
 			fmt.Println("   🟢 Vault is successfully tethered to the global Consul Control Plane!")
 		}
 
-		if err := global.UpsertObsPromTargetIfRunning(engine, "vault", []string{"hal-vault:8200"}); err != nil {
-			fmt.Printf("⚠️  Observability target registration skipped: %v\n", err)
+		for _, warning := range global.RegisterObsArtifacts("vault", []string{"hal-vault:8200"}) {
+			fmt.Printf("⚠️  %s\n", warning)
 		}
 
 		fmt.Println("\n💡 Tip: Export your environment variables to use your local CLI:")

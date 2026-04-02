@@ -10,6 +10,7 @@ Assistant:
     hal nomad status
 
 Assistant: I report whether servers and clients are healthy before any workload submission.
+Assistant: If `hal obs deploy` is already up, I also mention Nomad target and dashboard registration are automatic.
 
 ## Example 2: Partial Recovery After Unstable Allocations
 

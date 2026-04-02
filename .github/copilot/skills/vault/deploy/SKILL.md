@@ -17,6 +17,13 @@ Handle hal vault deploy requests with a stable lifecycle pattern.
 
 - Confirm Vault is reachable after deployment.
 - Summarize UI/API endpoints and next steps.
+- If Grafana/Prometheus are already running, mention that Vault metrics target registration and dashboard import happen automatically.
+
+## Observability Notes
+
+- Deploy path now runs shared observability artifact registration.
+- Prometheus target file is written when obs is active.
+- Vault dashboard is downloaded/imported automatically into Grafana folder HAL (no manual import step needed).
 
 ## Edge Cases
 
