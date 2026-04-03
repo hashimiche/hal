@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 )
 
@@ -119,6 +121,10 @@ func EnsureGitLabCE(engine, version, rootPassword string) (bool, error) {
 		}
 	}
 
+	// 🎯 FIX: Resolve the forged certificate and mount it
+	homeDir, _ := os.UserHomeDir()
+	certPath := filepath.Join(homeDir, ".hal", "tfe-certs", "cert.pem")
+
 	args := []string{
 		"run", "-d", "--name", "hal-gitlab",
 		"--network", "hal-net",
@@ -126,6 +132,7 @@ func EnsureGitLabCE(engine, version, rootPassword string) (bool, error) {
 		"-p", "8080:8080",
 		"--shm-size", "256m",
 		"--privileged",
+		"-v", fmt.Sprintf("%s:/etc/gitlab/trusted-certs/tfe.localhost.crt:z", certPath), // 🎯 FIX: Inject CA
 		"-e", fmt.Sprintf("GITLAB_OMNIBUS_CONFIG=external_url 'http://gitlab.localhost:8080'; nginx['listen_port'] = 8080; nginx['listen_addresses'] = ['0.0.0.0', '[::]']; puma['port'] = 8081; gitlab_rails['initial_root_password'] = '%s';", rootPassword),
 		fmt.Sprintf("gitlab/gitlab-ce:%s", version),
 	}

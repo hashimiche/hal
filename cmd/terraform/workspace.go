@@ -90,24 +90,24 @@ var workspaceCmd = &cobra.Command{
 			return
 		}
 
-		token, err := integrations.GitLabPasswordToken("http://127.0.0.1:8080/oauth/token", "root", workspaceGitLabPassword)
+		vcsToken, err := integrations.GitLabPasswordToken("http://127.0.0.1:8080/oauth/token", "root", workspaceGitLabPassword)
 		if err != nil {
 			fmt.Printf("❌ Failed to retrieve GitLab API token: %v\n", err)
 			return
 		}
 
-		if err := ensureGitLabAllowsLocalWebhooks(token); err != nil {
+		if err := ensureGitLabAllowsLocalWebhooks(vcsToken); err != nil {
 			fmt.Printf("⚠️  Could not relax GitLab local webhook policy automatically: %v\n", err)
 			fmt.Println("   💡 TFE may fail to attach VCS webhooks until this is enabled in GitLab application settings.")
 		}
 
-		gitlabProjectID, webURL, err := ensureTFDemoProject(token)
+		gitlabProjectID, webURL, err := ensureTFDemoProject(vcsToken)
 		if err != nil {
 			fmt.Printf("❌ Failed to prepare Terraform demo repository: %v\n", err)
 			return
 		}
 
-		if err := seedTFDemoFiles(token, gitlabProjectID); err != nil {
+		if err := seedTFDemoFiles(vcsToken, gitlabProjectID); err != nil {
 			fmt.Printf("⚠️  Repository exists but demo files were not fully updated: %v\n", err)
 		}
 
@@ -135,24 +135,39 @@ var workspaceCmd = &cobra.Command{
 		})
 		if err != nil {
 			fmt.Printf("⚠️  TFE foundation bootstrap incomplete: %v\n", err)
-			fmt.Printf("   💡 Login to TFE UI (%s) with %s / %s, create a user token, export TFE_API_TOKEN, then rerun 'hal tf ws -e'.\n", tfeBaseURL, tfeAdminUsername, tfeAdminPassword)
+			fmt.Println("   💡 HAL could not mint a usable API token automatically from this TFE instance.")
 		} else {
 			tokenSourceHint = "✅ TFE app API token ready (cached for reuse)."
 		}
 
+		if tfeAPIToken != "" && strings.TrimSpace(tfeVCSOAuthTokenID) != "" {
+			valid, reason := isGitLabOAuthTokenIDUsable(strings.TrimSpace(tfeVCSOAuthTokenID))
+			if !valid {
+				fmt.Printf("⚠️  Ignoring provided GitLab OAuth token id '%s': %s\n", tfeVCSOAuthTokenID, reason)
+				tfeVCSOAuthTokenID = ""
+			}
+		}
+
 		if tfeAPIToken != "" && tfeVCSOAuthTokenID == "" {
 			fmt.Println("⚙️  Creating GitLab VCS token and wiring Terraform Enterprise OAuth automatically...")
-			gitlabPAT, patErr := createGitLabPAT(token)
-			if patErr != nil {
-				fmt.Printf("⚠️  Could not create GitLab PAT for TFE VCS wiring: %v\n", patErr)
-			} else {
-				oauthID, oauthErr := ensureTFEGitLabOAuthTokenID(tfeOrgName, gitlabPAT)
-				if oauthErr != nil {
-					fmt.Printf("⚠️  Could not auto-create TFE GitLab OAuth token id: %v\n", oauthErr)
+			oauthID, oauthErr := ensureTFEGitLabOAuthTokenID(tfeOrgName, vcsToken)
+			if oauthErr != nil {
+				fmt.Printf("⚠️  OAuth-access-token wiring failed, retrying with PAT fallback: %v\n", oauthErr)
+				gitlabPAT, patErr := createGitLabPAT(vcsToken)
+				if patErr != nil {
+					fmt.Printf("⚠️  Could not create GitLab PAT for TFE VCS wiring: %v\n", patErr)
 				} else {
-					tfeVCSOAuthTokenID = oauthID
-					fmt.Printf("✅ TFE GitLab OAuth token id ready: %s\n", tfeVCSOAuthTokenID)
+					oauthID, oauthErr = ensureTFEGitLabOAuthTokenID(tfeOrgName, gitlabPAT)
+					if oauthErr != nil {
+						fmt.Printf("⚠️  Could not auto-create TFE GitLab OAuth token id: %v\n", oauthErr)
+					} else {
+						tfeVCSOAuthTokenID = oauthID
+						fmt.Printf("✅ TFE GitLab OAuth token id ready: %s\n", tfeVCSOAuthTokenID)
+					}
 				}
+			} else {
+				tfeVCSOAuthTokenID = oauthID
+				fmt.Printf("✅ TFE GitLab OAuth token id ready: %s\n", tfeVCSOAuthTokenID)
 			}
 		}
 
@@ -161,6 +176,15 @@ var workspaceCmd = &cobra.Command{
 		} else {
 			repoIdentifier := fmt.Sprintf("root/%s", workspaceProjectPath)
 			workspaceURL, err := ensureTFEWorkspace(strings.ToLower(tfeOrgName), tfeProjectID, repoIdentifier)
+			if err != nil && strings.Contains(strings.ToLower(err.Error()), "failed to create webhook on repository") {
+				fmt.Println("⚠️  Webhook creation failed with current OAuth token; rotating token and retrying once...")
+				if refreshedID, rotateErr := ensureTFEGitLabOAuthTokenID(tfeOrgName, vcsToken); rotateErr == nil {
+					tfeVCSOAuthTokenID = refreshedID
+					workspaceURL, err = ensureTFEWorkspace(strings.ToLower(tfeOrgName), tfeProjectID, repoIdentifier)
+				} else {
+					fmt.Printf("⚠️  OAuth token rotation failed: %v\n", rotateErr)
+				}
+			}
 			if err != nil {
 				fmt.Printf("⚠️  TFE workspace bootstrap incomplete: %v\n", err)
 			} else {
@@ -174,7 +198,7 @@ var workspaceCmd = &cobra.Command{
 		fmt.Println("\n✅ Terraform workspace GitLab scenario prepared.")
 		fmt.Println("---------------------------------------------------------")
 		fmt.Printf("🔗 GitLab Repo: %s\n", webURL)
-		fmt.Println("   Login:       root / hal3000FTW")
+		fmt.Println("   Login:       root / hal9000FTW")
 		fmt.Println("🧭 Next:        Create a Git tag in GitLab to validate the end-to-end VCS-driven auto-apply workflow")
 		fmt.Println("---------------------------------------------------------")
 	},
@@ -260,6 +284,70 @@ func ensureTFEWorkspace(orgName, projectID, repoIdentifier string) (string, erro
 	return fmt.Sprintf("%s/app/organizations/%s/workspaces/%s", tfeBaseURL, orgName, tfeWorkspaceName), nil
 }
 
+func ensureTFEGitLabOAuthTokenID(orgName, gitlabToken string) (string, error) {
+	org := strings.ToLower(strings.TrimSpace(orgName))
+	if org == "" {
+		return "", fmt.Errorf("organization name cannot be empty")
+	}
+
+	clientID, err := ensureTFEGitLabOAuthClient(org)
+	if err != nil {
+		return "", err
+	}
+
+	// Remove any stale tokens first so workspace wiring always uses a fresh, known-good token.
+	_ = deleteOrgOAuthTokensForClient(org, clientID)
+
+	if err := setOAuthTokenStringOnClient(clientID, gitlabToken); err != nil {
+		return "", err
+	}
+
+	tokenID := ""
+	for i := 0; i < 10; i++ {
+		tokenID = findOrgOAuthTokenForClient(org, clientID)
+		if tokenID != "" {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	if tokenID == "" {
+		return "", fmt.Errorf("oauth token was not created after oauth-token-string update")
+	}
+
+	return tokenID, nil
+}
+
+func deleteOrgOAuthTokensForClient(orgName, clientID string) error {
+	listURL := fmt.Sprintf("%s/api/v2/organizations/%s/oauth-tokens", tfeBaseURL, orgName)
+	body, _, err := integrations.TFERequest("GET", listURL, tfeAPIToken, nil)
+	if err != nil {
+		return err
+	}
+
+	var listResp map[string]interface{}
+	_ = json.Unmarshal(body, &listResp)
+	data, _ := listResp["data"].([]interface{})
+	for _, item := range data {
+		token, _ := item.(map[string]interface{})
+		tokenID := strings.TrimSpace(fmt.Sprintf("%v", token["id"]))
+		if tokenID == "" || tokenID == "<nil>" {
+			continue
+		}
+
+		rel, _ := token["relationships"].(map[string]interface{})
+		oauthClient, _ := rel["oauth-client"].(map[string]interface{})
+		oauthClientData, _ := oauthClient["data"].(map[string]interface{})
+		if fmt.Sprintf("%v", oauthClientData["id"]) != clientID {
+			continue
+		}
+
+		delURL := fmt.Sprintf("%s/api/v2/oauth-tokens/%s", tfeBaseURL, tokenID)
+		_, _, _ = integrations.TFERequest("DELETE", delURL, tfeAPIToken, nil)
+	}
+
+	return nil
+}
+
 func createGitLabPAT(apiToken string) (string, error) {
 	expires := time.Now().AddDate(1, 0, 0).Format("2006-01-02")
 	name := fmt.Sprintf("hal-tfe-vcs-%d", time.Now().Unix())
@@ -282,33 +370,6 @@ func createGitLabPAT(apiToken string) (string, error) {
 	}
 
 	return token, nil
-}
-
-func ensureTFEGitLabOAuthTokenID(orgName, gitlabToken string) (string, error) {
-	org := strings.ToLower(strings.TrimSpace(orgName))
-	if org == "" {
-		return "", fmt.Errorf("organization name cannot be empty")
-	}
-
-	clientID, err := ensureTFEGitLabOAuthClient(org)
-	if err != nil {
-		return "", err
-	}
-
-	if existing := findOrgOAuthTokenForClient(org, clientID); existing != "" {
-		return existing, nil
-	}
-
-	if err := setOAuthTokenStringOnClient(clientID, gitlabToken); err != nil {
-		return "", err
-	}
-
-	tokenID := findOrgOAuthTokenForClient(org, clientID)
-	if tokenID == "" {
-		return "", fmt.Errorf("oauth token was not created after oauth-token-string update")
-	}
-
-	return tokenID, nil
 }
 
 func ensureTFEGitLabOAuthClient(orgName string) (string, error) {
@@ -398,17 +459,58 @@ func findOrgOAuthTokenForClient(orgName, clientID string) string {
 	var listResp map[string]interface{}
 	_ = json.Unmarshal(body, &listResp)
 	data, _ := listResp["data"].([]interface{})
+	selectedID := ""
+	selectedAt := time.Time{}
 	for _, item := range data {
 		token, _ := item.(map[string]interface{})
 		rel, _ := token["relationships"].(map[string]interface{})
 		oauthClient, _ := rel["oauth-client"].(map[string]interface{})
 		oauthClientData, _ := oauthClient["data"].(map[string]interface{})
 		if fmt.Sprintf("%v", oauthClientData["id"]) == clientID {
-			return fmt.Sprintf("%v", token["id"])
+			tokenID := strings.TrimSpace(fmt.Sprintf("%v", token["id"]))
+			if tokenID == "" || tokenID == "<nil>" {
+				continue
+			}
+
+			attrs, _ := token["attributes"].(map[string]interface{})
+			updatedAt := parseTFETime(fmt.Sprintf("%v", attrs["updated-at"]))
+			if updatedAt.IsZero() {
+				updatedAt = parseTFETime(fmt.Sprintf("%v", attrs["created-at"]))
+			}
+
+			if selectedID == "" {
+				selectedID = tokenID
+				selectedAt = updatedAt
+				continue
+			}
+
+			if !updatedAt.IsZero() {
+				if selectedAt.IsZero() || updatedAt.After(selectedAt) {
+					selectedID = tokenID
+					selectedAt = updatedAt
+				}
+			} else if selectedAt.IsZero() {
+				// Fall back to last-seen token when timestamps are missing.
+				selectedID = tokenID
+			}
 		}
 	}
 
-	return ""
+	return selectedID
+}
+
+func parseTFETime(raw string) time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "<nil>" {
+		return time.Time{}
+	}
+
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}
+	}
+
+	return t
 }
 
 func findOAuthClientForGitLab(body []byte) string {
@@ -435,6 +537,44 @@ func extractTFEDataID(body []byte) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprintf("%v", data["id"]))
+}
+
+func isGitLabOAuthTokenIDUsable(tokenID string) (bool, string) {
+	tokenURL := fmt.Sprintf("%s/api/v2/oauth-tokens/%s", tfeBaseURL, tokenID)
+	body, _, err := integrations.TFERequest("GET", tokenURL, tfeAPIToken, nil)
+	if err != nil {
+		return false, "token id not found or not readable"
+	}
+
+	var tokenResp map[string]interface{}
+	_ = json.Unmarshal(body, &tokenResp)
+	data, _ := tokenResp["data"].(map[string]interface{})
+	rel, _ := data["relationships"].(map[string]interface{})
+	oauthClient, _ := rel["oauth-client"].(map[string]interface{})
+	oauthClientData, _ := oauthClient["data"].(map[string]interface{})
+	clientID := fmt.Sprintf("%v", oauthClientData["id"])
+	if strings.TrimSpace(clientID) == "" || clientID == "<nil>" {
+		return false, "token is not linked to an oauth client"
+	}
+
+	clientURL := fmt.Sprintf("%s/api/v2/oauth-clients/%s", tfeBaseURL, clientID)
+	clientBody, _, clientErr := integrations.TFERequest("GET", clientURL, tfeAPIToken, nil)
+	if clientErr != nil {
+		return false, "unable to resolve oauth client for token"
+	}
+
+	var clientResp map[string]interface{}
+	_ = json.Unmarshal(clientBody, &clientResp)
+	clientData, _ := clientResp["data"].(map[string]interface{})
+	attrs, _ := clientData["attributes"].(map[string]interface{})
+	serviceProvider := strings.ToLower(fmt.Sprintf("%v", attrs["service-provider"]))
+	httpURL := strings.ToLower(fmt.Sprintf("%v", attrs["http-url"]))
+
+	if !strings.Contains(serviceProvider, "gitlab") && !strings.Contains(httpURL, "gitlab") {
+		return false, fmt.Sprintf("token belongs to non-GitLab oauth client (%s)", serviceProvider)
+	}
+
+	return true, ""
 }
 
 func ensureGitLabAllowsLocalWebhooks(apiToken string) error {
@@ -563,7 +703,7 @@ terraform-validate:
 func init() {
 	workspaceCmd.Flags().BoolVarP(&workspaceEnable, "enable", "e", false, "Bootstrap or reuse shared GitLab and configure a Terraform demo repository")
 	workspaceCmd.Flags().StringVar(&workspaceGitLabVersion, "gitlab-version", "18.10.1-ce.0", "Version of the GitLab CE image used for shared Terraform workspace setup")
-	workspaceCmd.Flags().StringVar(&workspaceGitLabPassword, "gitlab-root-password", "hal3000FTW", "Root password used to bootstrap GitLab when HAL starts it")
+	workspaceCmd.Flags().StringVar(&workspaceGitLabPassword, "gitlab-root-password", "hal9000FTW", "Root password used to bootstrap GitLab when HAL starts it")
 	workspaceCmd.Flags().StringVar(&workspaceProjectName, "project-name", "tfe-agent-demo", "GitLab project name for the Terraform workspace demo")
 	workspaceCmd.Flags().StringVar(&workspaceProjectPath, "project-path", "tfe-agent-demo", "GitLab project path for the Terraform workspace demo")
 	workspaceCmd.Flags().StringVar(&tfeOrgName, "tfe-org", "hal", "Terraform Enterprise organization name to bootstrap")
@@ -575,7 +715,7 @@ func init() {
 	workspaceCmd.Flags().StringVar(&tfeBaseURL, "tfe-url", "https://tfe.localhost:8443", "Terraform Enterprise base URL")
 	workspaceCmd.Flags().StringVar(&tfeAdminUsername, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
 	workspaceCmd.Flags().StringVar(&tfeAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
-	workspaceCmd.Flags().StringVar(&tfeAdminPassword, "tfe-admin-password", "hal3000FTW", "Initial TFE admin password used when bootstrapping via IACT")
+	workspaceCmd.Flags().StringVar(&tfeAdminPassword, "tfe-admin-password", "hal9000FTW", "Initial TFE admin password used when bootstrapping via IACT")
 
 	Cmd.AddCommand(workspaceCmd)
 }

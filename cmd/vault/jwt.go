@@ -159,7 +159,7 @@ var vaultJwtCmd = &cobra.Command{
 					"-p", "8080:8080",
 					"--shm-size", "256m",
 					"--privileged",
-					"-e", "GITLAB_OMNIBUS_CONFIG=external_url 'http://gitlab.localhost:8080'; nginx['listen_port'] = 8080; nginx['listen_addresses'] = ['0.0.0.0', '[::]']; puma['port'] = 8081; gitlab_rails['initial_root_password'] = 'hal3000FTW';",
+					"-e", "GITLAB_OMNIBUS_CONFIG=external_url 'http://gitlab.localhost:8080'; nginx['listen_port'] = 8080; nginx['listen_addresses'] = ['0.0.0.0', '[::]']; puma['port'] = 8081; gitlab_rails['initial_root_password'] = 'hal9000FTW';",
 					fmt.Sprintf("gitlab/gitlab-ce:%s", gitlabVersion),
 				}
 
@@ -313,7 +313,7 @@ var vaultJwtCmd = &cobra.Command{
 			fmt.Println("\n✅ Enterprise Secret Zero Environment Ready!")
 			fmt.Println("---------------------------------------------------------")
 			fmt.Println("🔗 GitLab UI:    http://gitlab.localhost:8080/root/secret-zero/-/pipelines")
-			fmt.Println("   Login:        root / hal3000FTW")
+			fmt.Println("   Login:        root / hal9000FTW")
 			fmt.Println("\n💡 THE DEMO WORKFLOW:")
 			fmt.Println("   1. A pipeline just automatically triggered on the 'main' branch.")
 			fmt.Println("   2. Check the logs: It FAILED because Vault rejected the JWT claims.")
@@ -343,7 +343,7 @@ func waitForGitLab(baseURL string, maxRetries int) error {
 }
 
 func getGitLabToken(urlStr string) string {
-	token, err := integrations.GitLabPasswordToken(urlStr, "root", "hal3000FTW")
+	token, err := integrations.GitLabPasswordToken(urlStr, "root", "hal9000FTW")
 	if err == nil {
 		return token
 	}

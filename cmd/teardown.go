@@ -18,6 +18,7 @@ type globalTeardownResult struct {
 
 func runGlobalTeardown() globalTeardownResult {
 	result := globalTeardownResult{}
+	containerEngine := detectContainerEngine()
 
 	kindClusters, err := listKindClusters()
 	if err != nil {
@@ -34,7 +35,7 @@ func runGlobalTeardown() globalTeardownResult {
 			}
 
 			// Best effort: if kind deletion leaves node containers behind, remove them by cluster label.
-			leftoverNodeIDs, err := listDockerContainerIDsByLabel("io.x-k8s.kind.cluster", cluster)
+			leftoverNodeIDs, err := listContainerIDsByLabel(containerEngine, "io.x-k8s.kind.cluster", cluster)
 			if err != nil {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("leftover kind container discovery for %q failed: %v", cluster, err))
 				continue
@@ -43,19 +44,19 @@ func runGlobalTeardown() globalTeardownResult {
 				continue
 			}
 			args := append([]string{"rm", "-f"}, leftoverNodeIDs...)
-			if err := exec.Command("docker", args...).Run(); err != nil {
+			if err := exec.Command(containerEngine, args...).Run(); err != nil {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("leftover kind container removal for %q failed: %v", cluster, err))
 			}
 		}
 	}
 
-	dockerIDs, err := listHALDockerContainerIDs()
+	dockerIDs, err := listHALContainerIDs(containerEngine)
 	if err != nil {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("docker discovery failed: %v", err))
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%s discovery failed: %v", containerEngine, err))
 	} else if len(dockerIDs) > 0 {
 		args := append([]string{"rm", "-f"}, dockerIDs...)
-		if err := exec.Command("docker", args...).Run(); err != nil {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("docker container removal failed: %v", err))
+		if err := exec.Command(containerEngine, args...).Run(); err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s container removal failed: %v", containerEngine, err))
 		} else {
 			result.DockerContainersRemoved = len(dockerIDs)
 		}
@@ -113,9 +114,24 @@ func isHALKindCluster(name string) bool {
 	return name == "kind" || name == "hal-k8s" || strings.HasPrefix(name, "hal-")
 }
 
-func listDockerContainerIDsByLabel(labelKey string, labelValue string) ([]string, error) {
+func detectContainerEngine() string {
+	if engine, err := global.DetectEngine(); err == nil {
+		if strings.Contains(engine, "podman") {
+			return "podman"
+		}
+		return "docker"
+	}
+
+	if _, err := exec.LookPath("podman"); err == nil {
+		return "podman"
+	}
+
+	return "docker"
+}
+
+func listContainerIDsByLabel(engine, labelKey string, labelValue string) ([]string, error) {
 	filter := fmt.Sprintf("label=%s=%s", labelKey, labelValue)
-	out, err := exec.Command("docker", "ps", "-a", "--filter", filter, "--format", "{{.ID}}").CombinedOutput()
+	out, err := exec.Command(engine, "ps", "-a", "--filter", filter, "--format", "{{.ID}}").CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -131,8 +147,8 @@ func listDockerContainerIDsByLabel(labelKey string, labelValue string) ([]string
 	return ids, nil
 }
 
-func listHALDockerContainerIDs() ([]string, error) {
-	out, err := exec.Command("docker", "ps", "-a", "--format", "{{.ID}} {{.Names}}").CombinedOutput()
+func listHALContainerIDs(engine string) ([]string, error) {
+	out, err := exec.Command(engine, "ps", "-a", "--format", "{{.ID}} {{.Names}}").CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}

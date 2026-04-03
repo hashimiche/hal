@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
+	"time"
 
 	"hal/internal/global"
 	"hal/internal/integrations"
@@ -37,7 +39,10 @@ func ensureTFEFoundation(engine string, cfg tfeFoundationConfig) (string, string
 	}
 
 	if token == "" {
-		autoToken, err := bootstrapTFEAPITokenFromIACT(engine, cfg.BaseURL, cfg.AdminUsername, cfg.AdminEmail, cfg.AdminPassword)
+		// Best-effort warmup to reduce startup races without blocking the CLI for minutes.
+		_ = waitForTFECoreReadiness(engine, 30*time.Second)
+
+		autoToken, err := bootstrapTFEAPIToken(engine, cfg.BaseURL, cfg.AdminUsername, cfg.AdminEmail, cfg.AdminPassword)
 		if err != nil {
 			return "", "", err
 		}
@@ -51,6 +56,62 @@ func ensureTFEFoundation(engine string, cfg tfeFoundationConfig) (string, string
 	}
 
 	return token, projectID, nil
+}
+
+func waitForTFECoreReadiness(engine string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		vaultReady := exec.Command(
+			engine,
+			"exec",
+			"hal-tfe",
+			"bash",
+			"-lc",
+			"VAULT_ADDR=http://127.0.0.1:8200 vault status -format=json 2>/dev/null | grep -q '\"sealed\":false'",
+		).Run() == nil
+
+		archivistReady := exec.Command(
+			engine,
+			"exec",
+			"hal-tfe",
+			"bash",
+			"-lc",
+			"(echo >/dev/tcp/127.0.0.1/7675) >/dev/null 2>&1",
+		).Run() == nil
+
+		if vaultReady && archivistReady {
+			return nil
+		}
+
+		time.Sleep(2 * time.Second)
+	}
+
+	return nil
+}
+
+func bootstrapTFEAPIToken(engine, baseURL, username, email, password string) (string, error) {
+	if token, err := bootstrapTFEAPITokenFromAdminCLI(engine); err == nil {
+		if isTFEAPITokenUsable(baseURL, token) {
+			return token, nil
+		}
+	}
+
+	return bootstrapTFEAPITokenFromIACT(engine, baseURL, username, email, password)
+}
+
+func bootstrapTFEAPITokenFromAdminCLI(engine string) (string, error) {
+	out, err := exec.Command(engine, "exec", "hal-tfe", "tfectl", "admin", "api-token", "generate", "--description", "hal-auto-foundation", "--ttl", "720").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate admin api token: %s", strings.TrimSpace(string(out)))
+	}
+
+	token := extractHexToken(string(out))
+	if token == "" {
+		return "", fmt.Errorf("admin api token output did not include token")
+	}
+
+	return token, nil
 }
 
 func isTFEAPITokenUsable(baseURL, token string) bool {
@@ -89,10 +150,15 @@ func bootstrapTFEAPITokenFromIACT(engine, baseURL, username, email, password str
 	resp := strings.TrimSpace(string(body))
 	respLower := strings.ToLower(resp)
 	if status == 401 || status == 409 || status == 422 || strings.Contains(respLower, "already") || strings.Contains(respLower, "exists") || strings.Contains(respLower, "not allowed") {
-		return "", fmt.Errorf("initial admin already exists; login to TFE with %s / %s and create a user token, then export TFE_API_TOKEN", username, password)
+		return "", fmt.Errorf("initial admin bootstrap not available on this instance; automatic token generation also failed")
 	}
 
 	return "", fmt.Errorf("initial admin bootstrap failed (%d): %s", status, resp)
+}
+
+func extractHexToken(raw string) string {
+	tokenPattern := regexp.MustCompile(`\b[a-fA-F0-9]{64}\b`)
+	return strings.TrimSpace(tokenPattern.FindString(raw))
 }
 
 func ensureTFEOrgAndProject(baseURL, apiToken, orgName, projectName string) (string, error) {
@@ -108,7 +174,11 @@ func ensureTFEOrgAndProject(baseURL, apiToken, orgName, projectName string) (str
 	orgBody, orgStatus, orgErr := integrations.TFERequest("GET", orgURL, apiToken, nil)
 	if orgErr != nil {
 		if orgStatus != 404 {
-			return "", fmt.Errorf("organization lookup failed: %s", strings.TrimSpace(string(orgBody)))
+			detail := strings.TrimSpace(string(orgBody))
+			if detail == "" {
+				detail = orgErr.Error()
+			}
+			return "", fmt.Errorf("organization lookup failed (status %d): %s", orgStatus, detail)
 		}
 
 		createOrgPayload := map[string]interface{}{

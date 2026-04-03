@@ -278,7 +278,15 @@ func randomIndexByState(barState []bool, state bool, rng *rand.Rand) int {
 }
 
 func runPlainDaisy() {
-	_ = runGlobalTeardown()
+	result := runGlobalTeardown()
+	if len(result.Warnings) > 0 {
+		fmt.Println("HAL disconnect completed with warnings:")
+		for _, warning := range result.Warnings {
+			fmt.Printf(" - %s\n", warning)
+		}
+		return
+	}
+
 	fmt.Println("HAL has been gracefully disconnected.")
 }
 
