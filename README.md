@@ -58,6 +58,9 @@ hal terraform status
 
 ## Core Command Map
 
+This section is intentionally a curated quick map. Keep it focused on common workflows.
+For the full, exact command surface, use `hal --help` and `hal <product> --help`.
+
 ### Vault
 
 - `hal vault deploy`
@@ -111,7 +114,7 @@ Notes:
 
 `hal vault k8s` deploys a KinD + Vault Secrets Operator lab with a direct endpoint:
 
-- http://127.0.0.1:8088
+- http://web.localhost:8088
 
 No `kubectl port-forward` is required in the standard flow.
 
@@ -135,8 +138,10 @@ No `kubectl port-forward` is required in the standard flow.
 - Consul: http://consul.localhost:8500
 - Boundary: http://boundary.localhost:9200
 - Terraform Enterprise: https://tfe.localhost:8443
-- Grafana: http://localhost:3000
-- Vault K8s demo: http://127.0.0.1:8088
+- Grafana: http://grafana.localhost:3000
+- Prometheus: http://prometheus.localhost:9090
+- Loki: http://loki.localhost:3100/ready
+- Vault K8s demo: http://web.localhost:8088
 
 ## Development
 
