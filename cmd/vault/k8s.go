@@ -118,7 +118,7 @@ var vaultK8sCmd = &cobra.Command{
 			}
 
 			if proxyServiceReady {
-				fmt.Printf("  ✅ Demo Endpoint : http://127.0.0.1:8088\n")
+				fmt.Printf("  ✅ Demo Endpoint : http://web.localhost:8088\n")
 			} else {
 				fmt.Printf("  ❌ Demo Endpoint : Not exposed yet\n")
 			}
@@ -140,7 +140,7 @@ var vaultK8sCmd = &cobra.Command{
 				fmt.Println("   To deploy KinD, VSO, and wire up Vault, run:")
 				fmt.Println("   hal vault k8s --enable [--csi]")
 			} else if clusterRunning && vsoInstalled && (k8sMounted || jwtMounted) && proxyServiceReady {
-				fmt.Println("   Demo is ready at: http://127.0.0.1:8088")
+				fmt.Println("   Demo is ready at: http://web.localhost:8088")
 				fmt.Println("   No kubectl port-forward needed.")
 				fmt.Println("\n   To completely remove this cluster and clean Vault, run:")
 				fmt.Println("   hal vault k8s --disable")
@@ -743,7 +743,7 @@ spec:
 			fmt.Println("\n✅ Kubernetes Secret Zero Environment Ready!")
 			fmt.Println("---------------------------------------------------------")
 			fmt.Printf("🌐 [%s]\n", modeTitle)
-			fmt.Println("   Endpoint: http://127.0.0.1:8088")
+			fmt.Println("   Endpoint: http://web.localhost:8088")
 			fmt.Println("   Backend:  2 replicas behind nginx reverse proxy")
 			fmt.Printf("   %s\n", modeDetail)
 			fmt.Printf("   %s\n", modeDetail2)

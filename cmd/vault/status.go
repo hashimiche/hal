@@ -40,7 +40,7 @@ var vaultStatusCmd = &cobra.Command{
 			fmt.Println("\n💡 Tip: Deploy the core Vault instance first to see API health.")
 			return
 		} else if vaultStatus == "running" {
-			fmt.Println("  🟢 hal-vault          : Up   (127.0.0.1:8200)")
+			fmt.Println("  🟢 hal-vault          : Up   (vault.localhost:8200)")
 		} else {
 			fmt.Printf("  🟡 hal-vault          : %s\n", strings.ToUpper(vaultStatus))
 			fmt.Println("\n  📜 Fetching recent crash logs...")

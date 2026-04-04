@@ -350,7 +350,7 @@ func bootstrapBoundarySSH(targetIP string) error {
 
 	fmt.Println("✅ Boundary SSH target successfully bootstrapped!")
 	fmt.Println("\n💡 Test your access:")
-	fmt.Println("   1. Log in to UI (http://127.0.0.1:9200)")
+	fmt.Println("   1. Log in to UI (http://boundary.localhost:9200)")
 	fmt.Println("   2. Change Scope to 'hal-academy-ssh'")
 	fmt.Println("   3. Auth Method: ssh-lab-auth")
 	fmt.Println("   4. Login as 'ssh-operator' or 'ssh-auditor' (Password: password)")

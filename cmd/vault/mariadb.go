@@ -49,7 +49,7 @@ var vaultMariadbCmd = &cobra.Command{
 
 			// Output Status
 			if dbExists {
-				fmt.Printf("  ✅ MariaDB       : Active (127.0.0.1:3306)\n")
+				fmt.Printf("  ✅ MariaDB       : Active (mariadb.localhost:3306)\n")
 			} else {
 				fmt.Printf("  ❌ MariaDB       : Not running\n")
 			}
@@ -229,14 +229,14 @@ var vaultMariadbCmd = &cobra.Command{
 
 			fmt.Println("\n✅ Enterprise Dynamic Database Credentials Generated!")
 			fmt.Println("---------------------------------------------------------")
-			fmt.Println("🔗 Database Host: 127.0.0.1:3306")
+			fmt.Println("🔗 Database Host: mariadb.localhost:3306")
 			fmt.Println("👤 JIT Username:  " + username)
 			fmt.Println("🔑 JIT Password:  " + password)
 			fmt.Println("\n💡 THE SECURE WORKFLOW:")
 			fmt.Println("   1. A least-privileged 'vaultadmin' account was created.")
 			fmt.Println("   2. Vault immediately rotated the 'vaultadmin' password. Nobody knows it!")
 			fmt.Println("   3. Vault used that account to dynamically create the JIT user above.")
-			fmt.Println("   4. Try logging in: `mysql -h 127.0.0.1 -P 3306 -u " + username + " -p" + password + "`")
+			fmt.Println("   4. Try logging in: `mysql -h mariadb.localhost -P 3306 -u " + username + " -p" + password + "`")
 			fmt.Println("   5. This user has DBA privileges and will self-destruct in 1 hour.")
 			fmt.Println("---------------------------------------------------------")
 		}

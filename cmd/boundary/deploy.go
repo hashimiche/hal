@@ -128,7 +128,7 @@ var deployCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Println("✅ Boundary Controller & Worker are up!")
 		fmt.Println("---------------------------------------------------------")
-		fmt.Println("   🔗 UI Address: http://127.0.0.1:9200")
+		fmt.Println("   🔗 UI Address: http://boundary.localhost:9200")
 		fmt.Println("   👤 Login:      admin / password")
 		if boundaryJoinConsul {
 			fmt.Println("   🟢 Tethered:   Global Consul Control Plane")

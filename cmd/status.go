@@ -26,6 +26,12 @@ var statusCmd = &cobra.Command{
 			fmt.Println("[DEBUG] Reading global state to determine status...")
 		}
 
+		obsRunning := checkContainer(engine, "hal-grafana")
+		obsEndpoint := "-"
+		if obsRunning {
+			obsEndpoint = "multiple (see components)"
+		}
+
 		type svcStatus struct {
 			name     string
 			container string
@@ -40,7 +46,7 @@ var statusCmd = &cobra.Command{
 			{name: "Nomad", container: "hal-nomad", running: checkMultipass("hal-nomad"), endpoint: "Multipass VM"},
 			{name: "Boundary", container: "hal-boundary", running: checkContainer(engine, "hal-boundary"), endpoint: "http://boundary.localhost:9200"},
 			{name: "TFE", container: "hal-tfe", running: checkContainer(engine, "hal-tfe"), endpoint: "https://tfe.localhost:8443"},
-			{name: "Observability", container: "hal-grafana", running: checkContainer(engine, "hal-grafana"), endpoint: "http://localhost:3000"},
+			{name: "Observability", container: "hal-grafana", running: obsRunning, endpoint: obsEndpoint},
 		}
 
 		for i := range services {
@@ -110,7 +116,28 @@ func printProductFeatureStatus(engine, productName string, running bool) {
 	case "Consul":
 		fmt.Printf("   ↳ %-8s %s\n", "core", boolState(running))
 	case "Observability":
-		fmt.Printf("   ↳ %-8s %s\n", "core", boolState(running))
+		printObsFeatureStatus(engine)
+	}
+}
+
+func printObsFeatureStatus(engine string) {
+	features := []struct {
+		name      string
+		container string
+		endpoint  string
+	}{
+		{name: "grafana", container: "hal-grafana", endpoint: "http://grafana.localhost:3000"},
+		{name: "prometheus", container: "hal-prometheus", endpoint: "http://prometheus.localhost:9090"},
+		{name: "loki", container: "hal-loki", endpoint: "http://loki.localhost:3100/ready"},
+	}
+
+	for _, f := range features {
+		enabled := checkContainer(engine, f.container)
+		if enabled {
+			fmt.Printf("   ↳ %-10s enabled (%s)\n", f.name, f.endpoint)
+		} else {
+			fmt.Printf("   ↳ %-10s disabled\n", f.name)
+		}
 	}
 }
 

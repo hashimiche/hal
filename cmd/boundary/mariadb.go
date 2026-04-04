@@ -262,7 +262,7 @@ func linkBoundaryToVault() error {
 		return fmt.Errorf("failed to find auth method lab-auth")
 	}
 
-	fmt.Printf("\n🖥️  Success! Run:\n1. BOUNDARY_AUTHENTICATE_PASSWORD_PASSWORD=password boundary authenticate password -addr http://127.0.0.1:9200 -auth-method-id %s -login-name dba-user\n2. boundary connect mysql -addr http://127.0.0.1:9200 -target-id %s\n", authID, targetID)
+	fmt.Printf("\n🖥️  Success! Run:\n1. BOUNDARY_AUTHENTICATE_PASSWORD_PASSWORD=password boundary authenticate password -addr http://boundary.localhost:9200 -auth-method-id %s -login-name dba-user\n2. boundary connect mysql -addr http://boundary.localhost:9200 -target-id %s\n", authID, targetID)
 	return nil
 }
 

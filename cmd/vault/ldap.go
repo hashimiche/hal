@@ -55,13 +55,13 @@ var vaultLdapCmd = &cobra.Command{
 
 			// Output Status
 			if ldapExists {
-				fmt.Printf("  ✅ OpenLDAP      : Active (ldap://localhost:1389)\n")
+				fmt.Printf("  ✅ OpenLDAP      : Active (ldap://ldap.localhost:1389)\n")
 			} else {
 				fmt.Printf("  ❌ OpenLDAP      : Not running\n")
 			}
 
 			if uiExists {
-				fmt.Printf("  ✅ phpLDAPadmin  : Active (https://localhost:8082)\n")
+				fmt.Printf("  ✅ phpLDAPadmin  : Active (https://phpldapadmin.localhost:8082)\n")
 			} else {
 				fmt.Printf("  ❌ phpLDAPadmin  : Not running\n")
 			}
@@ -277,7 +277,7 @@ userPassword: {{.Password}}`,
 
 			fmt.Println("\n✅ LDAP Infrastructure & Vault Integration Complete!")
 			fmt.Println("---------------------------------------------------------")
-			fmt.Println("🔗 phpLDAPadmin UI: https://localhost:8082")
+			fmt.Println("🔗 phpLDAPadmin UI: https://phpldapadmin.localhost:8082")
 			fmt.Println("   Login DN: cn=admin,dc=hal,dc=local")
 			fmt.Println("   Password: (UNKNOWN! Vault rotated the root password!)")
 			fmt.Println("\n👤 Try logging into Vault as Bob (Reader):")

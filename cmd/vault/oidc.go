@@ -59,7 +59,7 @@ var vaultOidcCmd = &cobra.Command{
 
 			// Output Status
 			if kcExists {
-				fmt.Printf("  ✅ Keycloak IdP  : Active (http://127.0.0.1:8081)\n")
+				fmt.Printf("  ✅ Keycloak IdP  : Active (http://keycloak.localhost:8081)\n")
 			} else {
 				fmt.Printf("  ❌ Keycloak IdP  : Not running\n")
 			}

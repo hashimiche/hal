@@ -60,7 +60,9 @@ var statusCmd = &cobra.Command{
 			fmt.Println("   hal obs deploy")
 		} else if allRunning {
 			fmt.Println("   All systems green. Stack is capturing telemetry.")
-			fmt.Println("   🔗 Grafana UI: http://localhost:3000")
+			fmt.Println("   🔗 Grafana UI: http://grafana.localhost:3000")
+			fmt.Println("   🔗 Prometheus: http://prometheus.localhost:9090")
+			fmt.Println("   🔗 Loki API:   http://loki.localhost:3100/ready")
 		} else {
 			fmt.Println("   Environment is partially degraded. To safely reset, run:")
 			fmt.Println("   hal obs deploy --force")
