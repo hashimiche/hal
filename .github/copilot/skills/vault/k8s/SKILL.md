@@ -24,6 +24,12 @@ This skill covers the KinD + Vault Secrets Operator lab implemented by `hal vaul
 - Vault auth role: `auth/kubernetes/role/app1-role`
 - Vault Secrets Operator Helm release in namespace `vso`
 - Demo application in namespace `app1`
+- nginx reverse proxy endpoint at `http://127.0.0.1:8088` (no port-forward workflow)
+
+## Demo Modes
+
+- Native mode (default): `VaultStaticSecret` syncs `mysecret` to a Kubernetes secret, then app pods read it as `HAL_SECRET` env var and render local `index.html`.
+- CSI mode (`--csi`, Enterprise): `CSISecrets` projects the Vault secret via `csi.vso.hashicorp.com`; app pods read the mounted file and render local `index.html`.
 
 ## Workflow
 
@@ -54,6 +60,11 @@ Also verify the cluster side with CLI:
     kubectl get pods -n vso
     kubectl get pods -n app1
     helm list -n vso
+
+Mode-specific checks:
+
+    kubectl get vaultstaticsecret vso-mysecret -n app1
+    kubectl get csisecrets hal-csi-secrets -n app1
 
 ### Step 3: Present structured results
 

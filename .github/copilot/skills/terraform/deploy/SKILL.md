@@ -38,3 +38,8 @@ Handle hal terraform deploy requests with a stable lifecycle pattern.
 - This avoids requiring privileged host port 443 on rootless Podman.
 - User-facing URL remains `https://tfe.localhost:8443` in this mode.
 - Deploy validation should include both health endpoint and `/app` reachability (to catch redirect loops).
+- Deploy should preserve UI/log usability for archivist object links by keeping links on `:8443` in proxied responses.
+
+## Runtime Notes
+
+- TFE task-worker `agent-run` must keep `/tmp/terraform` writable; read-only cache mounts cause remote plan/apply failures when downloading Terraform binaries.

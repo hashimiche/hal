@@ -83,6 +83,17 @@ var vaultK8sCmd = &cobra.Command{
 				vsoInstalled = strings.Contains(string(vsoCheck), "vault-secrets-operator")
 			}
 
+			proxyServiceReady := false
+			if clusterRunning {
+				proxyCheck, _ := exec.Command("kubectl", "get", "svc", "hal-web-proxy", "-n", "app1", "-o", "name").Output()
+				proxyServiceReady = strings.TrimSpace(string(proxyCheck)) == "service/hal-web-proxy"
+			}
+
+			demoMode := "unknown"
+			if clusterRunning {
+				demoMode = detectK8sDemoMode()
+			}
+
 			// Output Status
 			if clusterRunning {
 				fmt.Printf("  ✅ KinD Cluster  : Active (Network: hal-net)\n")
@@ -106,20 +117,37 @@ var vaultK8sCmd = &cobra.Command{
 				fmt.Printf("  ❌ Vault Auth    : Not configured\n")
 			}
 
+			if proxyServiceReady {
+				fmt.Printf("  ✅ Demo Endpoint : http://127.0.0.1:8088\n")
+			} else {
+				fmt.Printf("  ❌ Demo Endpoint : Not exposed yet\n")
+			}
+
+			switch demoMode {
+			case "native":
+				fmt.Printf("  ✅ Demo Mode     : Native (VaultStaticSecret -> env var)\n")
+			case "csi":
+				fmt.Printf("  ✅ Demo Mode     : CSI (csi.vso.hashicorp.com projection)\n")
+			case "none":
+				fmt.Printf("  ❌ Demo Mode     : Not deployed\n")
+			default:
+				fmt.Printf("  ⚠️  Demo Mode     : Unknown/Partial\n")
+			}
+
 			// Smart Assistant Logic
 			fmt.Println("\n💡 Next Step:")
 			if !clusterRunning && !k8sMounted && !jwtMounted {
 				fmt.Println("   To deploy KinD, VSO, and wire up Vault, run:")
 				fmt.Println("   hal vault k8s --enable [--csi]")
-			} else if clusterRunning && vsoInstalled && (k8sMounted || jwtMounted) {
-				fmt.Println("   Demo is ready! Port-forward the web app:")
-				fmt.Println("   Native Sync: kubectl port-forward deployment/hal-web-native -n app1 8080:80")
-				fmt.Println("   CSI Driver : kubectl port-forward deployment/hal-web-csi -n app1 8080:80")
+			} else if clusterRunning && vsoInstalled && (k8sMounted || jwtMounted) && proxyServiceReady {
+				fmt.Println("   Demo is ready at: http://127.0.0.1:8088")
+				fmt.Println("   No kubectl port-forward needed.")
 				fmt.Println("\n   To completely remove this cluster and clean Vault, run:")
 				fmt.Println("   hal vault k8s --disable")
 			} else {
 				fmt.Println("   Environment is partially degraded. To safely reset, run:")
 				fmt.Println("   hal vault k8s --force [--csi]")
+				fmt.Println("   Then run: hal vault k8s --enable")
 			}
 			return
 		}
@@ -207,7 +235,7 @@ var vaultK8sCmd = &cobra.Command{
 			}
 
 			if global.DryRun {
-				fmt.Println("[DRY RUN] Would execute: kind create cluster --network hal-net")
+				fmt.Println("[DRY RUN] Would execute: kind create cluster --network hal-net (host 8088 -> cluster 30080)")
 				fmt.Println("[DRY RUN] Would execute: helm install vault-secrets-operator")
 				fmt.Println("[DRY RUN] Would call API to configure kubernetes auth and kv engine")
 				return
@@ -216,9 +244,17 @@ var vaultK8sCmd = &cobra.Command{
 			clusterCheck, _ := exec.Command("kind", "get", "clusters").Output()
 			if strings.Contains(string(clusterCheck), "kind") {
 				fmt.Println("⚡ KinD cluster already running, skipping boot sequence...")
+				fmt.Println("   ℹ️  Existing clusters may not expose host port 8088. Use --force once to recreate with HAL ingress mapping.")
 			} else {
 				fmt.Println("🚀 Booting KinD Cluster (attached directly to hal-net)...")
-				startCmd := exec.Command("kind", "create", "cluster")
+				kindConfigPath, cfgErr := writeKindConfigWithIngress()
+				if cfgErr != nil {
+					fmt.Printf("❌ Failed to prepare KinD config: %v\n", cfgErr)
+					return
+				}
+				defer os.Remove(kindConfigPath)
+
+				startCmd := exec.Command("kind", "create", "cluster", "--config", kindConfigPath)
 				env := os.Environ()
 				if isPodman {
 					env = append(env, "KIND_EXPERIMENTAL_PROVIDER=podman")
@@ -244,8 +280,11 @@ var vaultK8sCmd = &cobra.Command{
 				Type:    "kv",
 				Options: map[string]string{"version": "2"},
 			})
+			defaultSecret := "I'm sorry, Dave. I'm afraid I can't do that."
 			_, _ = client.Logical().Write("kv-k8s/data/app1", map[string]interface{}{
-				"data": map[string]interface{}{"mysecret": "I'm sorry, Dave. I'm afraid I can't do that."},
+				"data": map[string]interface{}{
+					"mysecret": defaultSecret,
+				},
 			})
 			policyDef := `
 path "kv-k8s/data/app1" { capabilities = ["read"] }
@@ -342,9 +381,16 @@ path "sys/license/status" { capabilities = ["read"] }
 				vaultIP = "hal-vault"
 			}
 
-			var appManifests string
+			modeTitle := "VSO ROLLING UPDATE DEMO"
+			modeDetail := "Secret is synced by VaultStaticSecret and injected as HAL_SECRET env var"
+			modeDetail2 := "index.html is rendered locally in the pod on startup"
 
+			var appManifests string
 			if csiMode {
+				modeTitle = "VSO CSI EPHEMERAL DEMO"
+				modeDetail = "Secret is mounted through csi.vso.hashicorp.com (no Kubernetes Secret sync)"
+				modeDetail2 = "index.html is rendered locally in the pod from the CSI file"
+
 				appManifests = fmt.Sprintf(`
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
@@ -372,70 +418,151 @@ spec:
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: CSISecrets
 metadata:
-  name: hal-csi-secrets
+	name: hal-csi-secrets
   namespace: app1
 spec:
-  vaultAuthRef:
-    name: default
-  secrets:
-    vaultStaticSecrets:
-      - mount: kv-k8s
-        path: app1
-        type: kv-v2
-  accessControl:
-    serviceAccountPattern: "app1-sa"
-    namespacePatterns: ["app1"]
-    podNamePatterns: ["^hal-web-csi.*"]
+	vaultAuthRef:
+		name: default
+	secrets:
+		vaultStaticSecrets:
+			- mount: kv-k8s
+				path: app1
+				type: kv-v2
+	accessControl:
+		serviceAccountPattern: "app1-sa"
+		namespacePatterns: ["app1"]
+		podNamePatterns: ["^hal-web-backend.*"]
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hal-web-csi
-  namespace: app1
+	name: hal-web-backend
+	namespace: app1
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: hal-web-csi
-  template:
-    metadata:
-      labels:
-        app: hal-web-csi
-    spec:
-      serviceAccountName: app1-sa
-      volumes:
-        - name: secrets
-          csi:
-            driver: csi.vso.hashicorp.com
-            volumeAttributes:
-              csiSecretsName: hal-csi-secrets
-              csiSecretsNamespace: app1
-      containers:
-        - name: web
-          image: nginx:alpine
-          ports:
-            - containerPort: 80
-          volumeMounts:
-            - name: secrets
-              mountPath: /mnt/secrets
-              readOnly: true
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              # Wait for the exact key file to be projected by the CSI driver
-              while [ ! -f /mnt/secrets/static_secret_0_mysecret ]; do sleep 1; done
-              
-              # Read the raw string directly
-              HAL_SECRET=$(cat /mnt/secrets/static_secret_0_mysecret)
-              
-              echo "<html><body style='background-color:#0d1a26;color:#00ffff;font-family:monospace;text-align:center;padding-top:20%%;'>
-              <h1>HAL Vault Systems</h1>
-              <h2>[CSI] Ephemeral Mount Successful!</h2>
-              <p style='color:#aaaaaa;'>Secret loaded securely from memory. Zero footprint in etcd.</p>
-              <p style='font-size:24px;color:#ff3333;'>$HAL_SECRET</p>
-              </body></html>" > /usr/share/nginx/html/index.html;
-              
-              nginx -g 'daemon off;'
+	replicas: 2
+	strategy:
+		type: RollingUpdate
+		rollingUpdate:
+			maxUnavailable: 0
+			maxSurge: 1
+	selector:
+		matchLabels:
+			app: hal-web-backend
+	template:
+		metadata:
+			labels:
+				app: hal-web-backend
+		spec:
+			serviceAccountName: app1-sa
+			volumes:
+				- name: secrets
+					csi:
+						driver: csi.vso.hashicorp.com
+						volumeAttributes:
+							csiSecretsName: hal-csi-secrets
+							csiSecretsNamespace: app1
+			containers:
+				- name: app
+					image: httpd:2.4-alpine
+					ports:
+						- containerPort: 80
+					volumeMounts:
+						- name: secrets
+							mountPath: /mnt/secrets
+							readOnly: true
+					command: ["/bin/sh", "-c"]
+					args:
+						- |
+							while [ ! -f /mnt/secrets/static_secret_0_mysecret ]; do sleep 1; done
+							HAL_SECRET=$(cat /mnt/secrets/static_secret_0_mysecret)
+							cat > /usr/local/apache2/htdocs/index.html <<EOF
+							<html>
+								<body style='font-family:system-ui;background:#f7fafc;color:#111827;padding:24px;'>
+									<h1>HAL Vault + VSO CSI</h1>
+									<p>Rendered in-pod. Secret projected by CSI driver.</p>
+									<pre style='background:#111827;color:#34d399;padding:12px;border-radius:8px;'>${HAL_SECRET}</pre>
+								</body>
+							</html>
+							EOF
+							exec httpd-foreground
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+	name: hal-web-backend
+	namespace: app1
+spec:
+	selector:
+		app: hal-web-backend
+	ports:
+		- port: 80
+			targetPort: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+	name: hal-web-proxy-conf
+	namespace: app1
+data:
+	default.conf: |
+		upstream hal_backend {
+			server hal-web-backend.app1.svc.cluster.local:80;
+		}
+		server {
+			listen 80;
+			location / {
+				proxy_http_version 1.1;
+				proxy_set_header Host $host;
+				proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+				proxy_set_header X-Forwarded-Proto $scheme;
+				proxy_pass http://hal_backend;
+			}
+		}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+	name: hal-web-proxy
+	namespace: app1
+spec:
+	replicas: 1
+	selector:
+		matchLabels:
+			app: hal-web-proxy
+	template:
+		metadata:
+			labels:
+				app: hal-web-proxy
+		spec:
+			containers:
+				- name: nginx
+					image: nginx:alpine
+					ports:
+						- containerPort: 80
+					volumeMounts:
+						- name: proxy-conf
+							mountPath: /etc/nginx/conf.d/default.conf
+							subPath: default.conf
+			volumes:
+				- name: proxy-conf
+					configMap:
+						name: hal-web-proxy-conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+	name: hal-web-proxy
+	namespace: app1
+spec:
+	type: NodePort
+	selector:
+		app: hal-web-proxy
+	ports:
+		- name: http
+			port: 80
+			targetPort: 80
+			nodePort: 30080
 `, vaultIP)
 			} else {
 				appManifests = fmt.Sprintf(`
@@ -443,94 +570,183 @@ spec:
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultConnection
 metadata:
-  name: default
-  namespace: app1
+	name: default
+	namespace: app1
 spec:
-  address: http://%s:8200
+	address: http://%s:8200
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
-  name: default
-  namespace: app1
+	name: default
+	namespace: app1
 spec:
-  method: kubernetes
-  mount: kubernetes
-  kubernetes:
-    role: app1-role
-    serviceAccount: app1-sa
-    audiences: ["vault"]
-  vaultConnectionRef: default
+	method: kubernetes
+	mount: kubernetes
+	kubernetes:
+		role: app1-role
+		serviceAccount: app1-sa
+		audiences: ["vault"]
+	vaultConnectionRef: default
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultStaticSecret
 metadata:
-  name: vso-mysecret
-  namespace: app1
+	name: vso-mysecret
+	namespace: app1
 spec:
-  type: kv-v2
-  mount: kv-k8s
-  path: app1
-  destination:
-    name: k8s-native-secret
-    create: true
-  rolloutRestartTargets:
-    - kind: Deployment
-      name: hal-web-native
+	type: kv-v2
+	mount: kv-k8s
+	path: app1
+	refreshAfter: 15s
+	destination:
+		name: hal-web-secret
+		create: true
+	rolloutRestartTargets:
+		- kind: Deployment
+			name: hal-web-backend
   vaultAuthRef: default
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hal-web-native
+	name: hal-web-backend
   namespace: app1
 spec:
-  replicas: 1
+	replicas: 2
+	strategy:
+		type: RollingUpdate
+		rollingUpdate:
+			maxUnavailable: 0
+			maxSurge: 1
   selector:
     matchLabels:
-      app: hal-web-native
+			app: hal-web-backend
   template:
     metadata:
       labels:
-        app: hal-web-native
+				app: hal-web-backend
     spec:
       serviceAccountName: app1-sa
       containers:
-        - name: web
-          image: nginx:alpine
+				- name: app
+					image: httpd:2.4-alpine
           ports:
             - containerPort: 80
-          env:
-            - name: HAL_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: k8s-native-secret
-                  key: mysecret
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              echo "<html><body style='background-color:#1a1a1a;color:#00ff00;font-family:monospace;text-align:center;padding-top:20%%;'>
-              <h1>HAL Vault Systems</h1>
-              <h2>[NATIVE] K8s Sync (Auto-Reload Active)</h2>
-              <p style='color:#aaaaaa;'>Secret injected directly into standard Kubernetes etcd via VSO.</p>
-              <p style='font-size:24px;color:#ff3333;'>$HAL_SECRET</p>
-              </body></html>" > /usr/share/nginx/html/index.html;
-              nginx -g 'daemon off;'
+					env:
+						- name: HAL_SECRET
+							valueFrom:
+								secretKeyRef:
+									name: hal-web-secret
+									key: mysecret
+					command: ["/bin/sh", "-c"]
+					args:
+						- |
+							cat > /usr/local/apache2/htdocs/index.html <<EOF
+							<html>
+								<body style='font-family:system-ui;background:#f7fafc;color:#111827;padding:24px;'>
+									<h1>HAL Vault + VSO</h1>
+									<p>Rendered in-pod. Secret injected via environment variable.</p>
+									<pre style='background:#111827;color:#34d399;padding:12px;border-radius:8px;'>${HAL_SECRET}</pre>
+								</body>
+							</html>
+							EOF
+							exec httpd-foreground
+---
+apiVersion: v1
+kind: Service
+metadata:
+	name: hal-web-backend
+	namespace: app1
+spec:
+	selector:
+		app: hal-web-backend
+	ports:
+		- port: 80
+			targetPort: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+	name: hal-web-proxy-conf
+	namespace: app1
+data:
+	default.conf: |
+		upstream hal_backend {
+			server hal-web-backend.app1.svc.cluster.local:80;
+		}
+		server {
+			listen 80;
+			location / {
+				proxy_http_version 1.1;
+				proxy_set_header Host $host;
+				proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+				proxy_set_header X-Forwarded-Proto $scheme;
+				proxy_pass http://hal_backend;
+			}
+		}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+	name: hal-web-proxy
+	namespace: app1
+spec:
+	replicas: 1
+	selector:
+		matchLabels:
+			app: hal-web-proxy
+	template:
+		metadata:
+			labels:
+				app: hal-web-proxy
+		spec:
+			containers:
+				- name: nginx
+					image: nginx:alpine
+					ports:
+						- containerPort: 80
+					volumeMounts:
+						- name: proxy-conf
+							mountPath: /etc/nginx/conf.d/default.conf
+							subPath: default.conf
+			volumes:
+				- name: proxy-conf
+					configMap:
+						name: hal-web-proxy-conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+	name: hal-web-proxy
+	namespace: app1
+spec:
+	type: NodePort
+	selector:
+		app: hal-web-proxy
+	ports:
+		- name: http
+			port: 80
+			targetPort: 80
+			nodePort: 30080
 `, vaultIP)
 			}
 
-			applyK8s(appManifests)
+			if !applyK8s(appManifests) {
+				fmt.Println("⚠️  Deployment stopped because Kubernetes manifests failed to apply.")
+				return
+			}
+
+			_ = exec.Command("kubectl", "rollout", "status", "deployment/hal-web-backend", "-n", "app1", "--timeout=180s").Run()
+			_ = exec.Command("kubectl", "rollout", "status", "deployment/hal-web-proxy", "-n", "app1", "--timeout=180s").Run()
 
 			fmt.Println("\n✅ Kubernetes Secret Zero Environment Ready!")
 			fmt.Println("---------------------------------------------------------")
-			if csiMode {
-				fmt.Println("🛡️  [CSI DRIVER DEMO]")
-				fmt.Println("   kubectl port-forward deployment/hal-web-csi -n app1 8080:80")
-			} else {
-				fmt.Println("🌐 [NATIVE SYNC DEMO]")
-				fmt.Println("   kubectl port-forward deployment/hal-web-native -n app1 8080:80")
-			}
-			fmt.Println("\n   Then open your browser to: http://localhost:8080")
+			fmt.Printf("🌐 [%s]\n", modeTitle)
+			fmt.Println("   Endpoint: http://127.0.0.1:8088")
+			fmt.Println("   Backend:  2 replicas behind nginx reverse proxy")
+			fmt.Printf("   %s\n", modeDetail)
+			fmt.Printf("   %s\n", modeDetail2)
 			fmt.Println("---------------------------------------------------------")
 		}
 	},
@@ -540,14 +756,74 @@ spec:
 // Helper Functions
 // -----------------------------------------------------------------------------
 
-func applyK8s(yamlContent string) {
+func applyK8s(yamlContent string) bool {
+	yamlContent = strings.ReplaceAll(yamlContent, "\t", "  ")
+
 	cmd := exec.Command("kubectl", "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(yamlContent)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		fmt.Printf("❌ Failed to apply K8s manifests: %v\nOutput: %s\n", err, string(out))
+		return false
 	} else {
 		fmt.Println("✅ Successfully applied Kubernetes manifests.")
+		return true
 	}
+}
+
+func writeKindConfigWithIngress() (string, error) {
+	tempFile, err := os.CreateTemp("", "hal-kind-*.yaml")
+	if err != nil {
+		return "", err
+	}
+
+	config := `kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+    - containerPort: 30080
+      hostPort: 8088
+      protocol: TCP
+`
+
+	if _, err := tempFile.WriteString(config); err != nil {
+		_ = tempFile.Close()
+		return "", err
+	}
+
+	if err := tempFile.Close(); err != nil {
+		return "", err
+	}
+
+	return tempFile.Name(), nil
+}
+
+func detectK8sDemoMode() string {
+	out, err := exec.Command(
+		"kubectl",
+		"get",
+		"deploy",
+		"hal-web-backend",
+		"-n",
+		"app1",
+		"-o",
+		"jsonpath={.spec.template.spec.volumes[?(@.csi.driver==\"csi.vso.hashicorp.com\")].name}",
+	).Output()
+	if err == nil && strings.TrimSpace(string(out)) != "" {
+		return "csi"
+	}
+
+	out, err = exec.Command("kubectl", "get", "vaultstaticsecret", "vso-mysecret", "-n", "app1", "-o", "name").Output()
+	if err == nil && strings.TrimSpace(string(out)) == "vaultstaticsecret.secrets.hashicorp.com/vso-mysecret" {
+		return "native"
+	}
+
+	out, err = exec.Command("kubectl", "get", "csisecrets", "hal-csi-secrets", "-n", "app1", "-o", "name").Output()
+	if err == nil && strings.TrimSpace(string(out)) == "csisecrets.secrets.hashicorp.com/hal-csi-secrets" {
+		return "csi"
+	}
+
+	return "none"
 }
 
 func init() {

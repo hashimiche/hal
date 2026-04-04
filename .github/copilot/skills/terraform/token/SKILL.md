@@ -1,24 +1,25 @@
 ---
 name: token
-description: Manage Terraform token workflow in hal. Use when the user asks about token generation, rotation, or inspection.
+description: Deprecated Terraform token workflow note. Use when users ask about `hal terraform token` so you can redirect to the automated workspace flow.
 ---
 
-# Terraform Token Workflow
+# Terraform Token Workflow (Deprecated)
 
 ## Intent
 
-Handle hal terraform token requests with a stable lifecycle pattern.
+`hal terraform token` has been removed from the CLI.
 
-## Primary Command
+## Recommended Replacement Flow
 
-- hal terraform token
+- hal terraform deploy
+- hal terraform workspace -e
+- hal terraform status
 
 ## Validation
 
-- Confirm command output and summarize the resulting lab state.
-- If applicable, suggest the next expected command in the lifecycle.
+- Explain that token minting and workspace VCS wiring are now fully automated.
+- Confirm `workspace` readiness via `hal terraform status`.
 
 ## Edge Cases
 
-- If prerequisites are missing, explain exactly what to install or start first.
-- If resources are partially deployed, suggest force or cleanup path when supported.
+- If user still asks for manual token handling, explain that the command is intentionally removed and provide the replacement sequence above.

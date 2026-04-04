@@ -43,7 +43,13 @@ For product-level destroy flows, prefer deleting the known local ecosystem direc
 
 - Boundary target setup has version-sensitive API behavior around auth methods, grant strings, target host-source actions, and brokered credential source attachment.
 - Terraform Enterprise local deployment depends on a mocked PostgreSQL, Redis, and MinIO stack and uses local TLS material under `~/.hal/tfe-certs`.
+    - Rootless Podman path uses `https://tfe.localhost:8443` through `hal-tfe-proxy`.
+    - Task worker agent-run config must keep `/tmp/terraform` writable (not read-only) so remote plans can download Terraform binaries.
+    - TFE API responses can emit archivist object links without `:8443`; proxy response rewriting keeps UI/raw plan/apply log links host-reachable.
 - Shared runtime helpers live under `internal/global`, especially engine detection and network management.
+- Vault k8s demo (`hal vault k8s`) now supports two explicit demo modes behind the same nginx endpoint (`http://127.0.0.1:8088`):
+    - Native mode: `VaultStaticSecret` sync to Kubernetes secret, injected as env var, HTML rendered in-pod.
+    - CSI mode (`--csi`, Enterprise): `CSISecrets` projection via `csi.vso.hashicorp.com`, HTML rendered from mounted file.
 - Observability product integration is centralized through shared artifact registration in `internal/global/obs.go`.
     - Product deploy commands auto-register Prometheus targets when obs is running.
     - Official dashboards are auto-downloaded and imported into Grafana folder `HAL`.

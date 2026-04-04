@@ -16,12 +16,14 @@ var consulStatusCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
 		if err != nil {
-			fmt.Printf("❌ Error: %v\n", err)
+			fmt.Printf("⚪ Error: %v\n", err)
 			return
 		}
 
 		fmt.Println("🔍 Checking Consul Control Plane Status...")
+		fmt.Printf("Engine: %s\n", engine)
 		fmt.Println()
+		fmt.Println("  [ Control Plane ]")
 
 		out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-consul").Output()
 		status := strings.TrimSpace(string(out))
@@ -29,10 +31,12 @@ var consulStatusCmd = &cobra.Command{
 		if err != nil {
 			fmt.Println("  ⚪ hal-consul : Down (hal consul deploy to start)")
 		} else if status == "running" {
-			fmt.Println("  ✅ hal-consul : Up   (http://consul.localhost:8500)")
+			fmt.Println("  🟢 hal-consul : Up   (http://consul.localhost:8500)")
 		} else {
-			fmt.Printf("  ⚠️  hal-consul : %s\n", strings.ToUpper(status))
+			fmt.Printf("  🟡 hal-consul : %s\n", strings.ToUpper(status))
 		}
+
+		fmt.Println("\n💡 Tip: Run 'hal consul deploy' to start/recover, then 'hal consul status' to verify.")
 	},
 }
 

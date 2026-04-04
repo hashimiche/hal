@@ -16,11 +16,12 @@ var statusCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
 		if err != nil {
-			fmt.Printf("❌ Error: %v\n", err)
+			fmt.Printf("⚪ Error: %v\n", err)
 			return
 		}
 
 		fmt.Println("🔍 Checking Observability (PLG) Status...")
+		fmt.Printf("Engine: %s\n", engine)
 		fmt.Println()
 
 		components := []struct {
@@ -45,25 +46,26 @@ var statusCmd = &cobra.Command{
 				allRunning = false
 			} else if status == "running" {
 				someExist = true
-				fmt.Printf("  ✅ %-15s : Up\n", c.Name)
+				fmt.Printf("  🟢 %-15s : Up\n", c.Name)
 			} else {
 				someExist = true
 				allRunning = false
-				fmt.Printf("  ⚠️  %-15s : %s\n", c.Name, strings.ToUpper(status))
+				fmt.Printf("  🟡 %-15s : %s\n", c.Name, strings.ToUpper(status))
 			}
 		}
 
-		fmt.Println("\n💡 Next Step:")
+		fmt.Println("\n💡 Tips:")
 		if !someExist {
 			fmt.Println("   To deploy the full PLG stack, run:")
 			fmt.Println("   hal obs deploy")
 		} else if allRunning {
-			fmt.Println("   All systems green! Stack is capturing telemetry.")
+			fmt.Println("   All systems green. Stack is capturing telemetry.")
 			fmt.Println("   🔗 Grafana UI: http://localhost:3000")
 		} else {
 			fmt.Println("   Environment is partially degraded. To safely reset, run:")
 			fmt.Println("   hal obs deploy --force")
 		}
+		fmt.Println("   Run 'hal obs status' after changes to confirm all PLG components are healthy.")
 	},
 }
 

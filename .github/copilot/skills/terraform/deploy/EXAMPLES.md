@@ -7,6 +7,7 @@ User: Deploy Terraform lab resources and confirm readiness.
 Assistant:
 
     hal terraform deploy
+    hal terraform workspace -e
     hal terraform status
 
 Assistant: I summarize provisioning success and any post-deploy steps required by this lab.
@@ -24,17 +25,17 @@ Assistant:
 
 Assistant: I use the second status check to confirm whether reconciliation fixed drift.
 
-## Example 3: Provision Then Configure Token Flow
+## Example 3: Provision Then Configure Workspace Automation
 
-User: Stand up Terraform lab and make sure token flow is configured.
+User: Stand up Terraform lab and wire end-to-end VCS automation.
 
 Assistant:
 
     hal terraform deploy
-    hal terraform token
+    hal terraform workspace -e
     hal terraform status
 
-Assistant: I verify both infrastructure availability and token-related readiness in one sequence.
+Assistant: I verify both infrastructure availability and workspace automation readiness in one sequence.
 
 ## Example 4: Podman Rootless Redirect Safety
 
@@ -57,3 +58,14 @@ Assistant:
     hal terraform deploy --configure-obs
 
 Assistant: This refreshes only the Prometheus target and Grafana dashboard artifacts without redeploying TFE.
+
+## Example 6: Remote Run Fails Early
+
+User: The run triggers, but plan/apply errors immediately.
+
+Assistant:
+
+    hal terraform deploy -f
+    hal terraform workspace -e
+
+Assistant: Deploy now patches the task-worker cache mount for writable Terraform downloads and preserves `:8443` archivist log links for UI/raw log access.

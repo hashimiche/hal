@@ -19,7 +19,7 @@ var vaultStatusCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
 		if err != nil {
-			fmt.Println("❌ Error: Container engine not running.")
+			fmt.Println("⚪ Error: Container engine not running.")
 			return
 		}
 
@@ -36,13 +36,13 @@ var vaultStatusCmd = &cobra.Command{
 
 		// 🎯 FIX: If err != nil, the container just doesn't exist
 		if err != nil {
-			fmt.Println("  ❌ hal-vault          : Down (hal vault deploy to start)")
+			fmt.Println("  ⚪ hal-vault          : Down (hal vault deploy to start)")
 			fmt.Println("\n💡 Tip: Deploy the core Vault instance first to see API health.")
 			return
 		} else if vaultStatus == "running" {
-			fmt.Println("  ✅ hal-vault          : Up   (127.0.0.1:8200)")
+			fmt.Println("  🟢 hal-vault          : Up   (127.0.0.1:8200)")
 		} else {
-			fmt.Printf("  ⚠️  hal-vault          : %s\n", strings.ToUpper(vaultStatus))
+			fmt.Printf("  🟡 hal-vault          : %s\n", strings.ToUpper(vaultStatus))
 			fmt.Println("\n  📜 Fetching recent crash logs...")
 
 			// We DO want stderr here so we can see why it crashed!
@@ -85,10 +85,10 @@ var vaultStatusCmd = &cobra.Command{
 				fmt.Printf("  ⚪ %-18s : Down (hal vault %s -e to enable)\n", f.Name, f.Command)
 			} else if status == "running" {
 				// Container is happy
-				fmt.Printf("  ✅ %-18s : Up   (hal vault %s -d to disable)\n", f.Name, f.Command)
+				fmt.Printf("  🟢 %-18s : Up   (hal vault %s -d to disable)\n", f.Name, f.Command)
 			} else {
 				// Container exists but is "exited", "paused", "created", etc.
-				fmt.Printf("  ⚠️  %-18s : %-4s (hal vault %s -f to reset)\n", f.Name, strings.ToUpper(status), f.Command)
+				fmt.Printf("  🟡 %-18s : %-4s (hal vault %s -f to reset)\n", f.Name, strings.ToUpper(status), f.Command)
 			}
 		}
 
@@ -100,7 +100,7 @@ var vaultStatusCmd = &cobra.Command{
 		resp, err := client.Get("http://127.0.0.1:8200/v1/sys/health")
 
 		if err != nil {
-			fmt.Println("  ⚠️  API is unreachable (Vault might still be booting up).")
+			fmt.Println("  🟡 API is unreachable (Vault might still be booting up).")
 			return
 		}
 		defer resp.Body.Close()
@@ -117,7 +117,7 @@ var vaultStatusCmd = &cobra.Command{
 				isUnsealed = true
 			}
 		} else {
-			fmt.Printf("  ✅ Reachable (HTTP %d), but couldn't parse health JSON.\n", resp.StatusCode)
+			fmt.Printf("  🟢 Reachable (HTTP %d), but couldn't parse health JSON.\n", resp.StatusCode)
 		}
 
 		// ==========================================
@@ -128,7 +128,7 @@ var vaultStatusCmd = &cobra.Command{
 			vaultClient, err := GetHealthyClient()
 
 			if err != nil {
-				fmt.Println("  ⚠️  Could not authenticate to Vault. Ensure VAULT_TOKEN is set.")
+				fmt.Println("  🟡 Could not authenticate to Vault. Ensure VAULT_TOKEN is set.")
 			} else {
 				// Auth Methods
 				auths, _ := vaultClient.Sys().ListAuth()
@@ -174,7 +174,7 @@ var vaultStatusCmd = &cobra.Command{
 				}
 			}
 		} else {
-			fmt.Println("\n  🔴 Vault is sealed. Run 'vault operator unseal' to check internal configurations.")
+			fmt.Println("\n  ⚪ Vault is sealed. Run 'vault operator unseal' to check internal configurations.")
 		}
 
 		fmt.Println("\n💡 Tip: Run 'hal vault <feature>' for a detailed micro-status check.")

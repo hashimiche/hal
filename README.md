@@ -1,84 +1,155 @@
-<div style="text-align: center;">
+<div align="center">
   <img src="hal_logo.png" alt="hal logo" width="200" height="200">
 </div>
 
-# HAL - Hashicorp Academy Labs
+# HAL - HashiCorp Academy Labs
 
-**HAL** is a fast, local orchestrator for HashiCorp product sandboxes. Built in Go, it instantly spins up complex, containerized lab environments (Vault, Boundary, Consul, Nomad, Terraform, and Observability) right on your local machine using Docker, KinD, and Multipass.
+HAL is a local DevOps lab orchestrator for HashiCorp products.
 
-No more writing massive `docker-compose` files just to test an OIDC integration or a Boundary target. Ask HAL to do it for you.
+It helps you stand up realistic local environments for Vault, Boundary, Consul, Nomad, Terraform Enterprise (FDO), and observability without hand-writing large compose/manifests for every demo.
 
-## 🚀 Installation
+## What HAL Does Well
 
-### macOS & Linux (Homebrew)
-The easiest way to install HAL is via our custom Homebrew tap:
+- Fast local product labs with sensible defaults.
+- Read-only first status UX (`hal <product>` defaults to status for most product commands).
+- Product + feature lifecycle patterns:
+  - Core products: `deploy`, `status`, `destroy`
+  - Feature flows: `--enable`, `--disable`, `--force`
+- Built-in integration scenarios (OIDC, JWT, K8s auth/VSO, Boundary targets, TFE workspace automation).
+
+## Installation
+
+### macOS and Linux (Homebrew)
 
 ```bash
 brew tap hashimiche/tap
 brew install hal
 ```
 
-### Windows & Manual Installation
-Download the pre-compiled binaries from the [Releases page](https://github.com/hashimiche/hal/releases).
+### Manual
 
----
+Download binaries from the Releases page:
 
-## 🧠 The "Smart Status" Architecture
+- https://github.com/hashimiche/hal/releases
 
-HAL is built around a **Read-Only First** philosophy. If you ever forget what is running, just type the name of the product. HAL will dynamically scan your Docker containers, Multipass VMs, and local APIs to give you a real-time dashboard and suggest your next move.
+## Prerequisites
 
-```text
-$ hal boundary mariadb
+Install the tools required by the labs you want to run:
 
-🔍 Checking Boundary MariaDB Target Status...
+- Docker or Podman (required for most flows)
+- KinD + kubectl + helm (required for `hal vault k8s`)
+- Multipass (required for `hal nomad` and `hal boundary ssh`)
 
-  ❌ MariaDB Target : Not deployed
+## Quick Start
 
-💡 Next Step:
-   hal boundary mariadb --enable
+```bash
+# Global snapshot
+hal status
+
+# Bring up Vault core
+hal vault deploy
+hal vault status
+
+# Bring up Terraform Enterprise local stack
+hal terraform deploy
+hal terraform workspace --enable
+hal terraform status
 ```
 
----
+## Core Command Map
 
-## 🛠️ Core Commands
+### Vault
 
-HAL operates on a strict **2-Tier Architecture**:
-1. **Tier 1 (Core Products):** Use explicit verbs (`deploy`, `destroy`, `status`) to spin up the heavy infrastructure.
-2. **Tier 2 (Features & Targets):** Use flags (`-e`, `-d`, `-f`) to attach integrations to the running products.
+- `hal vault deploy`
+- `hal vault status`
+- `hal vault destroy`
+- `hal vault oidc --enable`
+- `hal vault jwt --enable`
+- `hal vault k8s --enable`
+- `hal vault k8s --enable --csi` (Vault Enterprise)
 
-### 🔐 Vault
-Deploy a fully initialized and unsealed Vault instance.
-* `hal vault deploy` (Starts Core Vault)
-* `hal vault oidc -e` (Spins up Keycloak and configures Vault OIDC)
-* `hal vault k8s -e` (Spins up a KinD cluster and configures Kubernetes Auth)
-* `hal vault destroy` (Nukes everything)
+### Boundary
 
-### 🚪 Boundary
-Deploy a Boundary Control Plane and attach mock targets.
-* `hal boundary deploy` (Starts Controller + Postgres Backend)
-* `hal boundary mariadb -e` (Spins up a dummy MariaDB target)
-* `hal boundary ssh -e` (Spins up an Ubuntu Multipass VM target)
+- `hal boundary deploy`
+- `hal boundary status`
+- `hal boundary destroy`
+- `hal boundary mariadb --enable`
+- `hal boundary ssh --enable`
 
-### 🌍 Consul & Nomad
-Deploy a local Control Plane and tether Nomad to it.
-* `hal consul deploy` (Starts standalone Consul server)
-* `hal nomad deploy --join-consul` (Spins up Nomad VM and tethers it to Consul)
+### Consul
 
-### ☁️ Terraform
-Deploy a mock Terraform Enterprise (FDO) environment.
-* `hal terraform deploy` (Starts mock S3, Redis, and Postgres DB)
+- `hal consul deploy`
+- `hal consul status`
+- `hal consul destroy`
 
-### 📊 Observability (PLG Stack)
-Deploy a full telemetry stack to monitor your HashiCorp tools.
-* `hal obs deploy` (Starts Prometheus, Loki, Grafana, and Promtail)
+### Nomad
 
----
+- `hal nomad deploy`
+- `hal nomad status`
+- `hal nomad destroy`
+- `hal nomad job`
 
-## 📋 Prerequisites
-Depending on the labs you intend to run, HAL requires the following engines:
-* **Docker** or **Podman** (Required for almost everything)
-* **KinD** (Required for `hal vault k8s`)
-* **Multipass** (Required for `hal nomad` and `hal boundary ssh`)
+### Terraform Enterprise (FDO)
 
-## 🤝 Contributing
-Pull requests are welcome! If you want to add a new HashiCorp product or feature, please read the `LLM_CONTEXT.md` file to understand the CLI's state-machine architecture and UI guidelines.
+- `hal terraform deploy`
+- `hal terraform workspace --enable`
+- `hal terraform status`
+- `hal terraform destroy`
+
+Notes:
+
+- `hal terraform token` is removed. Workspace and token wiring are handled by the automated `workspace --enable` flow.
+- TFE local endpoint is `https://tfe.localhost:8443`.
+
+### Observability (PLG)
+
+- `hal obs deploy`
+- `hal obs status`
+- `hal obs destroy`
+
+## Vault K8s Demo Modes
+
+`hal vault k8s` deploys a KinD + Vault Secrets Operator lab with a direct endpoint:
+
+- http://127.0.0.1:8088
+
+No `kubectl port-forward` is required in the standard flow.
+
+### Native mode (default)
+
+- Uses `VaultStaticSecret`.
+- Syncs secret data to Kubernetes Secret.
+- Injects `HAL_SECRET` as env var into backend pods.
+- Backend renders local `index.html` at startup.
+
+### CSI mode (`--csi`, Enterprise)
+
+- Uses `CSISecrets` + `csi.vso.hashicorp.com`.
+- Projects secret data as an ephemeral CSI-mounted file.
+- Backend renders local `index.html` from projected data.
+- If Vault Enterprise is not detected, HAL falls back to native mode.
+
+## Useful Endpoints
+
+- Vault: http://vault.localhost:8200
+- Consul: http://consul.localhost:8500
+- Boundary: http://boundary.localhost:9200
+- Terraform Enterprise: https://tfe.localhost:8443
+- Grafana: http://localhost:3000
+- Vault K8s demo: http://127.0.0.1:8088
+
+## Development
+
+From repo root:
+
+```bash
+go build -o hal main.go
+go build ./...
+go test ./...
+```
+
+## Contributing
+
+Contributions are welcome.
+
+If you are changing command behavior or UX patterns, read `LLM_CONTEXT.md` and `.github/copilot-instructions.md` first so updates stay aligned with current architecture and operator guidance.

@@ -17,11 +17,12 @@ var statusCmd = &cobra.Command{
 
 		engine, err := global.DetectEngine()
 		if err != nil {
-			fmt.Printf("❌ Error: %v\n", err)
+			fmt.Printf("⚪ Error: %v\n", err)
 			return
 		}
 
 		fmt.Println("🔍 Checking Terraform Enterprise (FDO) Status...")
+		fmt.Printf("Engine: %s\n", engine)
 
 		components := []struct {
 			Name      string
@@ -41,30 +42,42 @@ var statusCmd = &cobra.Command{
 			status := strings.TrimSpace(string(out))
 
 			if err != nil || strings.Contains(status, "No such object") || strings.Contains(status, "no such container") {
-				fmt.Printf("  ❌ %-23s : Not deployed\n", c.Name)
+				fmt.Printf("  ⚪ %-23s : Not deployed\n", c.Name)
 				allRunning = false
 			} else {
 				someExist = true
 				if status == "running" {
-					fmt.Printf("  ✅ %-23s : Active (%s)\n", c.Name, c.Container)
+					fmt.Printf("  🟢 %-23s : Active (%s)\n", c.Name, c.Container)
 				} else {
-					fmt.Printf("  ⚠️  %-23s : %s\n", c.Name, strings.ToUpper(status))
+					fmt.Printf("  🟡 %-23s : %s\n", c.Name, strings.ToUpper(status))
 					allRunning = false
 				}
 			}
 		}
 
-		// Smart Assistant Logic
-		fmt.Println("\n💡 Next Step:")
+		workspaceReady := checkWorkspaceAutomationReady(engine)
+		fmt.Println("\n  [ Workspace Automation ]")
+		if workspaceReady {
+			fmt.Println("  🟢 workspace           : Ready (TFE + shared GitLab running)")
+		} else {
+			fmt.Println("  ⚪ workspace           : Not ready (run: hal terraform workspace --enable)")
+		}
+
+		// Smart assistant guidance
+		fmt.Println("\n💡 Tips:")
 		if !someExist {
 			fmt.Println("   To deploy a fresh Terraform Enterprise environment, run:")
 			fmt.Println("   export TFE_LICENSE='<your_license_string>'")
 			fmt.Println("   hal terraform deploy")
 		} else if allRunning {
-			fmt.Println("   All systems green! TFE is fully operational.")
+			fmt.Println("   All systems green. TFE is operational.")
 			fmt.Println("   🔗 UI Address: https://tfe.localhost:8443")
-			fmt.Println("\n   If you need the initial admin token, run:")
-			fmt.Println("   hal terraform token")
+			if workspaceReady {
+				fmt.Println("   Workspace automation is enabled and ready for VCS-triggered runs.")
+			} else {
+				fmt.Println("   Enable the full VCS automation workflow with:")
+				fmt.Println("   hal terraform workspace --enable")
+			}
 		} else {
 			fmt.Println("   Environment is partially degraded or stopped. To safely reset, run:")
 			fmt.Println("   hal terraform deploy --force")
@@ -72,6 +85,17 @@ var statusCmd = &cobra.Command{
 			fmt.Println("   hal terraform destroy")
 		}
 	},
+}
+
+func checkWorkspaceAutomationReady(engine string) bool {
+	tfeOut, tfeErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-tfe").Output()
+	gitlabOut, gitlabErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-gitlab").Output()
+
+	if tfeErr != nil || gitlabErr != nil {
+		return false
+	}
+
+	return strings.TrimSpace(string(tfeOut)) == "running" && strings.TrimSpace(string(gitlabOut)) == "running"
 }
 
 func init() {

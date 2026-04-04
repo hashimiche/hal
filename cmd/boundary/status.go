@@ -16,11 +16,12 @@ var statusCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
 		if err != nil {
-			fmt.Printf("❌ Error: %v\n", err)
+			fmt.Printf("⚪ Error: %v\n", err)
 			return
 		}
 
 		fmt.Println("🔍 Analyzing HashiCorp Boundary Ecosystem...")
+		fmt.Printf("Engine: %s\n", engine)
 		fmt.Println()
 
 		// 1. Core Services
@@ -42,9 +43,9 @@ var statusCmd = &cobra.Command{
 				fmt.Printf("  ⚪ %-18s : Down\n", c.Name)
 				allCoresRunning = false
 			} else if status == "running" {
-				fmt.Printf("  ✅ %-18s : Up\n", c.Name)
+				fmt.Printf("  🟢 %-18s : Up\n", c.Name)
 			} else {
-				fmt.Printf("  ⚠️  %-18s : %s\n", c.Name, strings.ToUpper(status))
+				fmt.Printf("  🟡 %-18s : %s\n", c.Name, strings.ToUpper(status))
 				allCoresRunning = false
 			}
 		}
@@ -55,7 +56,7 @@ var statusCmd = &cobra.Command{
 		// DB Target
 		dbOut, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-boundary-target-mariadb").Output()
 		if err == nil && strings.TrimSpace(string(dbOut)) == "running" {
-			fmt.Println("  ✅ MariaDB Target   : Up (hal boundary mariadb -d to disable)")
+			fmt.Println("  🟢 MariaDB Target   : Up (hal boundary mariadb -d to disable)")
 		} else {
 			fmt.Println("  ⚪ MariaDB Target   : Down (hal boundary mariadb -e to enable)")
 		}
@@ -63,17 +64,18 @@ var statusCmd = &cobra.Command{
 		vmOut, vmErr := exec.Command("multipass", "info", "hal-boundary-ssh", "--format", "csv").Output()
 		if vmErr == nil && strings.Contains(string(vmOut), "Running") {
 			ip := extractMultipassIP(string(vmOut))
-			fmt.Printf("  ✅ Ubuntu SSH Target: Up (IP: %s) (hal boundary ssh -d to disable)\n", ip)
+			fmt.Printf("  🟢 Ubuntu SSH Target: Up (IP: %s) (hal boundary ssh -d to disable)\n", ip)
 		} else {
 			fmt.Println("  ⚪ Ubuntu SSH Target: Down (hal boundary ssh -e to enable)")
 		}
 
-		fmt.Println("\n💡 Next Step:")
+		fmt.Println("\n💡 Tips:")
 		if !allCoresRunning {
 			fmt.Println("   Run 'hal boundary deploy' to bring the Control Plane online.")
 		} else {
-			fmt.Println("   Control Plane is ready. Manage targets with 'hal boundary <target> -e/-d'")
+			fmt.Println("   Control Plane is ready. Manage targets with 'hal boundary <target> -e/-d'.")
 		}
+		fmt.Println("   Run 'hal boundary status' after changes to verify target readiness.")
 	},
 }
 
