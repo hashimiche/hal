@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"hal/internal/global"
+
 	"github.com/spf13/cobra"
 )
 
@@ -13,6 +15,9 @@ var (
 	sshEnable  bool
 	sshDisable bool
 	sshForce   bool
+	sshUbuntuImage string
+	sshVMCPUs      string
+	sshVMMem       string
 )
 
 var sshCmd = &cobra.Command{
@@ -63,12 +68,17 @@ var sshCmd = &cobra.Command{
 				fmt.Println("♻️  Force flag detected. Resetting SSH Target VM and Boundary resources...")
 			}
 
-			if err := cleanupBoundarySSH(); err != nil {
-				fmt.Printf("⚠️  Boundary cleanup warning: %v\n", err)
-			}
+			if global.DryRun {
+				fmt.Println("[DRY RUN] Would clean Boundary SSH lab resources via API")
+				fmt.Println("[DRY RUN] Would delete/purge Multipass VM hal-boundary-ssh")
+			} else {
+				if err := cleanupBoundarySSH(); err != nil {
+					fmt.Printf("⚠️  Boundary cleanup warning: %v\n", err)
+				}
 
-			_ = exec.Command("multipass", "delete", "hal-boundary-ssh").Run()
-			_ = exec.Command("multipass", "purge").Run()
+				_ = exec.Command("multipass", "delete", "hal-boundary-ssh").Run()
+				_ = exec.Command("multipass", "purge").Run()
+			}
 
 			if sshDisable {
 				fmt.Println("✅ SSH Target removed successfully.")
@@ -81,10 +91,15 @@ var sshCmd = &cobra.Command{
 		// ==========================================
 		if sshEnable || sshForce {
 			fmt.Println("🚀 Deploying Ubuntu VM SSH Target via Multipass (this takes a few seconds)...")
+			if global.DryRun {
+				fmt.Printf("[DRY RUN] Would launch Multipass VM hal-boundary-ssh (%s, %s CPU, %s RAM)\n", sshUbuntuImage, sshVMCPUs, sshVMMem)
+				fmt.Println("[DRY RUN] Would configure Boundary API resources for SSH target")
+				return
+			}
 			_ = exec.Command("multipass", "delete", "hal-boundary-ssh").Run()
 			_ = exec.Command("multipass", "purge").Run()
 
-			vmArgs := []string{"launch", "22.04", "--name", "hal-boundary-ssh", "--cpus", "1", "--mem", "512M"}
+			vmArgs := []string{"launch", sshUbuntuImage, "--name", "hal-boundary-ssh", "--cpus", sshVMCPUs, "--mem", sshVMMem}
 			_, vmErr := exec.Command("multipass", vmArgs...).CombinedOutput()
 
 			if vmErr == nil {
@@ -110,6 +125,9 @@ func init() {
 	sshCmd.Flags().BoolVarP(&sshEnable, "enable", "e", false, "Deploy the SSH Target")
 	sshCmd.Flags().BoolVarP(&sshDisable, "disable", "d", false, "Remove the SSH Target")
 	sshCmd.Flags().BoolVarP(&sshForce, "force", "f", false, "Force a clean redeployment")
+	sshCmd.Flags().StringVar(&sshUbuntuImage, "ubuntu-image", "22.04", "Multipass image/channel used for the SSH target VM")
+	sshCmd.Flags().StringVar(&sshVMCPUs, "cpus", "1", "Number of CPUs for the SSH target VM")
+	sshCmd.Flags().StringVar(&sshVMMem, "mem", "512M", "Amount of RAM for the SSH target VM")
 
 	Cmd.AddCommand(sshCmd)
 }

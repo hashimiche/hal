@@ -46,6 +46,11 @@ Install the tools required by the labs you want to run:
 # Global snapshot
 hal status
 
+# Capacity advisor views
+hal capacity
+hal capacity --active
+hal capacity --pending
+
 # Bring up Vault core
 hal vault deploy
 hal vault status
@@ -56,10 +61,52 @@ hal terraform workspace --enable
 hal terraform status
 ```
 
+## Reproducible Version Pins
+
+Use explicit image/version flags when you want deterministic labs across machines or over time.
+
+```bash
+# Vault core with explicit version + helper image
+hal vault deploy --version 1.21 --helper-image alpine:3.22
+
+# Vault LDAP demo with pinned OpenLDAP + phpLDAPadmin tags
+hal vault ldap --enable --openldap-version 1.5.0 --phpldapadmin-version 0.9.0
+
+# Vault K8s demo with pinned KinD node image, VSO chart, backend/proxy images
+hal vault k8s --enable \
+  --kind-node-image kindest/node:v1.31.1 \
+  --vso-chart-version 0.8.1 \
+  --web-backend-image httpd:2.4-alpine \
+  --web-proxy-image nginx:alpine
+
+# Terraform Enterprise stack with pinned supporting images
+hal terraform deploy \
+  --version 1.2.0 \
+  --pg-version 16 \
+  --redis-version 7 \
+  --minio-version latest \
+  --proxy-nginx-version alpine
+
+# Nomad VM with pinned Ubuntu image channel
+hal nomad deploy --ubuntu-image 22.04 --version 1.11.3
+
+# Boundary SSH target VM with pinned image and VM sizing
+hal boundary ssh --enable --ubuntu-image 22.04 --cpus 1 --mem 512M
+```
+
+💡 Tip: check available flags with `hal <product> <command> --help`.
+
 ## Core Command Map
 
 This section is intentionally a curated quick map. Keep it focused on common workflows.
 For the full, exact command surface, use `hal --help` and `hal <product> --help`.
+
+### Global
+
+- `hal status`
+- `hal capacity` (current usage view)
+- `hal capacity --active` or `hal capacity --deployed` (active heavy deployment detail view)
+- `hal capacity --pending` (pending heavy deployment impact view)
 
 ### Vault
 

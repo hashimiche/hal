@@ -18,7 +18,10 @@ type globalTeardownResult struct {
 
 func runGlobalTeardown() globalTeardownResult {
 	result := globalTeardownResult{}
-	containerEngine := detectContainerEngine()
+	containerEngines := detectContainerEngines()
+	if len(containerEngines) == 0 {
+		containerEngines = []string{detectContainerEngine()}
+	}
 
 	kindClusters, err := listKindClusters()
 	if err != nil {
@@ -35,30 +38,46 @@ func runGlobalTeardown() globalTeardownResult {
 			}
 
 			// Best effort: if kind deletion leaves node containers behind, remove them by cluster label.
-			leftoverNodeIDs, err := listContainerIDsByLabel(containerEngine, "io.x-k8s.kind.cluster", cluster)
-			if err != nil {
-				result.Warnings = append(result.Warnings, fmt.Sprintf("leftover kind container discovery for %q failed: %v", cluster, err))
-				continue
-			}
-			if len(leftoverNodeIDs) == 0 {
-				continue
-			}
-			args := append([]string{"rm", "-f"}, leftoverNodeIDs...)
-			if err := exec.Command(containerEngine, args...).Run(); err != nil {
-				result.Warnings = append(result.Warnings, fmt.Sprintf("leftover kind container removal for %q failed: %v", cluster, err))
+			for _, containerEngine := range containerEngines {
+				leftoverNodeIDs, err := listContainerIDsByLabel(containerEngine, "io.x-k8s.kind.cluster", cluster)
+				if err != nil {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("leftover kind container discovery for %q via %s failed: %v", cluster, containerEngine, err))
+					continue
+				}
+				if len(leftoverNodeIDs) == 0 {
+					continue
+				}
+				args := append([]string{"rm", "-f"}, leftoverNodeIDs...)
+				if err := exec.Command(containerEngine, args...).Run(); err != nil {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("leftover kind container removal for %q via %s failed: %v", cluster, containerEngine, err))
+				}
 			}
 		}
 	}
 
-	dockerIDs, err := listHALContainerIDs(containerEngine)
-	if err != nil {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("%s discovery failed: %v", containerEngine, err))
-	} else if len(dockerIDs) > 0 {
-		args := append([]string{"rm", "-f"}, dockerIDs...)
-		if err := exec.Command(containerEngine, args...).Run(); err != nil {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("%s container removal failed: %v", containerEngine, err))
-		} else {
-			result.DockerContainersRemoved = len(dockerIDs)
+	for _, containerEngine := range containerEngines {
+		dockerIDs, err := listHALContainerIDs(containerEngine)
+		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s discovery failed: %v", containerEngine, err))
+		} else if len(dockerIDs) > 0 {
+			args := append([]string{"rm", "-f"}, dockerIDs...)
+			if err := exec.Command(containerEngine, args...).Run(); err != nil {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s container removal failed: %v", containerEngine, err))
+			} else {
+				result.DockerContainersRemoved += len(dockerIDs)
+			}
+		}
+
+		tfeAgentIDs, err := global.ListTFEAgentContainerIDs(containerEngine)
+		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s TFE agent discovery failed: %v", containerEngine, err))
+		} else if len(tfeAgentIDs) > 0 {
+			args := append([]string{"rm", "-f"}, tfeAgentIDs...)
+			if err := exec.Command(containerEngine, args...).Run(); err != nil {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s TFE agent removal failed: %v", containerEngine, err))
+			} else {
+				result.DockerContainersRemoved += len(tfeAgentIDs)
+			}
 		}
 	}
 
@@ -129,6 +148,17 @@ func detectContainerEngine() string {
 	return "docker"
 }
 
+func detectContainerEngines() []string {
+	engines := []string{}
+	if err := exec.Command("docker", "info").Run(); err == nil {
+		engines = append(engines, "docker")
+	}
+	if err := exec.Command("podman", "info").Run(); err == nil {
+		engines = append(engines, "podman")
+	}
+	return engines
+}
+
 func listContainerIDsByLabel(engine, labelKey string, labelValue string) ([]string, error) {
 	filter := fmt.Sprintf("label=%s=%s", labelKey, labelValue)
 	out, err := exec.Command(engine, "ps", "-a", "--filter", filter, "--format", "{{.ID}}").CombinedOutput()
@@ -171,7 +201,6 @@ func listHALContainerIDs(engine string) ([]string, error) {
 	}
 	return ids, nil
 }
-
 func listHALMultipassVMs() ([]string, error) {
 	out, err := exec.Command("multipass", "list", "--format", "csv").CombinedOutput()
 	if err != nil {

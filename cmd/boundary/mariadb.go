@@ -43,11 +43,16 @@ var mariadbCmd = &cobra.Command{
 		// 2. TEARDOWN
 		if mariadbDisable || mariadbForce {
 			fmt.Println("🛑 Tearing down MariaDB and Boundary resources...")
-			if err := cleanupBoundaryMariaDB(); err != nil {
-				fmt.Printf("⚠️  Boundary cleanup warning: %v\n", err)
-			}
-			if err := exec.Command(engine, "rm", "-f", "hal-boundary-target-mariadb").Run(); err != nil {
-				fmt.Printf("⚠️  Container cleanup warning: %v\n", err)
+			if global.DryRun {
+				fmt.Println("[DRY RUN] Would clean Boundary MariaDB lab resources via API")
+				fmt.Println("[DRY RUN] Would remove container hal-boundary-target-mariadb")
+			} else {
+				if err := cleanupBoundaryMariaDB(); err != nil {
+					fmt.Printf("⚠️  Boundary cleanup warning: %v\n", err)
+				}
+				if err := exec.Command(engine, "rm", "-f", "hal-boundary-target-mariadb").Run(); err != nil {
+					fmt.Printf("⚠️  Container cleanup warning: %v\n", err)
+				}
 			}
 			if mariadbDisable {
 				return
@@ -57,6 +62,19 @@ var mariadbCmd = &cobra.Command{
 		// 3. DEPLOY
 		if mariadbEnable || mariadbForce {
 			dbContainerName := "hal-boundary-target-mariadb"
+			if global.DryRun {
+				if mariadbWithVault {
+					dbContainerName = "hal-vault-mariadb"
+					fmt.Println("[DRY RUN] Would attach Boundary target to existing hal-vault-mariadb")
+				} else {
+					fmt.Printf("[DRY RUN] Would create/start MariaDB container hal-boundary-target-mariadb (mariadb:%s) on hal-net\n", targetMariadbVer)
+				}
+				fmt.Printf("[DRY RUN] Would configure Boundary API for target host %s\n", dbContainerName)
+				if mariadbWithVault {
+					fmt.Println("[DRY RUN] Would link Boundary target to Vault dynamic credentials")
+				}
+				return
+			}
 
 			// Boundary Guardrail
 			out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-boundary").Output()

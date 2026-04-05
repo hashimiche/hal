@@ -16,6 +16,7 @@ import (
 var (
 	vaultVersion      string
 	vaultEdition      string // ce or ent
+	vaultHelperImage  string
 	vaultForce        bool
 	vaultJoinConsul   bool
 	vaultConfigureObs bool
@@ -98,7 +99,7 @@ var deployCmd = &cobra.Command{
 
 		// NOUVEAU : Correction des permissions du volume d'audit pour l'utilisateur Vault (UID 100)
 		fmt.Println("⚙️  Preparing shared audit volume permissions...")
-		_ = exec.Command(engine, "run", "--rm", "-v", "hal-vault-logs:/vault/logs", "alpine", "chown", "-R", "100:1000", "/vault/logs").Run()
+		_ = exec.Command(engine, "run", "--rm", "-v", "hal-vault-logs:/vault/logs", vaultHelperImage, "chown", "-R", "100:1000", "/vault/logs").Run()
 
 		// 2. Build the Docker run arguments
 		vaultArgs := []string{
@@ -208,6 +209,7 @@ func handleDockerFailure(container string, engine string) {
 func init() {
 	deployCmd.Flags().StringVarP(&vaultVersion, "version", "v", "1.21", "Vault version to deploy")
 	deployCmd.Flags().StringVarP(&vaultEdition, "edition", "e", "ce", "Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise)")
+	deployCmd.Flags().StringVar(&vaultHelperImage, "helper-image", "alpine:3.22", "Helper image used for one-shot setup tasks during Vault deploy")
 	deployCmd.Flags().BoolVarP(&vaultForce, "force", "f", false, "Force redeploy")
 	deployCmd.Flags().BoolVar(&vaultConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Vault")
 

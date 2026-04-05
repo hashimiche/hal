@@ -14,6 +14,7 @@ import (
 
 var (
 	nomadVersion      string
+	nomadUbuntuImage  string
 	nomadCPUs         string
 	nomadMem          string
 	nomadJoinConsul   bool // The new unified Control Plane flag
@@ -26,6 +27,10 @@ var deployCmd = &cobra.Command{
 	Short: "Deploy a local Nomad cluster via Multipass",
 	Run: func(cmd *cobra.Command, args []string) {
 		if nomadConfigureObs {
+			if global.DryRun {
+				fmt.Println("[DRY RUN] Would refresh Nomad Prometheus target and Grafana dashboard artifacts")
+				return
+			}
 			if !global.MultipassInstanceExists("hal-nomad") {
 				fmt.Println("❌ Nomad VM is not present. Deploy it first before configuring observability artifacts.")
 				fmt.Println("   💡 Run 'hal nomad deploy' and then retry with '--configure-obs' if needed.")
@@ -68,18 +73,34 @@ var deployCmd = &cobra.Command{
 		}
 
 		if nomadForce {
+			if global.DryRun {
+				fmt.Println("[DRY RUN] Would delete existing VM 'hal-nomad' and purge")
+			}
 			if global.Debug {
 				fmt.Println("[DEBUG] --force flag detected. Purging existing VM 'hal-nomad'...")
 			}
-			_ = exec.Command("multipass", "delete", "hal-nomad").Run()
-			_ = exec.Command("multipass", "purge").Run()
+			if !global.DryRun {
+				_ = exec.Command("multipass", "delete", "hal-nomad").Run()
+				_ = exec.Command("multipass", "purge").Run()
+			}
+		}
+
+		if global.DryRun {
+			fmt.Printf("[DRY RUN] Would launch Multipass VM 'hal-nomad' (%s, %s CPU, %s RAM)\n", nomadUbuntuImage, nomadCPUs, nomadMem)
+			fmt.Printf("[DRY RUN] Would install and start Nomad %s via systemd\n", nomadVersion)
+			if nomadJoinConsul {
+				fmt.Println("[DRY RUN] Would configure Nomad to join global Consul")
+			}
+			fmt.Println("[DRY RUN] Would wait for Nomad health endpoint")
+			fmt.Println("[DRY RUN] Would refresh Nomad observability artifacts")
+			return
 		}
 
 		fmt.Printf(" Deploying Nomad %s via Multipass (Ubuntu VM)...\n", nomadVersion)
 
 		// 1. Launch the VM
 		fmt.Println("📦 Provisioning Ubuntu VM (This takes a few seconds)...")
-		launchArgs := []string{"launch", "22.04", "--name", "hal-nomad", "--cpus", nomadCPUs, "--mem", nomadMem}
+		launchArgs := []string{"launch", nomadUbuntuImage, "--name", "hal-nomad", "--cpus", nomadCPUs, "--mem", nomadMem}
 		out, err := exec.Command("multipass", launchArgs...).CombinedOutput()
 		if err != nil {
 			if strings.Contains(string(out), "already exists") {
@@ -209,6 +230,7 @@ func extractMultipassIP(csvData string) string {
 
 func init() {
 	deployCmd.Flags().StringVarP(&nomadVersion, "version", "v", "1.11.3", "Nomad version to install")
+	deployCmd.Flags().StringVar(&nomadUbuntuImage, "ubuntu-image", "22.04", "Multipass image/channel used for the Nomad VM")
 	deployCmd.Flags().StringVar(&nomadCPUs, "cpus", "2", "Number of CPUs for the VM")
 	deployCmd.Flags().StringVar(&nomadMem, "mem", "2G", "Amount of RAM for the VM")
 	deployCmd.Flags().BoolVarP(&nomadForce, "force", "f", false, "Force redeploy")

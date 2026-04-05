@@ -14,6 +14,12 @@ var destroyCmd = &cobra.Command{
 	Short: "Destroy the Nomad VM",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("⚙️  Destroying Nomad VM via Multipass...")
+		if global.DryRun {
+			fmt.Println("[DRY RUN] Would execute: multipass delete hal-nomad")
+			fmt.Println("[DRY RUN] Would execute: multipass purge")
+			fmt.Println("[DRY RUN] Would remove Nomad observability target file")
+			return
+		}
 
 		_ = exec.Command("multipass", "delete", "hal-nomad").Run()
 		_ = exec.Command("multipass", "purge").Run()

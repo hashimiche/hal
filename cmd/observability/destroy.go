@@ -3,6 +3,7 @@ package observability
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"hal/internal/global"
 
@@ -27,6 +28,12 @@ var destroyCmd = &cobra.Command{
 		}
 
 		fmt.Printf("⚙️  Destroying Observability stack via %s...\n", engine)
+		if global.DryRun {
+			fmt.Printf("[DRY RUN] Would remove containers: %s\n", strings.Join(obsEcosystem, ", "))
+			fmt.Println("[DRY RUN] Would wipe local PLG configurations")
+			fmt.Println("[DRY RUN] Would clean hal-net if unused")
+			return
+		}
 
 		for _, container := range obsEcosystem {
 			out, err := exec.Command(engine, "rm", "-f", container).Output()

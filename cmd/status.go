@@ -11,6 +11,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	statusEnabledColor  = "\033[32m"
+	statusDisabledColor = "\033[97m"
+	statusColorReset    = "\033[0m"
+)
+
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show the global status of all HAL deployments",
@@ -33,11 +39,11 @@ var statusCmd = &cobra.Command{
 		}
 
 		type svcStatus struct {
-			name     string
+			name      string
 			container string
-			running  bool
-			endpoint string
-			version  string
+			running   bool
+			endpoint  string
+			version   string
 		}
 
 		services := []svcStatus{
@@ -79,8 +85,28 @@ var statusCmd = &cobra.Command{
 
 		fmt.Println("-------------------------------")
 		fmt.Printf("Summary: %d/%d products running\n", runningCount, len(services))
-		fmt.Println("Tip:     Run 'hal <product> deploy' to start a stack, or 'hal <product> status' for deeper health.")
+		if usage, usageErr := global.GetEngineUsage(engine); usageErr == nil {
+			trackedMachineCPU := toMachineCPUPercentStatus(usage.ContainerCPUPercent, usage.CPUs)
+			fmt.Printf("%s:  %d CPU / %s RAM | engine live %.1f%% CPU / %s RAM pressure (%s)\n", strings.Title(engine), usage.CPUs, formatStatusMemory(usage.MemoryMB), usage.LiveCPUPercent, formatStatusMemory(usage.LiveMemMB), usage.LiveSource)
+			fmt.Printf("         engine raw used: %s RAM\n", formatStatusMemory(usage.LiveMemRawMB))
+			fmt.Printf("         tracked containers: %.1f%% CPU(sum) ~= %.1f%% machine / %s RAM across %d containers\n", usage.ContainerCPUPercent, trackedMachineCPU, formatStatusMemory(usage.ContainerMemMB), usage.ContainerCount)
+		}
+		fmt.Println("💡 Tip: Run 'hal <product> deploy' to start a stack, or 'hal <product> status' for deeper health.")
 	},
+}
+
+func formatStatusMemory(memoryMB int) string {
+	if memoryMB >= 1024 {
+		return fmt.Sprintf("%.2f GiB", float64(memoryMB)/1024.0)
+	}
+	return fmt.Sprintf("%d MiB", memoryMB)
+}
+
+func toMachineCPUPercentStatus(containerCPUSum float64, cpus int) float64 {
+	if cpus <= 0 {
+		return 0
+	}
+	return containerCPUSum / float64(cpus)
 }
 
 func printVaultFeatureStatus(engine string) {
@@ -97,7 +123,7 @@ func printVaultFeatureStatus(engine string) {
 	}
 
 	for _, f := range featureStates {
-		fmt.Printf("   ↳ %-8s %s\n", f.name, f.status)
+		fmt.Printf("   ↳ %-8s %s\n", f.name, colorizeFeatureState(f.status))
 	}
 }
 
@@ -106,15 +132,15 @@ func printProductFeatureStatus(engine, productName string, running bool) {
 	case "Vault":
 		printVaultFeatureStatus(engine)
 	case "Boundary":
-		fmt.Printf("   ↳ %-8s %s\n", "mariadb", boolState(checkContainer(engine, "hal-boundary-target-mariadb")))
-		fmt.Printf("   ↳ %-8s %s\n", "ssh", boolState(checkMultipass("hal-boundary-ssh")))
+		fmt.Printf("   ↳ %-8s %s\n", "mariadb", colorizeFeatureState(boolState(checkContainer(engine, "hal-boundary-target-mariadb"))))
+		fmt.Printf("   ↳ %-8s %s\n", "ssh", colorizeFeatureState(boolState(checkMultipass("hal-boundary-ssh"))))
 	case "TFE":
 		tfeUp := checkContainer(engine, "hal-tfe")
-		fmt.Printf("   ↳ %-8s %s\n", "workspace", boolState(tfeUp && checkContainer(engine, "hal-gitlab")))
+		fmt.Printf("   ↳ %-8s %s\n", "workspace", colorizeFeatureState(boolState(tfeUp && checkContainer(engine, "hal-gitlab"))))
 	case "Nomad":
-		fmt.Printf("   ↳ %-8s %s\n", "job", boolState(checkMultipass("hal-nomad")))
+		fmt.Printf("   ↳ %-8s %s\n", "job", colorizeFeatureState(boolState(checkMultipass("hal-nomad"))))
 	case "Consul":
-		fmt.Printf("   ↳ %-8s %s\n", "core", boolState(running))
+		fmt.Printf("   ↳ %-8s %s\n", "core", colorizeFeatureState(boolState(running)))
 	case "Observability":
 		printObsFeatureStatus(engine)
 	}
@@ -134,11 +160,26 @@ func printObsFeatureStatus(engine string) {
 	for _, f := range features {
 		enabled := checkContainer(engine, f.container)
 		if enabled {
-			fmt.Printf("   ↳ %-10s enabled (%s)\n", f.name, f.endpoint)
+			fmt.Printf("   ↳ %-10s %s\n", f.name, colorizeFeatureStateWithEndpoint("enabled", f.endpoint))
 		} else {
-			fmt.Printf("   ↳ %-10s disabled\n", f.name)
+			fmt.Printf("   ↳ %-10s %s\n", f.name, colorizeFeatureState("disabled"))
 		}
 	}
+}
+
+func colorizeFeatureState(state string) string {
+	switch state {
+	case "enabled":
+		return statusEnabledColor + state + statusColorReset
+	case "disabled":
+		return statusDisabledColor + state + statusColorReset
+	default:
+		return state
+	}
+}
+
+func colorizeFeatureStateWithEndpoint(state, endpoint string) string {
+	return fmt.Sprintf("%s (%s)", colorizeFeatureState(state), endpoint)
 }
 
 func boolState(enabled bool) string {

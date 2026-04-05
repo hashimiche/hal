@@ -20,6 +20,12 @@ var destroyCmd = &cobra.Command{
 		}
 
 		fmt.Printf("⚙️  Destroying Consul via %s...\n", engine)
+		if global.DryRun {
+			fmt.Printf("[DRY RUN] Would execute: %s rm -f hal-consul\n", engine)
+			fmt.Println("[DRY RUN] Would clean hal-net if unused")
+			fmt.Println("[DRY RUN] Would remove Consul observability target file")
+			return
+		}
 
 		out, err := exec.Command(engine, "rm", "-f", "hal-consul").Output()
 		if err == nil && string(out) != "" {

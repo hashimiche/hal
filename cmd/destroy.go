@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"hal/internal/global"
+
 	"github.com/spf13/cobra"
 )
 
@@ -16,6 +18,14 @@ var destroyCmd = &cobra.Command{
 	Short: "Destroy all HAL infrastructure globally",
 	Long:  "Completely tears down all Docker containers, KinD clusters, and Multipass VMs created by HAL.",
 	Run: func(cmd *cobra.Command, args []string) {
+		if global.DryRun {
+			fmt.Println("[DRY RUN] Would delete HAL KinD clusters")
+			fmt.Println("[DRY RUN] Would remove HAL containers on active Docker/Podman engines")
+			fmt.Println("[DRY RUN] Would delete HAL Multipass VMs and purge")
+			fmt.Println("[DRY RUN] Would remove local observability state")
+			return
+		}
+
 		// 1. The Confirmation Prompt
 		if !forceDestroy {
 			fmt.Print("⚠️  WARNING: This will destroy ALL HAL containers, clusters, and VMs. Are you sure? [y/N]: ")

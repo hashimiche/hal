@@ -39,6 +39,25 @@ For product-level destroy flows, prefer deleting the known local ecosystem direc
 - Multi-line payloads passed into Linux containers from Go should strip `\r` first with `strings.ReplaceAll(text, "\r", "")`.
 - Some older Linux binaries bundled in images can fail on Apple Silicon under Rosetta; prefer avoiding those paths when possible.
 
+### 6. Version Override Contract
+- Any deploy/enable path that launches Docker/Podman containers, KinD clusters, Helm installs, or Multipass VMs must expose explicit flags for runtime versions/images.
+- Keep sensible defaults for each flag, but never hardcode an image/channel/version without a user override path.
+- For KinD/Helm, expose node image and chart version controls (example pattern: `--kind-node-image`, `--vso-chart-version`).
+- For helper sidecars/proxies/support services (for example nginx/minio/openldap UI containers), expose image tag flags alongside primary product flags.
+
+### 7. Engine Capacity Advisory
+- Heavy HAL stacks should consult current engine capacity before large deploys, regardless of whether the engine is Docker or Podman.
+- Prefer live engine data plus container stats for warnings, not guesses based only on static defaults.
+- High-cost deploy paths should emit compact preflight notes when headroom is tight.
+- Interactive confirmation prompts should only trigger when estimated post-deploy usage exceeds engine limits (CPU > 100% or RAM > machine RAM).
+- `hal status` should surface current engine capacity and live usage so users can judge headroom before starting another stack.
+- `hal capacity` defaults to the current view.
+- `hal capacity --active` (or `--deployed`) shows active heavy deployment composition with per-stack footprint details.
+- `hal capacity --pending` shows pending heavy deployment impact estimates.
+- Capacity scenario labels should remain infra-centric where appropriate (for example shared GitLab runner and KinD/VSO flows), not exclusively product-centric.
+- Memory pressure calculations should exclude cache/buffers (use pressure memory, not allocated/free-cache-inflated baselines).
+- Podman on macOS can expose richer machine-runtime telemetry than Docker; use it when available, but keep the command functional for Docker too.
+
 ## Product Notes
 
 - Boundary target setup has version-sensitive API behavior around auth methods, grant strings, target host-source actions, and brokered credential source attachment.
@@ -46,8 +65,10 @@ For product-level destroy flows, prefer deleting the known local ecosystem direc
     - Rootless Podman path uses `https://tfe.localhost:8443` through `hal-tfe-proxy`.
     - Task worker agent-run config must keep `/tmp/terraform` writable (not read-only) so remote plans can download Terraform binaries.
     - TFE API responses can emit archivist object links without `:8443`; proxy response rewriting keeps UI/raw plan/apply log links host-reachable.
+    - `hal terraform workspace --enable` should describe validation in terms of pushing a new commit to `main`; tag creation alone is not a reliable first-run trigger when the tagged SHA was already ingested from branch pushes.
 - Shared runtime helpers live under `internal/global`, especially engine detection and network management.
-- Vault k8s demo (`hal vault k8s`) now supports two explicit demo modes behind the same nginx endpoint (`http://127.0.0.1:8088`):
+- Engine resource advisory helpers live under `internal/global`; reuse them instead of open-coding engine-specific capacity checks in individual commands.
+- Vault k8s demo (`hal vault k8s`) now supports two explicit demo modes behind the same nginx endpoint (`http://web.localhost:8088`):
     - Native mode: `VaultStaticSecret` sync to Kubernetes secret, injected as env var, HTML rendered in-pod.
     - CSI mode (`--csi`, Enterprise): `CSISecrets` projection via `csi.vso.hashicorp.com`, HTML rendered from mounted file.
 - Observability product integration is centralized through shared artifact registration in `internal/global/obs.go`.

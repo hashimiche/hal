@@ -13,9 +13,11 @@ import (
 )
 
 var (
-	ldapEnable  bool
-	ldapDisable bool
-	ldapForce   bool
+	ldapEnable            bool
+	ldapDisable           bool
+	ldapForce             bool
+	ldapServerImageTag    string
+	phpLDAPAdminImageTag  string
 )
 
 var vaultLdapCmd = &cobra.Command{
@@ -172,7 +174,7 @@ var vaultLdapCmd = &cobra.Command{
 				"-e", "LDAP_READONLY_USER_USERNAME=vault-auth",
 				"-e", "LDAP_READONLY_USER_PASSWORD=authpass",
 				"-e", "LDAP_TLS=false",
-				"osixia/openldap:1.5.0",
+				fmt.Sprintf("osixia/openldap:%s", ldapServerImageTag),
 			).Run()
 
 			if err != nil {
@@ -189,7 +191,7 @@ var vaultLdapCmd = &cobra.Command{
 				"--platform", "linux/amd64",
 				"-e", "PHPLDAPADMIN_LDAP_HOSTS=hal-openldap",
 				"-e", "PHPLDAPADMIN_HTTPS=true",
-				"osixia/phpldapadmin:0.9.0",
+				fmt.Sprintf("osixia/phpldapadmin:%s", phpLDAPAdminImageTag),
 			).Run()
 
 			fmt.Println("⚙️  Seeding LDAP Users, Groups, and Service Accounts...")
@@ -401,6 +403,8 @@ func init() {
 	vaultLdapCmd.Flags().BoolVarP(&ldapEnable, "enable", "e", false, "Deploy OpenLDAP and configure Vault engines")
 	vaultLdapCmd.Flags().BoolVarP(&ldapDisable, "disable", "d", false, "Remove OpenLDAP and strip configuration from Vault")
 	vaultLdapCmd.Flags().BoolVarP(&ldapForce, "force", "f", false, "Force a clean redeployment of the entire environment")
+	vaultLdapCmd.Flags().StringVar(&ldapServerImageTag, "openldap-version", "1.5.0", "OpenLDAP image tag for the LDAP demo")
+	vaultLdapCmd.Flags().StringVar(&phpLDAPAdminImageTag, "phpldapadmin-version", "0.9.0", "phpLDAPadmin image tag for the LDAP demo UI")
 
 	Cmd.AddCommand(vaultLdapCmd)
 }

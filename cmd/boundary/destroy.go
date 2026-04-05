@@ -3,6 +3,7 @@ package boundary
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"hal/internal/global"
 
@@ -26,6 +27,13 @@ var destroyCmd = &cobra.Command{
 		}
 
 		fmt.Printf("⚙️  Destroying Boundary ecosystem via %s...\n", engine)
+		if global.DryRun {
+			fmt.Printf("[DRY RUN] Would remove containers: %s\n", strings.Join(boundaryEcosystem, ", "))
+			fmt.Println("[DRY RUN] Would delete and purge Multipass VM hal-boundary-ssh")
+			fmt.Println("[DRY RUN] Would clean hal-net if unused")
+			fmt.Println("[DRY RUN] Would remove Boundary observability target file")
+			return
+		}
 
 		for _, container := range boundaryEcosystem {
 			out, err := exec.Command(engine, "rm", "-f", container).Output()

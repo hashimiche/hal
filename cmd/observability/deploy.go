@@ -40,6 +40,24 @@ var deployCmd = &cobra.Command{
 			_ = os.RemoveAll(filepath.Join(homeDir, ".hal", "obs"))
 		}
 
+		global.WarnIfEngineResourcesTight(engine, "obs-deploy")
+		if !global.DryRun {
+			proceed, err := global.ConfirmScenarioProceed(engine, "obs-deploy")
+			if err != nil && global.Debug {
+				fmt.Printf("[DEBUG] Capacity confirmation unavailable: %v\n", err)
+			}
+			if err == nil && !proceed {
+				fmt.Printf("🛑 Observability deployment aborted to protect your %s engine.\n", engine)
+				return
+			}
+		} else {
+			fmt.Println("[DRY RUN] Would ensure hal-net exists")
+			fmt.Println("[DRY RUN] Would pull Prometheus, Loki, Promtail, and Grafana images")
+			fmt.Println("[DRY RUN] Would generate local PLG configuration under ~/.hal/obs")
+			fmt.Println("[DRY RUN] Would boot Prometheus, Loki, Promtail, and Grafana containers")
+			return
+		}
+
 		global.EnsureNetwork(engine)
 
 		fmt.Println("📥 Pulling Observability images (this might take a minute)...")

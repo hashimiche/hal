@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -31,6 +32,8 @@ var (
 	tfeAdminUsername         string
 	tfeAdminEmail            string
 	tfeAdminPassword         string
+	tfeTagsRegex             string
+	tfeVCSBranch             string
 	workspaceSharedConsumer  = "terraform-workspace"
 	workspaceGitLabServiceID = "gitlab"
 )
@@ -88,6 +91,11 @@ var workspaceCmd = &cobra.Command{
 		if err := integrations.WaitForGitLab("http://127.0.0.1:8080", 90); err != nil {
 			fmt.Println("❌ GitLab failed to become ready in time.")
 			return
+		}
+
+		if err := ensureGitLabCanReachTFEWebhook(engine); err != nil {
+			fmt.Printf("⚠️  Could not enforce GitLab -> TFE webhook routing automatically: %v\n", err)
+			fmt.Println("   💡 VCS push events may not trigger runs if tfe.localhost is unreachable from hal-gitlab.")
 		}
 
 		vcsToken, err := integrations.GitLabPasswordToken("http://127.0.0.1:8080/oauth/token", "root", workspaceGitLabPassword)
@@ -199,7 +207,7 @@ var workspaceCmd = &cobra.Command{
 		fmt.Println("---------------------------------------------------------")
 		fmt.Printf("🔗 GitLab Repo: %s\n", webURL)
 		fmt.Println("   Login:       root / hal9000FTW")
-		fmt.Println("🧭 Next:        Create a Git tag in GitLab to validate the end-to-end VCS-driven auto-apply workflow")
+		fmt.Println("🧭 Next:        Push a new commit to main in GitLab to validate the end-to-end VCS-driven auto-apply workflow")
 		fmt.Println("---------------------------------------------------------")
 	},
 }
@@ -213,27 +221,26 @@ func ensureTFEWorkspace(orgName, projectID, repoIdentifier string) (string, erro
 		data, _ := existing["data"].(map[string]interface{})
 		workspaceID := fmt.Sprintf("%v", data["id"])
 
+		attributes := map[string]interface{}{
+			"auto-apply":     true,
+			"execution-mode": "remote",
+			"queue-all-runs": true,
+		}
 		if tfeVCSOAuthTokenID != "" {
-			patchPayload := map[string]interface{}{
-				"data": map[string]interface{}{
-					"type": "workspaces",
-					"id":   workspaceID,
-					"attributes": map[string]interface{}{
-						"auto-apply": true,
-						"vcs-repo": map[string]interface{}{
-							"identifier":         repoIdentifier,
-							"branch":             "main",
-							"oauth-token-id":     tfeVCSOAuthTokenID,
-							"ingress-submodules": false,
-						},
-					},
-				},
-			}
-			patchURL := fmt.Sprintf("%s/api/v2/workspaces/%s", tfeBaseURL, workspaceID)
-			patchBody, _, patchErr := integrations.TFERequest("PATCH", patchURL, tfeAPIToken, patchPayload)
-			if patchErr != nil {
-				return "", fmt.Errorf("workspace exists but VCS update failed: %s", strings.TrimSpace(string(patchBody)))
-			}
+			attributes["vcs-repo"] = buildTFEVCSRepoConfig(repoIdentifier)
+		}
+
+		patchPayload := map[string]interface{}{
+			"data": map[string]interface{}{
+				"type":       "workspaces",
+				"id":         workspaceID,
+				"attributes": attributes,
+			},
+		}
+		patchURL := fmt.Sprintf("%s/api/v2/workspaces/%s", tfeBaseURL, workspaceID)
+		patchBody, _, patchErr := integrations.TFERequest("PATCH", patchURL, tfeAPIToken, patchPayload)
+		if patchErr != nil {
+			return "", fmt.Errorf("workspace exists but update failed: %s", strings.TrimSpace(string(patchBody)))
 		}
 		return fmt.Sprintf("%s/app/organizations/%s/workspaces/%s", tfeBaseURL, orgName, tfeWorkspaceName), nil
 	}
@@ -242,17 +249,14 @@ func ensureTFEWorkspace(orgName, projectID, repoIdentifier string) (string, erro
 	}
 
 	attributes := map[string]interface{}{
-		"name":       tfeWorkspaceName,
-		"auto-apply": true,
+		"name":           tfeWorkspaceName,
+		"auto-apply":     true,
+		"execution-mode": "remote",
+		"queue-all-runs": true,
 	}
 
 	if tfeVCSOAuthTokenID != "" {
-		attributes["vcs-repo"] = map[string]interface{}{
-			"identifier":         repoIdentifier,
-			"branch":             "main",
-			"oauth-token-id":     tfeVCSOAuthTokenID,
-			"ingress-submodules": false,
-		}
+		attributes["vcs-repo"] = buildTFEVCSRepoConfig(repoIdentifier)
 	}
 
 	payload := map[string]interface{}{
@@ -713,9 +717,52 @@ func init() {
 	workspaceCmd.Flags().StringVar(&tfeVCSOAuthTokenID, "tfe-vcs-oauth-token-id", "", "Terraform Enterprise VCS OAuth token id for linking the workspace to GitLab (or set TFE_GITLAB_OAUTH_TOKEN_ID)")
 	workspaceCmd.Flags().StringVar(&tfeVCSOAuthTokenID, "gitlab-token-id", "", "Alias of --tfe-vcs-oauth-token-id")
 	workspaceCmd.Flags().StringVar(&tfeBaseURL, "tfe-url", "https://tfe.localhost:8443", "Terraform Enterprise base URL")
+	workspaceCmd.Flags().StringVar(&tfeVCSBranch, "tfe-vcs-branch", "main", "Git branch to trigger VCS runs from (set non-main for tag-focused workflows)")
 	workspaceCmd.Flags().StringVar(&tfeAdminUsername, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
 	workspaceCmd.Flags().StringVar(&tfeAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
 	workspaceCmd.Flags().StringVar(&tfeAdminPassword, "tfe-admin-password", "hal9000FTW", "Initial TFE admin password used when bootstrapping via IACT")
+	workspaceCmd.Flags().StringVar(&tfeTagsRegex, "tfe-tags-regex", `^v\d+\.\d+\.\d+(?:-\w+)?$`, "Regex for VCS tag-triggered runs (set empty string to disable tag triggers)")
 
 	Cmd.AddCommand(workspaceCmd)
+}
+
+func buildTFEVCSRepoConfig(repoIdentifier string) map[string]interface{} {
+	vcsRepo := map[string]interface{}{
+		"identifier":         repoIdentifier,
+		"oauth-token-id":     tfeVCSOAuthTokenID,
+		"ingress-submodules": false,
+	}
+
+	if strings.TrimSpace(tfeVCSBranch) != "" {
+		vcsRepo["branch"] = strings.TrimSpace(tfeVCSBranch)
+	}
+
+	if strings.TrimSpace(tfeTagsRegex) != "" {
+		vcsRepo["tags-regex"] = strings.TrimSpace(tfeTagsRegex)
+	}
+
+	return vcsRepo
+}
+
+func ensureGitLabCanReachTFEWebhook(engine string) error {
+	if !global.IsContainerRunning(engine, "hal-gitlab") || !global.IsContainerRunning(engine, "hal-tfe-proxy") {
+		return nil
+	}
+
+	proxyIPOut, err := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "hal-tfe-proxy").Output()
+	if err != nil {
+		return fmt.Errorf("failed to discover hal-tfe-proxy IP: %w", err)
+	}
+	proxyIP := strings.TrimSpace(string(proxyIPOut))
+	if proxyIP == "" {
+		return fmt.Errorf("hal-tfe-proxy has no routable container IP")
+	}
+
+	// Keep tfe.localhost resolvable from inside GitLab so webhook callbacks reach TFE reliably.
+	patchHosts := fmt.Sprintf("grep -v '[[:space:]]tfe.localhost$' /etc/hosts > /tmp/hosts.hal && echo '%s tfe.localhost' >> /tmp/hosts.hal && cat /tmp/hosts.hal > /etc/hosts", proxyIP)
+	if out, err := exec.Command(engine, "exec", "-u", "0", "hal-gitlab", "sh", "-lc", patchHosts).CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to patch hal-gitlab /etc/hosts: %s", strings.TrimSpace(string(out)))
+	}
+
+	return nil
 }

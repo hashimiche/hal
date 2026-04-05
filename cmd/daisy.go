@@ -255,10 +255,10 @@ func renderDecayingBar(barState []bool, remaining int, rng *rand.Rand) string {
 	b.Grow(len(barState))
 	for _, alive := range barState {
 		if alive {
-			b.WriteByte('#')
+			b.WriteString("\033[36m■\033[0m")
 			continue
 		}
-		b.WriteByte('.')
+		b.WriteString("\033[90m□\033[0m")
 	}
 
 	return b.String()

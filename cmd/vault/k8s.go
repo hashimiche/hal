@@ -15,11 +15,15 @@ import (
 )
 
 var (
-	k8sEnable  bool
-	k8sDisable bool
-	k8sForce   bool
-	csiMode    bool
-	jwtAuth    bool
+	k8sEnable       bool
+	k8sDisable      bool
+	k8sForce        bool
+	csiMode         bool
+	jwtAuth         bool
+	kindNodeImage   string
+	vsoChartVersion string
+	webBackendImage string
+	webProxyImage   string
 )
 
 func isVaultEnterprise(client *vault.Client) bool {
@@ -234,6 +238,18 @@ var vaultK8sCmd = &cobra.Command{
 				return
 			}
 
+			global.WarnIfEngineResourcesTight(engine, "vault-k8s")
+			if !global.DryRun {
+				proceed, err := global.ConfirmScenarioProceed(engine, "vault-k8s")
+				if err != nil && global.Debug {
+					fmt.Printf("[DEBUG] Capacity confirmation unavailable: %v\n", err)
+				}
+				if err == nil && !proceed {
+					fmt.Printf("🛑 Vault K8s deployment aborted to protect your %s engine.\n", engine)
+					return
+				}
+			}
+
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would execute: kind create cluster --network hal-net (host 8088 -> cluster 30080)")
 				fmt.Println("[DRY RUN] Would execute: helm install vault-secrets-operator")
@@ -255,6 +271,9 @@ var vaultK8sCmd = &cobra.Command{
 				defer os.Remove(kindConfigPath)
 
 				startCmd := exec.Command("kind", "create", "cluster", "--config", kindConfigPath)
+				if strings.TrimSpace(kindNodeImage) != "" {
+					startCmd.Args = append(startCmd.Args, "--image", kindNodeImage)
+				}
 				env := os.Environ()
 				if isPodman {
 					env = append(env, "KIND_EXPERIMENTAL_PROVIDER=podman")
@@ -337,6 +356,9 @@ path "sys/license/status" { capabilities = ["read"] }
 			_ = exec.Command("helm", "repo", "update").Run()
 
 			helmArgs := []string{"upgrade", "--install", "vault-secrets-operator", "hashicorp/vault-secrets-operator", "-n", "vso"}
+			if strings.TrimSpace(vsoChartVersion) != "" {
+				helmArgs = append(helmArgs, "--version", vsoChartVersion)
+			}
 
 			if csiMode {
 				if isVaultEnterprise(client) {
@@ -463,7 +485,7 @@ spec:
 							csiSecretsNamespace: app1
 			containers:
 				- name: app
-					image: httpd:2.4-alpine
+					image: %s
 					ports:
 						- containerPort: 80
 					volumeMounts:
@@ -537,7 +559,7 @@ spec:
 		spec:
 			containers:
 				- name: nginx
-					image: nginx:alpine
+					image: %s
 					ports:
 						- containerPort: 80
 					volumeMounts:
@@ -563,7 +585,7 @@ spec:
 			port: 80
 			targetPort: 80
 			nodePort: 30080
-`, vaultIP)
+`, vaultIP, webBackendImage, webProxyImage)
 			} else {
 				appManifests = fmt.Sprintf(`
 ---
@@ -630,7 +652,7 @@ spec:
       serviceAccountName: app1-sa
       containers:
 				- name: app
-					image: httpd:2.4-alpine
+					image: %s
           ports:
             - containerPort: 80
 					env:
@@ -703,7 +725,7 @@ spec:
 		spec:
 			containers:
 				- name: nginx
-					image: nginx:alpine
+					image: %s
 					ports:
 						- containerPort: 80
 					volumeMounts:
@@ -729,7 +751,7 @@ spec:
 			port: 80
 			targetPort: 80
 			nodePort: 30080
-`, vaultIP)
+`, vaultIP, webBackendImage, webProxyImage)
 			}
 
 			if !applyK8s(appManifests) {
@@ -835,6 +857,10 @@ func init() {
 	// Feature-Specific Flags
 	vaultK8sCmd.Flags().BoolVar(&csiMode, "csi", false, "Use the VSO CSI Driver (Requires Vault Enterprise)")
 	vaultK8sCmd.Flags().BoolVar(&jwtAuth, "jwt", false, "Use the advanced jwt-k8s OIDC architecture (experimental)")
+	vaultK8sCmd.Flags().StringVar(&kindNodeImage, "kind-node-image", "kindest/node:v1.31.1", "KinD node image used when creating the cluster")
+	vaultK8sCmd.Flags().StringVar(&vsoChartVersion, "vso-chart-version", "", "Helm chart version for hashicorp/vault-secrets-operator (empty uses latest)")
+	vaultK8sCmd.Flags().StringVar(&webBackendImage, "web-backend-image", "httpd:2.4-alpine", "Demo backend container image")
+	vaultK8sCmd.Flags().StringVar(&webProxyImage, "web-proxy-image", "nginx:alpine", "Demo reverse proxy container image")
 
 	Cmd.AddCommand(vaultK8sCmd)
 }

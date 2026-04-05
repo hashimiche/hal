@@ -54,6 +54,19 @@ var destroyCmd = &cobra.Command{
 			}
 		}
 
+		if extraAgentIDs, err := global.ListTFEAgentContainerIDs(engine); err != nil {
+			fmt.Printf("⚠️  Could not discover TFE agent containers: %v\n", err)
+		} else if len(extraAgentIDs) > 0 {
+			args := append([]string{"rm", "-f"}, extraAgentIDs...)
+			if global.DryRun {
+				fmt.Printf("[DRY RUN] Would execute: %s %s\n", engine, strings.Join(args, " "))
+			} else if out, err := exec.Command(engine, args...).CombinedOutput(); err != nil {
+				fmt.Printf("⚠️  Failed to destroy TFE agent containers: %s\n", strings.TrimSpace(string(out)))
+			} else {
+				fmt.Printf("  ✅ Destroyed %d TFE agent container(s).\n", len(extraAgentIDs))
+			}
+		}
+
 		// 2. Wipe the local Cert cache
 		homeDir, _ := os.UserHomeDir()
 		certDir := filepath.Join(homeDir, ".hal", "tfe-certs")
