@@ -46,6 +46,10 @@ Install the tools required by the labs you want to run:
 # Global snapshot
 hal status
 
+# MCP bridge bootstrap (stdio)
+hal mcp create
+hal mcp status
+
 # Capacity advisor views
 hal capacity
 hal capacity --active
@@ -107,6 +111,13 @@ For the full, exact command surface, use `hal --help` and `hal <product> --help`
 - `hal capacity` (current usage view)
 - `hal capacity --active` or `hal capacity --deployed` (active heavy deployment detail view)
 - `hal capacity --pending` (pending heavy deployment impact view)
+
+### MCP
+
+- `hal mcp create` (generate MCP client config scaffold at `~/.hal/mcp/hal-mcp.json`)
+- `hal mcp up` (run HAL MCP server over stdio)
+- `hal mcp status` (show local MCP readiness)
+- `hal mcp down` (stop background daemon if a PID file exists; stdio mode is normally on-demand)
 
 ### Vault
 

@@ -61,6 +61,9 @@ For product-level destroy flows, prefer deleting the known local ecosystem direc
 ## Product Notes
 
 - Boundary target setup has version-sensitive API behavior around auth methods, grant strings, target host-source actions, and brokered credential source attachment.
+- HAL MCP command namespace (`hal mcp`) is a stdio-first MVP for external tool integration.
+    - `hal mcp create|up|status|down` should stay stable for operator UX consistency.
+    - Initial MCP tool surface is read-only and should leverage existing HAL command paths (`status`, `capacity`, `<product> status`) instead of reimplementing product logic.
 - Terraform Enterprise local deployment depends on a mocked PostgreSQL, Redis, and MinIO stack and uses local TLS material under `~/.hal/tfe-certs`.
     - Rootless Podman path uses `https://tfe.localhost:8443` through `hal-tfe-proxy`.
     - Task worker agent-run config must keep `/tmp/terraform` writable (not read-only) so remote plans can download Terraform binaries.
