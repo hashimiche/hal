@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HAL MCP Tool Response Contract (Multi-Product)",
+  "type": "object",
+  "required": [
+    "status",
+    "code",
+    "message",
+    "domain",
+    "capability",
+    "resource",
+    "data",
+    "recommended_commands",
+    "checks",
+    "docs"
+  ],
+  "properties": {
+    "status": { "type": "string", "enum": ["success", "error"] },
+    "code": { "type": "string" },
+    "message": { "type": "string" },
+    "domain": {
+      "type": "string",
+      "enum": [
+        "hal",
+        "vault",
+        "boundary",
+        "tfe",
+        "consul",
+        "nomad",
+        "obs",
+        "terraform",
+        "k8s",
+        "cross-product"
+      ]
+    },
+    "capability": { "type": "string" },
+    "resource": { "type": "string" },
+    "data": { "type": ["object", "array", "string", "number", "boolean", "null"] },
+    "recommended_commands": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^(hal|vault|boundary|consul|nomad|terraform|kubectl|curl|jq)\\b" }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status"],
+        "properties": {
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["ok", "warn", "error", "unknown"] },
+          "details": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "next_steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["order", "title", "expected_outcome"],
+        "properties": {
+          "order": { "type": "integer", "minimum": 1 },
+          "title": { "type": "string" },
+          "expected_outcome": { "type": "string" },
+          "commands": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^(hal|vault|boundary|consul|nomad|terraform|kubectl|curl|jq)\\b" }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "credentials": {
+      "type": "object",
+      "properties": {
+        "references": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "redacted": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "docs": {
+      "type": "array",
+      "items": { "type": "string", "format": "uri" }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,45 @@
+{
+  "flags": [
+    {
+      "description": "Number of CPUs for the SSH target VM (default \"1\")",
+      "name": "--cpus string"
+    },
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "Amount of RAM for the SSH target VM (default \"512M\")",
+      "name": "--mem string"
+    },
+    {
+      "description": "Multipass image/channel used for the SSH target VM (default \"22.04\")",
+      "name": "--ubuntu-image string"
+    },
+    {
+      "description": "Remove the SSH Target",
+      "name": "-d, --disable"
+    },
+    {
+      "description": "Deploy the SSH Target",
+      "name": "-e, --enable"
+    },
+    {
+      "description": "Force a clean redeployment",
+      "name": "-f, --force"
+    },
+    {
+      "description": "help for ssh",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal boundary ssh --help"
+  ],
+  "topic": "boundary ssh",
+  "usage": ""
+}

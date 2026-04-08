@@ -1,0 +1,89 @@
+{
+  "flags": [
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "Root password used to bootstrap GitLab when HAL starts it (default \"hal9000FTW\")",
+      "name": "--gitlab-root-password string"
+    },
+    {
+      "description": "Alias of --tfe-vcs-oauth-token-id",
+      "name": "--gitlab-token-id string"
+    },
+    {
+      "description": "Version of the GitLab CE image used for shared Terraform workspace setup (default \"18.10.1-ce.0\")",
+      "name": "--gitlab-version string"
+    },
+    {
+      "description": "GitLab project name for the Terraform workspace demo (default \"tfe-agent-demo\")",
+      "name": "--project-name string"
+    },
+    {
+      "description": "GitLab project path for the Terraform workspace demo (default \"tfe-agent-demo\")",
+      "name": "--project-path string"
+    },
+    {
+      "description": "Initial TFE admin email used when bootstrapping via IACT (default \"haladmin@localhost\")",
+      "name": "--tfe-admin-email string"
+    },
+    {
+      "description": "Initial TFE admin password used when bootstrapping via IACT (default \"hal9000FTW\")",
+      "name": "--tfe-admin-password string"
+    },
+    {
+      "description": "Initial TFE admin username used when bootstrapping via IACT (default \"haladmin\")",
+      "name": "--tfe-admin-username string"
+    },
+    {
+      "description": "Terraform Enterprise app API token (or set TFE_API_TOKEN)",
+      "name": "--tfe-api-token string"
+    },
+    {
+      "description": "Terraform Enterprise organization name to bootstrap (default \"hal\")",
+      "name": "--tfe-org string"
+    },
+    {
+      "description": "Terraform Enterprise project name to bootstrap (default \"Dave\")",
+      "name": "--tfe-project string"
+    },
+    {
+      "description": "Regex for VCS tag-triggered runs (set empty string to disable tag triggers) (default \"^v\\\\d+\\\\.\\\\d+\\\\.\\\\d+(?:-\\\\w+)?$\")",
+      "name": "--tfe-tags-regex string"
+    },
+    {
+      "description": "Terraform Enterprise base URL (default \"https://tfe.localhost:8443\")",
+      "name": "--tfe-url string"
+    },
+    {
+      "description": "Git branch to trigger VCS runs from (set non-main for tag-focused workflows) (default \"main\")",
+      "name": "--tfe-vcs-branch string"
+    },
+    {
+      "description": "Terraform Enterprise VCS OAuth token id for linking the workspace to GitLab (or set TFE_GITLAB_OAUTH_TOKEN_ID)",
+      "name": "--tfe-vcs-oauth-token-id string"
+    },
+    {
+      "description": "Terraform Enterprise workspace name to bootstrap (default \"tfe-agent-demo\")",
+      "name": "--tfe-workspace string"
+    },
+    {
+      "description": "Bootstrap or reuse shared GitLab and configure a Terraform demo repository",
+      "name": "-e, --enable"
+    },
+    {
+      "description": "help for workspace",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal terraform workspace --help"
+  ],
+  "topic": "terraform workspace",
+  "usage": ""
+}

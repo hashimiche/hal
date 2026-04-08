@@ -1,0 +1,41 @@
+{
+  "flags": [
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "Version (default \"11.4\")",
+      "name": "--mariadb-version string"
+    },
+    {
+      "description": "Link with Vault Dynamic Creds",
+      "name": "--with-vault"
+    },
+    {
+      "description": "Remove MariaDB",
+      "name": "-d, --disable"
+    },
+    {
+      "description": "Deploy MariaDB",
+      "name": "-e, --enable"
+    },
+    {
+      "description": "Force Reset",
+      "name": "-f, --force"
+    },
+    {
+      "description": "help for mariadb",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal boundary mariadb --help"
+  ],
+  "topic": "boundary mariadb",
+  "usage": ""
+}

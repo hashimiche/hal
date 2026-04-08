@@ -264,6 +264,12 @@ var vaultOidcCmd = &cobra.Command{
 				return
 			}
 
+			vaultKeycloakOIDC := integrations.KeycloakRealm("http://keycloak.localhost:8081", "hal")
+			if err := waitForVaultVisibleKeycloak(engine, vaultKeycloakOIDC.DiscoveryURL, 30); err != nil {
+				fmt.Printf("❌ Keycloak is up on the host, but Vault still cannot reach its discovery URL: %v\n", err)
+				return
+			}
+
 			fmt.Println("⚙️  Configuring Vault OIDC Auth, KV Engine, Policies, and External Groups...")
 
 			// 1. Enable KV-V2 Secrets Engine
@@ -296,13 +302,7 @@ path "kv-oidc/metadata/team1" { capabilities = ["read", "list"] }
 			_ = client.Sys().EnableAuthWithOptions("oidc", &vault.EnableAuthOptions{Type: "oidc"})
 
 			// 5. Configure OIDC
-			vaultKeycloakOIDC := integrations.KeycloakRealm("http://keycloak.localhost:8081", "hal")
-			_, err = client.Logical().Write("auth/oidc/config", map[string]interface{}{
-				"oidc_discovery_url": vaultKeycloakOIDC.DiscoveryURL,
-				"oidc_client_id":     "vault",
-				"oidc_client_secret": "supersecret",
-				"default_role":       "default",
-			})
+			_, err = writeOIDCConfigWithRetry(client, vaultKeycloakOIDC.Issuer, 15)
 			if err != nil {
 				fmt.Printf("❌ Failed to configure Vault OIDC: %v\n", err)
 				return
@@ -377,6 +377,45 @@ func waitForKeycloak(url string, maxRetries int) error {
 		time.Sleep(2 * time.Second)
 	}
 	return fmt.Errorf("timeout")
+}
+
+func waitForVaultVisibleKeycloak(engine, discoveryURL string, maxRetries int) error {
+	for i := 0; i < maxRetries; i++ {
+		cmd := exec.Command(
+			engine,
+			"exec",
+			"hal-vault",
+			"sh",
+			"-lc",
+			fmt.Sprintf("command -v curl >/dev/null 2>&1 && curl -fsS %q >/dev/null || wget -qO- %q >/dev/null", discoveryURL, discoveryURL),
+		)
+		if err := cmd.Run(); err == nil {
+			return nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("timeout waiting for Vault-visible discovery URL")
+}
+
+func writeOIDCConfigWithRetry(client *vault.Client, discoveryURL string, maxRetries int) (*vault.Secret, error) {
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		secret, err := client.Logical().Write("auth/oidc/config", map[string]interface{}{
+			"oidc_discovery_url": discoveryURL,
+			"oidc_client_id":     "vault",
+			"oidc_client_secret": "supersecret",
+			"default_role":       "default",
+		})
+		if err == nil {
+			return secret, nil
+		}
+		lastErr = err
+		if !strings.Contains(strings.ToLower(err.Error()), "error checking oidc discovery url") {
+			return nil, err
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return nil, lastErr
 }
 
 func init() {

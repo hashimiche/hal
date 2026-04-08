@@ -1,0 +1,22 @@
+{
+  "flags": [
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "help for nomad",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal nomad --help",
+    "hal nomad [command] --help"
+  ],
+  "topic": "nomad",
+  "usage": ""
+}

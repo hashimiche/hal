@@ -13,11 +13,11 @@ import (
 )
 
 var (
-	ldapEnable            bool
-	ldapDisable           bool
-	ldapForce             bool
-	ldapServerImageTag    string
-	phpLDAPAdminImageTag  string
+	ldapEnable           bool
+	ldapDisable          bool
+	ldapForce            bool
+	ldapServerImageTag   string
+	phpLDAPAdminImageTag string
 )
 
 var vaultLdapCmd = &cobra.Command{
@@ -283,7 +283,7 @@ userPassword: {{.Password}}`,
 			fmt.Println("   Login DN: cn=admin,dc=hal,dc=local")
 			fmt.Println("   Password: (UNKNOWN! Vault rotated the root password!)")
 			fmt.Println("\n👤 Try logging into Vault as Bob (Reader):")
-			fmt.Println("   vault login -method=ldap username=bob password=bobpass")
+			fmt.Println("   vault login -method=ldap username=bob password=password")
 			fmt.Println("\n💡 As Bob, run these LDAP Secret Engine commands:")
 			fmt.Println("   1. vault read ldap/creds/dynamic-reader")
 			fmt.Println("   2. vault read ldap/static-cred/static-app")

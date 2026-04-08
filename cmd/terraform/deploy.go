@@ -28,6 +28,8 @@ var (
 	pgVersion           string
 	redisVersion        string
 	minioVersion        string
+	minioAPIPort        int
+	minioConsolePort    int
 	tfeProxyNginxTag    string
 	tfeForce            bool
 	tfeConfigureObs     bool
@@ -146,7 +148,7 @@ var deployCmd = &cobra.Command{
 		// 7. Deploy MinIO (S3 Mock)
 		fmt.Println("⚙️  Provisioning TFE Object Storage (MinIO)...")
 		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-minio", "--network", "hal-net",
-			"-p", "9000:9000", "-p", "9001:9001",
+			"-p", fmt.Sprintf("%d:9000", minioAPIPort), "-p", fmt.Sprintf("%d:9001", minioConsolePort),
 			"-e", "MINIO_ROOT_USER=minioadmin", "-e", "MINIO_ROOT_PASSWORD=minioadmin",
 			fmt.Sprintf("minio/minio:%s", minioVersion), "server", "/data", "--console-address", ":9001").Run()
 
@@ -311,6 +313,8 @@ http {
 		fmt.Println("\n✅ Terraform Enterprise 1.x is UP!")
 		fmt.Println("---------------------------------------------------------")
 		fmt.Printf("🔗 UI Address:   %s\n", uiURL)
+		fmt.Printf("🗂️  MinIO API:    http://127.0.0.1:%d\n", minioAPIPort)
+		fmt.Printf("🧭 MinIO Console: http://127.0.0.1:%d\n", minioConsolePort)
 		fmt.Printf("👤 Admin User:   %s\n", deployTFEAdminUser)
 		fmt.Printf("🔑 Admin Pass:   %s\n", deployTFEAdminPass)
 		token, _, err := ensureTFEFoundation(engine, tfeFoundationConfig{
@@ -420,6 +424,8 @@ func init() {
 	deployCmd.Flags().StringVar(&pgVersion, "pg-version", "16", "PostgreSQL version for TFE backend")
 	deployCmd.Flags().StringVar(&redisVersion, "redis-version", "7", "Redis version for TFE background jobs")
 	deployCmd.Flags().StringVar(&minioVersion, "minio-version", "latest", "MinIO image tag for TFE object storage")
+	deployCmd.Flags().IntVar(&minioAPIPort, "minio-api-port", 19000, "Host port mapped to MinIO S3 API container port 9000")
+	deployCmd.Flags().IntVar(&minioConsolePort, "minio-console-port", 19001, "Host port mapped to MinIO console container port 9001")
 	deployCmd.Flags().StringVar(&tfeProxyNginxTag, "proxy-nginx-version", "alpine", "Nginx image tag for the TFE ingress proxy")
 	deployCmd.Flags().StringVarP(&tfePassword, "password", "p", "hal-secret-encryption-password", "TFE Encryption Password")
 	deployCmd.Flags().StringVar(&deployTFEOrg, "tfe-org", "hal", "Terraform Enterprise organization name to auto-bootstrap during deploy")

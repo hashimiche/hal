@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -31,6 +32,8 @@ const (
 
 var (
 	createCommandName string
+	createBinaryPath  string
+	createJSONOnly    bool
 	upTransport       string
 )
 
@@ -53,15 +56,29 @@ var createCmd = &cobra.Command{
 			return
 		}
 
-		if strings.TrimSpace(createCommandName) == "" {
-			createCommandName = "hal"
+		managedBinary := ""
+		if !createJSONOnly {
+			managedBinary, err = provisionManagedMCPBinary(createBinaryPath)
+			if err != nil {
+				fmt.Printf("❌ Failed to provision HAL MCP binary: %v\n", err)
+				fmt.Println("   💡 Retry with '--json' if you only want the MCP config file.")
+				return
+			}
+		}
+
+		commandName := strings.TrimSpace(createCommandName)
+		if commandName == "" {
+			commandName = "hal"
+		}
+		if managedBinary != "" && !cmd.Flags().Changed("command") {
+			commandName = managedBinary
 		}
 
 		configPath := filepath.Join(dir, "hal-mcp.json")
 		config := map[string]interface{}{
 			"mcpServers": map[string]interface{}{
 				"hal": map[string]interface{}{
-					"command": strings.TrimSpace(createCommandName),
+					"command": commandName,
 					"args":    []string{"mcp", "up"},
 				},
 			},
@@ -79,6 +96,9 @@ var createCmd = &cobra.Command{
 		}
 
 		fmt.Println("✅ HAL MCP scaffold created.")
+		if managedBinary != "" {
+			fmt.Printf("🧩 Binary:      %s\n", managedBinary)
+		}
 		fmt.Printf("📄 Config:      %s\n", configPath)
 		fmt.Println("🧭 Next:        Point your MCP client to this config file (or copy the hal server block into your client config)")
 	},
@@ -117,24 +137,34 @@ var statusCmd = &cobra.Command{
 		_, statErr := os.Stat(configPath)
 		hasConfig := statErr == nil
 
-		exePath, exeErr := os.Executable()
-		binaryHint := exePath
-		if exeErr != nil {
-			binaryHint = "unknown"
+		managedBinaryPath, managedPathErr := defaultManagedBinaryPath()
+		if managedPathErr != nil {
+			managedBinaryPath = "unknown"
+		}
+		hasManagedBinary := false
+		if managedPathErr == nil {
+			if _, err := os.Stat(managedBinaryPath); err == nil {
+				hasManagedBinary = true
+			}
 		}
 
 		fmt.Println("HAL MCP Status")
 		fmt.Println("================")
-		fmt.Printf("Config dir:   %s\n", dir)
+		fmt.Printf("Config path:  %s\n", configPath)
+		fmt.Printf("Binary path:  %s\n", managedBinaryPath)
 		if hasConfig {
-			fmt.Printf("Config file:  ✅ %s\n", configPath)
+			fmt.Println("Config file:  ✅ Present")
 		} else {
-			fmt.Printf("Config file:  ⚪ %s (not created yet)\n", configPath)
+			fmt.Println("Config file:  ⚪ Not created yet")
+		}
+		if hasManagedBinary {
+			fmt.Println("Managed bin:  ✅ Present")
+		} else {
+			fmt.Println("Managed bin:  ⚪ Not found")
 		}
 		fmt.Println("Transport:    stdio")
-		fmt.Printf("HAL binary:   %s\n", binaryHint)
 		fmt.Println("Lifecycle:    on-demand (stdio clients start/stop the server process)")
-		fmt.Println("💡 Tip: Run 'hal mcp create' to generate a reusable client config block.")
+		fmt.Println("💡 Tip: Run 'hal mcp create' to generate/update MCP config and managed binary.")
 	},
 }
 
@@ -207,13 +237,21 @@ type mcpTextContent struct {
 }
 
 type mcpToolCallResult struct {
-	Content []mcpTextContent `json:"content"`
-	IsError bool             `json:"isError,omitempty"`
+	Content           []mcpTextContent `json:"content"`
+	IsError           bool             `json:"isError,omitempty"`
+	StructuredContent interface{}      `json:"structuredContent,omitempty"`
 }
 
 type toolsCallParams struct {
 	Name      string                 `json:"name"`
 	Arguments map[string]interface{} `json:"arguments"`
+}
+
+type toolExecution struct {
+	Command   string `json:"command"`
+	ExitCode  int    `json:"exit_code"`
+	Output    string `json:"output"`
+	Timestamp string `json:"timestamp"`
 }
 
 func ensureMCPDir() (string, error) {
@@ -226,6 +264,56 @@ func ensureMCPDir() (string, error) {
 		return "", err
 	}
 	return dir, nil
+}
+
+func defaultManagedBinaryPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, ".hal", "bin", "hal-mcp"), nil
+}
+
+func provisionManagedMCPBinary(targetPath string) (string, error) {
+	resolved := strings.TrimSpace(targetPath)
+	if resolved == "" {
+		defaultPath, err := defaultManagedBinaryPath()
+		if err != nil {
+			return "", err
+		}
+		resolved = defaultPath
+	}
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
+		return "", err
+	}
+
+	src, err := os.Open(exePath)
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+
+	dst, err := os.Create(resolved)
+	if err != nil {
+		return "", err
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return "", err
+	}
+
+	if err := os.Chmod(resolved, 0o755); err != nil {
+		return "", err
+	}
+
+	return resolved, nil
 }
 
 func serveStdioMCP(stdin io.Reader, stdout io.Writer) error {
@@ -311,10 +399,10 @@ func handleRPCRequest(req rpcRequest) *rpcResponse {
 }
 
 func declaredTools() []map[string]interface{} {
-	return []map[string]interface{}{
+	base := []map[string]interface{}{
 		{
 			"name":        "hal_status",
-			"description": "Run 'hal status' and return the global deployment summary output.",
+			"description": "Run 'hal status' and return global deployment state with executed command metadata.",
 			"inputSchema": map[string]interface{}{
 				"type":       "object",
 				"properties": map[string]interface{}{},
@@ -322,7 +410,7 @@ func declaredTools() []map[string]interface{} {
 		},
 		{
 			"name":        "hal_capacity",
-			"description": "Run HAL capacity views. Accepted view values: current, active, pending.",
+			"description": "Run HAL capacity views. Accepted view values: current, active, pending. Rejects unknown parameters.",
 			"inputSchema": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -336,7 +424,7 @@ func declaredTools() []map[string]interface{} {
 		},
 		{
 			"name":        "hal_product_status",
-			"description": "Run 'hal <product> status' for one product.",
+			"description": "Run 'hal <product> status' for one product. Rejects unknown parameters.",
 			"inputSchema": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -349,82 +437,250 @@ func declaredTools() []map[string]interface{} {
 				"required": []string{"product"},
 			},
 		},
+		{
+			"name":        "hal_help",
+			"description": "Run help commands to ground the model on real HAL command/flag syntax.",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"target": map[string]interface{}{
+						"type":        "string",
+						"description": "help target",
+						"enum":        []string{"root", "vault", "consul", "nomad", "boundary", "terraform", "obs", "mcp"},
+					},
+				},
+			},
+		},
+		{
+			"name":        "hal_snapshot",
+			"description": "Collect a grounded read-only snapshot: global status, capacity views, and product status outputs.",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"include_products": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Include per-product status commands",
+					},
+					"include_capacity_views": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Include active and pending capacity outputs",
+					},
+				},
+			},
+		},
 	}
+	withOps := append(base, mcpOpsTools()...)
+	return append(withOps, mcpAdvancedTools()...)
 }
 
 func callTool(name string, args map[string]interface{}) mcpToolCallResult {
+	if args == nil {
+		args = map[string]interface{}{}
+	}
 	switch strings.TrimSpace(name) {
 	case "hal_status":
-		out, err := runHAL("status")
-		return toolResultFromOutput(out, err)
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return toolError(err.Error())
+		}
+		execRes := runHAL("status")
+		return toolResultFromExecution(execRes)
 	case "hal_capacity":
+		if err := ensureOnlyKeys(args, map[string]bool{"view": true}); err != nil {
+			return toolError(err.Error())
+		}
+
 		view := "current"
 		if rawView, ok := args["view"]; ok {
 			if parsed, ok := rawView.(string); ok {
 				view = strings.ToLower(strings.TrimSpace(parsed))
+			} else {
+				return toolError("invalid type for view; expected string")
 			}
 		}
 
 		switch view {
 		case "", "current":
-			out, err := runHAL("capacity")
-			return toolResultFromOutput(out, err)
+			execRes := runHAL("capacity")
+			return toolResultFromExecution(execRes)
 		case "active":
-			out, err := runHAL("capacity", "--active")
-			return toolResultFromOutput(out, err)
+			execRes := runHAL("capacity", "--active")
+			return toolResultFromExecution(execRes)
 		case "pending":
-			out, err := runHAL("capacity", "--pending")
-			return toolResultFromOutput(out, err)
+			execRes := runHAL("capacity", "--pending")
+			return toolResultFromExecution(execRes)
 		default:
-			return mcpToolCallResult{
-				Content: []mcpTextContent{{Type: "text", Text: "invalid view value; expected current, active, or pending"}},
-				IsError: true,
-			}
+			return toolError("invalid view value; expected current, active, or pending")
 		}
 	case "hal_product_status":
+		if err := ensureOnlyKeys(args, map[string]bool{"product": true}); err != nil {
+			return toolError(err.Error())
+		}
+
 		product, _ := args["product"].(string)
 		product = strings.ToLower(strings.TrimSpace(product))
 		switch product {
 		case "vault", "consul", "nomad", "boundary", "terraform", "obs":
-			out, err := runHAL(product, "status")
-			return toolResultFromOutput(out, err)
+			execRes := runHAL(product, "status")
+			return toolResultFromExecution(execRes)
 		default:
-			return mcpToolCallResult{
-				Content: []mcpTextContent{{Type: "text", Text: "invalid product; expected vault, consul, nomad, boundary, terraform, or obs"}},
-				IsError: true,
+			return toolError("invalid product; expected vault, consul, nomad, boundary, terraform, or obs")
+		}
+	case "hal_help":
+		if err := ensureOnlyKeys(args, map[string]bool{"target": true}); err != nil {
+			return toolError(err.Error())
+		}
+		target := "root"
+		if rawTarget, ok := args["target"]; ok {
+			parsedTarget, ok := rawTarget.(string)
+			if !ok {
+				return toolError("invalid type for target; expected string")
 			}
+			target = strings.ToLower(strings.TrimSpace(parsedTarget))
+		}
+
+		switch target {
+		case "", "root":
+			execRes := runHAL("--help")
+			return toolResultFromExecution(execRes)
+		case "vault", "consul", "nomad", "boundary", "terraform", "obs", "mcp":
+			execRes := runHAL(target, "--help")
+			return toolResultFromExecution(execRes)
+		default:
+			return toolError("invalid target; expected root, vault, consul, nomad, boundary, terraform, obs, or mcp")
+		}
+	case "hal_snapshot":
+		if err := ensureOnlyKeys(args, map[string]bool{"include_products": true, "include_capacity_views": true}); err != nil {
+			return toolError(err.Error())
+		}
+		includeProducts := true
+		if raw, ok := args["include_products"]; ok {
+			parsed, ok := raw.(bool)
+			if !ok {
+				return toolError("invalid type for include_products; expected boolean")
+			}
+			includeProducts = parsed
+		}
+
+		includeCapacityViews := true
+		if raw, ok := args["include_capacity_views"]; ok {
+			parsed, ok := raw.(bool)
+			if !ok {
+				return toolError("invalid type for include_capacity_views; expected boolean")
+			}
+			includeCapacityViews = parsed
+		}
+
+		snapshot := map[string]interface{}{
+			"timestamp":    time.Now().UTC().Format(time.RFC3339),
+			"server":       mcpServerName,
+			"hal_snapshot": map[string]interface{}{},
+		}
+
+		entries := map[string]interface{}{}
+		entries["status"] = runHAL("status")
+		entries["capacity_current"] = runHAL("capacity")
+		if includeCapacityViews {
+			entries["capacity_active"] = runHAL("capacity", "--active")
+			entries["capacity_pending"] = runHAL("capacity", "--pending")
+		}
+		if includeProducts {
+			entries["vault_status"] = runHAL("vault", "status")
+			entries["consul_status"] = runHAL("consul", "status")
+			entries["nomad_status"] = runHAL("nomad", "status")
+			entries["boundary_status"] = runHAL("boundary", "status")
+			entries["terraform_status"] = runHAL("terraform", "status")
+			entries["obs_status"] = runHAL("obs", "status")
+		}
+		snapshot["hal_snapshot"] = entries
+
+		textBody, _ := json.MarshalIndent(snapshot, "", "  ")
+		return mcpToolCallResult{
+			Content:           []mcpTextContent{{Type: "text", Text: string(textBody)}},
+			StructuredContent: snapshot,
 		}
 	default:
-		return mcpToolCallResult{
-			Content: []mcpTextContent{{Type: "text", Text: "unknown tool"}},
-			IsError: true,
+		if opsRes, handled := handleOpsTool(name, args); handled {
+			return opsRes
 		}
+		if advRes, handled := handleAdvancedTool(name, args); handled {
+			return ensureContractResult(name, advRes)
+		}
+		return toolError("unknown tool")
 	}
 }
 
-func toolResultFromOutput(out string, err error) mcpToolCallResult {
-	text := strings.TrimSpace(out)
-	if text == "" {
-		text = "(no output)"
+func toolResultFromExecution(execRes toolExecution) mcpToolCallResult {
+	if execRes.ExitCode != 0 {
+		return opErrorForTool("hal_runtime", classifyContractError(execRes.Output), "command execution failed; run a recommended command for remediation", map[string]interface{}{"execution": execRes}, []string{"hal --help"}, []opCheck{{Name: "execution", Status: "error", Details: execRes.Command}}, nil, nil)
 	}
-	if err != nil {
-		return mcpToolCallResult{
-			Content: []mcpTextContent{{Type: "text", Text: fmt.Sprintf("command failed: %v\n\n%s", err, text)}},
-			IsError: true,
-		}
-	}
-	return mcpToolCallResult{Content: []mcpTextContent{{Type: "text", Text: text}}}
+	return opSuccessForTool("hal_runtime", "command execution succeeded", map[string]interface{}{"execution": execRes}, []string{execRes.Command}, []opCheck{{Name: "execution", Status: "ok", Details: execRes.Command}}, nil, nil, nil)
 }
 
-func runHAL(args ...string) (string, error) {
+func toolError(message string) mcpToolCallResult {
+	return opErrorForTool("hal_runtime", codeParseError, message, nil, []string{"hal --help"}, []opCheck{{Name: "input", Status: "error", Details: message}}, nil, nil)
+}
+
+func ensureContractResult(toolName string, result mcpToolCallResult) mcpToolCallResult {
+	raw, err := json.Marshal(result.StructuredContent)
+	if err == nil {
+		var env map[string]interface{}
+		if jsonErr := json.Unmarshal(raw, &env); jsonErr == nil {
+			if _, hasStatus := env["status"]; hasStatus {
+				if _, hasCode := env["code"]; hasCode {
+					if _, hasRecommended := env["recommended_commands"]; hasRecommended {
+						return result
+					}
+				}
+			}
+		}
+	}
+
+	checks := []opCheck{{Name: "legacy_tool", Status: "warn", Details: "wrapped legacy structured content"}}
+	if result.IsError {
+		return opErrorForTool(toolName, codeUnsupportedOp, "legacy tool returned non-contract payload; wrapped into contract", result.StructuredContent, []string{"hal --help"}, checks, nil, nil)
+	}
+	return opSuccessForTool(toolName, "legacy tool payload wrapped into contract", result.StructuredContent, []string{"hal --help"}, checks, nil, nil, nil)
+}
+
+func ensureOnlyKeys(args map[string]interface{}, allowed map[string]bool) error {
+	for key := range args {
+		if !allowed[key] {
+			return fmt.Errorf("unknown argument: %s", key)
+		}
+	}
+	return nil
+}
+
+func runHAL(args ...string) toolExecution {
 	exePath, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("cannot resolve hal executable: %w", err)
+		return toolExecution{Command: "hal " + strings.Join(args, " "), ExitCode: 1, Output: fmt.Sprintf("cannot resolve hal executable: %v", err), Timestamp: time.Now().UTC().Format(time.RFC3339)}
 	}
-	cmd := exec.Command(exePath, args...)
+	commandPath := exePath
+	base := strings.ToLower(filepath.Base(exePath))
+	if strings.Contains(base, ".test") {
+		if halPath, lookErr := exec.LookPath("hal"); lookErr == nil {
+			commandPath = halPath
+		}
+	}
+	cmd := exec.Command(commandPath, args...)
 	cmd.Env = os.Environ()
 	out, runErr := cmd.CombinedOutput()
-	return string(out), runErr
+	exitCode := 0
+	if runErr != nil {
+		exitCode = 1
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+	}
+
+	return toolExecution{
+		Command:   "hal " + strings.Join(args, " "),
+		ExitCode:  exitCode,
+		Output:    string(out),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
 }
 
 func readFramedMessage(reader *bufio.Reader) ([]byte, error) {
@@ -481,6 +737,8 @@ func writeResponse(writer *bufio.Writer, resp rpcResponse) error {
 
 func init() {
 	createCmd.Flags().StringVar(&createCommandName, "command", "hal", "HAL command name/path to use in generated MCP client config")
+	createCmd.Flags().StringVar(&createBinaryPath, "binary-path", "", "Path to write the managed HAL binary used by MCP clients (default ~/.hal/bin/hal-mcp)")
+	createCmd.Flags().BoolVar(&createJSONOnly, "json", false, "Only generate/update MCP config JSON (skip managed binary provisioning)")
 	upCmd.Flags().StringVar(&upTransport, "transport", "stdio", "MCP transport to use (stdio for MVP)")
 
 	Cmd.AddCommand(createCmd)

@@ -1,0 +1,41 @@
+{
+  "flags": [
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "OpenLDAP image tag for the LDAP demo (default \"1.5.0\")",
+      "name": "--openldap-version string"
+    },
+    {
+      "description": "phpLDAPadmin image tag for the LDAP demo UI (default \"0.9.0\")",
+      "name": "--phpldapadmin-version string"
+    },
+    {
+      "description": "Remove OpenLDAP and strip configuration from Vault",
+      "name": "-d, --disable"
+    },
+    {
+      "description": "Deploy OpenLDAP and configure Vault engines",
+      "name": "-e, --enable"
+    },
+    {
+      "description": "Force a clean redeployment of the entire environment",
+      "name": "-f, --force"
+    },
+    {
+      "description": "help for ldap",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal vault ldap --help"
+  ],
+  "topic": "vault ldap",
+  "usage": ""
+}

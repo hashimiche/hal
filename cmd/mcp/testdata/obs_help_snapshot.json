@@ -1,0 +1,22 @@
+{
+  "flags": [
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "help for obs",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal obs --help",
+    "hal obs [command] --help"
+  ],
+  "topic": "obs",
+  "usage": ""
+}

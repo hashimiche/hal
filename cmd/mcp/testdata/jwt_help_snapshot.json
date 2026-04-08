@@ -1,0 +1,37 @@
+{
+  "flags": [
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "Version of the GitLab CE container image to deploy (default \"18.10.1-ce.0\")",
+      "name": "--gitlab-version string"
+    },
+    {
+      "description": "Remove GitLab CE and strip JWT from Vault",
+      "name": "-d, --disable"
+    },
+    {
+      "description": "Deploy GitLab CE and configure Vault JWT",
+      "name": "-e, --enable"
+    },
+    {
+      "description": "Force a clean redeployment of the entire environment",
+      "name": "-f, --force"
+    },
+    {
+      "description": "help for jwt",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal vault jwt --help"
+  ],
+  "topic": "vault jwt",
+  "usage": ""
+}

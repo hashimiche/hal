@@ -1,0 +1,22 @@
+{
+  "flags": [
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "help for consul",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal consul --help",
+    "hal consul [command] --help"
+  ],
+  "topic": "consul",
+  "usage": ""
+}

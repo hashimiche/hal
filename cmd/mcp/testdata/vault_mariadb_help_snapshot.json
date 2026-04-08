@@ -1,0 +1,37 @@
+{
+  "flags": [
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "Version of the MariaDB container image to deploy (default \"11.4\")",
+      "name": "--mariadb-version string"
+    },
+    {
+      "description": "Remove MariaDB and clean up Vault configurations",
+      "name": "-d, --disable"
+    },
+    {
+      "description": "Deploy MariaDB and configure Vault",
+      "name": "-e, --enable"
+    },
+    {
+      "description": "Force a clean redeployment of the database",
+      "name": "-f, --force"
+    },
+    {
+      "description": "help for mariadb",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal vault mariadb --help"
+  ],
+  "topic": "vault mariadb",
+  "usage": ""
+}

@@ -89,6 +89,8 @@ hal terraform deploy \
   --pg-version 16 \
   --redis-version 7 \
   --minio-version latest \
+  --minio-api-port 19000 \
+  --minio-console-port 19001 \
   --proxy-nginx-version alpine
 
 # Nomad VM with pinned Ubuntu image channel
@@ -118,6 +120,24 @@ For the full, exact command surface, use `hal --help` and `hal <product> --help`
 - `hal mcp up` (run HAL MCP server over stdio)
 - `hal mcp status` (show local MCP readiness)
 - `hal mcp down` (stop background daemon if a PID file exists; stdio mode is normally on-demand)
+
+`hal mcp create` behavior:
+
+- By default it also provisions a managed HAL binary at `~/.hal/bin/hal-mcp` and points the MCP config command to that path.
+- Use `hal mcp create --json` to generate/update only the JSON config file and skip binary provisioning.
+
+MCP tools exposed by HAL (read-only MVP+):
+
+- `hal_status` (global status with executed command metadata)
+- `hal_capacity` (current/active/pending views, strict args)
+- `hal_product_status` (per-product status, strict args)
+- `hal_help` (returns real HAL help output to ground command syntax)
+- `hal_snapshot` (batched grounded snapshot across status/capacity/product status)
+
+Anti-hallucination behavior:
+
+- Tools reject unknown arguments instead of silently ignoring them.
+- Tool results include executed command and exit code in structured content so clients can cite exact CLI evidence.
 
 ### Vault
 
@@ -196,6 +216,8 @@ No `kubectl port-forward` is required in the standard flow.
 - Consul: http://consul.localhost:8500
 - Boundary: http://boundary.localhost:9200
 - Terraform Enterprise: https://tfe.localhost:8443
+- MinIO API (TFE object storage mock): http://127.0.0.1:19000
+- MinIO Console: http://127.0.0.1:19001
 - Grafana: http://grafana.localhost:3000
 - Prometheus: http://prometheus.localhost:9090
 - Loki: http://loki.localhost:3100/ready

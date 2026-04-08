@@ -1,0 +1,37 @@
+{
+  "flags": [
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "Version of the Keycloak container image to deploy (default \"24.0.4\")",
+      "name": "--keycloak-version string"
+    },
+    {
+      "description": "Remove Keycloak and strip the OIDC configuration from Vault",
+      "name": "-d, --disable"
+    },
+    {
+      "description": "Deploy Keycloak and fully configure Vault OIDC auth",
+      "name": "-e, --enable"
+    },
+    {
+      "description": "Force a clean redeployment of the OIDC environment",
+      "name": "-f, --force"
+    },
+    {
+      "description": "help for oidc",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal vault oidc --help"
+  ],
+  "topic": "vault oidc",
+  "usage": ""
+}

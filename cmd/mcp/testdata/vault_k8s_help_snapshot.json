@@ -1,0 +1,57 @@
+{
+  "flags": [
+    {
+      "description": "Use the VSO CSI Driver (Requires Vault Enterprise)",
+      "name": "--csi"
+    },
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "Use the advanced jwt-k8s OIDC architecture (experimental)",
+      "name": "--jwt"
+    },
+    {
+      "description": "KinD node image used when creating the cluster (default \"kindest/node:v1.31.1\")",
+      "name": "--kind-node-image string"
+    },
+    {
+      "description": "Helm chart version for hashicorp/vault-secrets-operator (empty uses latest)",
+      "name": "--vso-chart-version string"
+    },
+    {
+      "description": "Demo backend container image (default \"httpd:2.4-alpine\")",
+      "name": "--web-backend-image string"
+    },
+    {
+      "description": "Demo reverse proxy container image (default \"nginx:alpine\")",
+      "name": "--web-proxy-image string"
+    },
+    {
+      "description": "Destroy KinD and clean up Vault configurations",
+      "name": "-d, --disable"
+    },
+    {
+      "description": "Deploy KinD and configure Vault Secrets Operator",
+      "name": "-e, --enable"
+    },
+    {
+      "description": "Force a clean redeployment of the cluster",
+      "name": "-f, --force"
+    },
+    {
+      "description": "help for k8s",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal vault k8s --help"
+  ],
+  "topic": "vault k8s",
+  "usage": ""
+}
