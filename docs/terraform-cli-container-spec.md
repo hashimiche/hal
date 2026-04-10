@@ -179,6 +179,7 @@ This ensures Terraform CLI is already authenticated for the local TFE hostname b
 - token should be scoped for local lab usage and not reused outside this flow
 - `--force` should rotate token material by recreating auth files
 - token values must never be printed in command output
+- helper token/bootstrap no longer requires creating a default TFE project name
 
 ## Repo Workflow Inside The Container
 
@@ -203,9 +204,28 @@ HAL-managed demo scenarios may create multiple workspaces and matching repos for
 For the current dad-joke scenario set:
 
 - repos live under `/workspaces/<repo>` inside `hal-tfe-cli`
-- workspaces are spread across the `Dave` and `Frank` TFE projects rather than being grouped into a single project
+- `hal tf cli -c` ensures scenario workspaces exist in TFE and are assigned across projects `Dave` and `Frank`
 - `hal tf cli -c` auto-seeds the default `/workspaces` scenario directories (with `main.tf`) when they are missing
+- by default, `hal tf cli` no longer creates a `HAL-CLI` project; `--tfe-project` is optional
 - `--disable` cleanup removes HAL-managed scenario workspaces from TFE and deletes the helper container
+
+Current default workspace mapping:
+
+- `hal-lucinated` -> `Dave`
+- `hal-lelujah` -> `Dave`
+- `hal-ibut` -> `Dave`
+- `hal-ogen` -> `Frank`
+- `hal-oween` -> `Frank`
+
+Default run seeding mix (first helper bootstrap on a fresh container):
+
+- `hal-lucinated`: one plan-only run, then one apply run
+- `hal-lelujah`: one plan-only run, then one apply run
+- `hal-ogen`: plan-only run
+- `hal-oween`: plan-only run
+- `hal-ibut`: no activity (intentionally empty run history)
+
+Run seeding is launched in the background after `hal tf cli -c` bootstrap so shell entry is faster.
 
 ## Suggested Command Semantics
 
@@ -287,6 +307,7 @@ The first implementation is successful if all of the following are true:
 11. `hal tf cli --disable` prompts for confirmation in interactive mode before teardown.
 12. `hal tf cli --disable --force` performs non-interactive teardown.
 13. `hal tf cli --disable` teardown removes the helper container and deletes HAL-managed scenario workspaces.
+14. `hal tf cli -c` ensures `Dave`/`Frank` projects and the default scenario workspaces exist in TFE after a fresh reset.
 
 ## Non-Goals For V1
 

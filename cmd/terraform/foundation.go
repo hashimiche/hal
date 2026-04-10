@@ -166,9 +166,6 @@ func ensureTFEOrgAndProject(baseURL, apiToken, orgName, projectName string) (str
 	if org == "" {
 		return "", fmt.Errorf("organization name cannot be empty")
 	}
-	if strings.TrimSpace(projectName) == "" {
-		return "", fmt.Errorf("project name cannot be empty")
-	}
 
 	orgURL := fmt.Sprintf("%s/api/v2/organizations/%s", baseURL, org)
 	orgBody, orgStatus, orgErr := integrations.TFERequest("GET", orgURL, apiToken, nil)
@@ -195,6 +192,12 @@ func ensureTFEOrgAndProject(baseURL, apiToken, orgName, projectName string) (str
 		if err != nil {
 			return "", fmt.Errorf("organization creation failed: %s", strings.TrimSpace(string(resp)))
 		}
+	}
+
+	if strings.TrimSpace(projectName) == "" {
+		// Some flows only need organization + token bootstrap and intentionally do not
+		// require creating a default project.
+		return "", nil
 	}
 
 	listURL := fmt.Sprintf("%s/api/v2/organizations/%s/projects", baseURL, org)

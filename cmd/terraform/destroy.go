@@ -19,6 +19,7 @@ var tfeEcosystem = []string{
 	"hal-tfe-db",
 	"hal-tfe-redis",
 	"hal-tfe-minio",
+	"hal-tfe-cli",
 }
 
 var destroyCmd = &cobra.Command{
@@ -64,6 +65,19 @@ var destroyCmd = &cobra.Command{
 				fmt.Printf("⚠️  Failed to destroy TFE agent containers: %s\n", strings.TrimSpace(string(out)))
 			} else {
 				fmt.Printf("  ✅ Destroyed %d TFE agent container(s).\n", len(extraAgentIDs))
+			}
+		}
+
+		if global.DryRun {
+			fmt.Printf("[DRY RUN] Would execute: %s image rm -f %s\n", engine, tfeCLIImageName)
+		} else {
+			if out, err := exec.Command(engine, "image", "rm", "-f", tfeCLIImageName).CombinedOutput(); err != nil {
+				outputStr := strings.ToLower(strings.TrimSpace(string(out)))
+				if !strings.Contains(outputStr, "no such image") && !strings.Contains(outputStr, "image not known") {
+					fmt.Printf("⚠️  Failed to remove helper image '%s': %s\n", tfeCLIImageName, strings.TrimSpace(string(out)))
+				}
+			} else {
+				fmt.Printf("  ✅ Removed helper image: %s\n", tfeCLIImageName)
 			}
 		}
 

@@ -8,6 +8,8 @@ import (
 	"hal/internal/global"
 )
 
+const tfeCLIHelperImage = "hal-tfe-cli:latest"
+
 type globalTeardownResult struct {
 	DockerContainersRemoved int
 	KindClustersDeleted     int
@@ -77,6 +79,14 @@ func runGlobalTeardown() globalTeardownResult {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("%s TFE agent removal failed: %v", containerEngine, err))
 			} else {
 				result.DockerContainersRemoved += len(tfeAgentIDs)
+			}
+		}
+
+		// Best effort: remove Terraform CLI helper image if present.
+		if out, err := exec.Command(containerEngine, "image", "rm", "-f", tfeCLIHelperImage).CombinedOutput(); err != nil {
+			msg := strings.ToLower(strings.TrimSpace(string(out)))
+			if !strings.Contains(msg, "no such image") && !strings.Contains(msg, "image not known") {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s helper image removal failed: %s", containerEngine, strings.TrimSpace(string(out))))
 			}
 		}
 	}

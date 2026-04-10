@@ -8,6 +8,7 @@ Tear down the local Terraform Enterprise stack and related local state for a cle
 
 ## Behavior
 - Stops/removes TFE stack resources managed by HAL.
+- Removes the Terraform CLI helper container (`hal-tfe-cli`) as part of stack teardown.
 - Resets local deployment state used by the Terraform namespace.
 
 ## Related

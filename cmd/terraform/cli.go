@@ -22,6 +22,8 @@ const (
 	tfeCLIImageName     = "hal-tfe-cli:latest"
 	defaultTFECLIBase   = "ghcr.io/straubt1/tfx:latest"
 	tfeCLIManagedWSFile = "/root/.hal-tfe-cli-managed-workspaces"
+	tfeCLIRunsSeedFile  = "/root/.hal-tfe-cli-scenario-runs-seeded-v3"
+	tfeCLIRunsSeedLock  = "/root/.hal-tfe-cli-scenario-runs-seeding.lock"
 )
 
 var (
@@ -129,9 +131,15 @@ var cliCmd = &cobra.Command{
 				return
 			}
 
-			if err := ensureDefaultScenarioRepos(engine); err != nil {
+			if err := ensureDefaultScenarioRepos(engine, token); err != nil {
 				fmt.Printf("❌ Failed to seed default /workspaces scenario: %v\n", err)
 				return
+			}
+
+			if err := triggerBackgroundScenarioRunSeeding(engine); err != nil {
+				fmt.Printf("⚠️  Could not start background scenario run seeding: %v\n", err)
+			} else {
+				fmt.Println("🧪 Scenario run seeding started in background (parallel).")
 			}
 
 			printTFECLIBanner()
@@ -304,12 +312,10 @@ func renderTFECLIBuildFrame(title string, revealCols int, maxCols int) (string, 
 
 	percent := (revealCols * 100) / maxCols
 	art := tfeCLIASCIIArt()
-	barWidth := 36
-	filled := (percent * barWidth) / 100
-	bar := strings.Repeat("#", filled) + strings.Repeat("-", barWidth-filled)
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("%s [%s] %3d%%\n", title, bar, percent))
+	b.WriteString(fmt.Sprintf("%s  %3d%%\n", title, percent))
+	b.WriteString("\n")
 
 	for _, line := range art {
 		if len(line) < maxCols {
@@ -325,8 +331,9 @@ func renderTFECLIBuildFrame(title string, revealCols int, maxCols int) (string, 
 		}
 		b.WriteString("\n")
 	}
+	b.WriteString("\n")
 
-	return b.String(), len(art) + 1
+	return b.String(), len(art) + 3
 }
 
 func tfeCLIASCIIArt() []string {
@@ -614,40 +621,50 @@ func disableTFECLI(engine string) error {
 		}
 	}
 
-	if !containerExists(engine, tfeCLIContainerName) {
-		fmt.Println("ℹ️  Helper container is already absent.")
-		return nil
-	}
+	if containerExists(engine, tfeCLIContainerName) {
+		if !global.IsContainerRunning(engine, tfeCLIContainerName) {
+			_, _ = exec.Command(engine, "start", tfeCLIContainerName).CombinedOutput()
+		}
 
-	if !global.IsContainerRunning(engine, tfeCLIContainerName) {
-		_, _ = exec.Command(engine, "start", tfeCLIContainerName).CombinedOutput()
-	}
+		auth, authErr := readTFECLIAuthConfig(engine)
+		managedWorkspaces, _ := readTFECLIManagedList(engine, tfeCLIManagedWSFile)
 
-	auth, authErr := readTFECLIAuthConfig(engine)
-	managedWorkspaces, _ := readTFECLIManagedList(engine, tfeCLIManagedWSFile)
-
-	if len(managedWorkspaces) > 0 {
-		if !global.IsContainerRunning(engine, "hal-tfe") {
-			fmt.Println("⚠️  Skipping TFE workspace cleanup because hal-tfe is not running.")
-		} else if authErr != nil {
-			fmt.Printf("⚠️  Skipping TFE workspace cleanup because helper auth could not be read: %v\n", authErr)
-		} else {
-			for _, workspaceName := range managedWorkspaces {
-				if err := deleteTFECLIManagedWorkspace(auth, workspaceName); err != nil {
-					fmt.Printf("⚠️  Could not delete workspace %s: %v\n", workspaceName, err)
-					continue
+		if len(managedWorkspaces) > 0 {
+			if !global.IsContainerRunning(engine, "hal-tfe") {
+				fmt.Println("⚠️  Skipping TFE workspace cleanup because hal-tfe is not running.")
+			} else if authErr != nil {
+				fmt.Printf("⚠️  Skipping TFE workspace cleanup because helper auth could not be read: %v\n", authErr)
+			} else {
+				for _, workspaceName := range managedWorkspaces {
+					if err := deleteTFECLIManagedWorkspace(auth, workspaceName); err != nil {
+						fmt.Printf("⚠️  Could not delete workspace %s: %v\n", workspaceName, err)
+						continue
+					}
+					fmt.Printf("🧹 Deleted managed workspace: %s\n", workspaceName)
 				}
-				fmt.Printf("🧹 Deleted managed workspace: %s\n", workspaceName)
 			}
 		}
+
+		out, err := exec.Command(engine, "rm", "-f", tfeCLIContainerName).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+		}
+
+		fmt.Println("✅ Helper container removed.")
+	} else {
+		fmt.Println("ℹ️  Helper container is already absent.")
 	}
 
-	out, err := exec.Command(engine, "rm", "-f", tfeCLIContainerName).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	if out, err := exec.Command(engine, "image", "rm", "-f", tfeCLIImageName).CombinedOutput(); err != nil {
+		outputStr := strings.ToLower(strings.TrimSpace(string(out)))
+		if !strings.Contains(outputStr, "no such image") && !strings.Contains(outputStr, "image not known") {
+			return fmt.Errorf("failed to remove helper image %s: %s", tfeCLIImageName, strings.TrimSpace(string(out)))
+		}
+		fmt.Println("ℹ️  Helper image is already absent.")
+	} else {
+		fmt.Printf("✅ Helper image removed: %s\n", tfeCLIImageName)
 	}
 
-	fmt.Println("✅ Helper container removed.")
 	return nil
 }
 
@@ -790,7 +807,11 @@ func terraformCredentialsHosts(primary string) []string {
 	return ordered
 }
 
-func ensureDefaultScenarioRepos(engine string) error {
+func ensureDefaultScenarioRepos(engine, token string) error {
+	if err := ensureDefaultScenarioWorkspaces(token); err != nil {
+		return err
+	}
+
 	tfxHostname := normalizeTFXHostname(tfeCLIURL)
 	repoDefs := []struct {
 		Name      string
@@ -863,6 +884,260 @@ fi
 		if out, err := exec.Command(engine, "exec", tfeCLIContainerName, "sh", "-lc", script).CombinedOutput(); err != nil {
 			return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 		}
+	}
+
+	return nil
+}
+
+func triggerBackgroundScenarioRunSeeding(engine string) error {
+	launchScript := fmt.Sprintf(`set -e
+if [ -f %s ]; then
+  exit 0
+fi
+if [ -f %s ]; then
+  exit 0
+fi
+
+cat > /tmp/hal-tfe-cli-seed-runs.sh <<'EOF_HAL_SEED'
+#!/usr/bin/env sh
+set -eu
+
+touch %s
+trap 'rm -f %s' EXIT
+
+failures=0
+SEED_STATUS_DIR="/tmp/hal-tfe-cli-seed-status"
+rm -rf "${SEED_STATUS_DIR}"
+mkdir -p "${SEED_STATUS_DIR}"
+
+run_step() {
+	step_name="$1"
+	shift
+	if "$@"; then return 0; fi
+	return 1
+}
+
+run_plan() {
+  repo="$1"
+	(
+		set -eu
+		cd "/workspaces/${repo}"
+		terraform init -input=false >/tmp/${repo}_seed_init.log 2>&1
+		terraform plan -input=false >/tmp/${repo}_seed_plan.log 2>&1
+	)
+}
+
+run_apply() {
+  repo="$1"
+	(
+		set -eu
+		cd "/workspaces/${repo}"
+		terraform init -input=false >/tmp/${repo}_seed_init.log 2>&1
+		terraform apply -auto-approve -input=false >/tmp/${repo}_seed_apply.log 2>&1
+	)
+}
+
+run_plan_apply() {
+	repo="$1"
+	run_plan "${repo}"
+	run_apply "${repo}"
+}
+
+run_task() {
+	task_name="$1"
+	shift
+	(
+		if run_step "${task_name}" "$@"; then
+			echo ok > "${SEED_STATUS_DIR}/${task_name}.status"
+		else
+			echo failed > "${SEED_STATUS_DIR}/${task_name}.status"
+		fi
+	) &
+}
+
+# Parallel tasks:
+# - 2 workspaces with plan-only
+# - 2 workspaces with plan+apply
+run_task "hal_ogen_plan" run_plan hal-ogen
+run_task "hal_oween_plan" run_plan hal-oween
+run_task "hal_lucinated_plan_apply" run_plan_apply hal-lucinated
+run_task "hal_lelujah_plan_apply" run_plan_apply hal-lelujah
+
+wait
+
+for status_file in "${SEED_STATUS_DIR}"/*.status; do
+	task_name="$(basename "${status_file}" .status)"
+	if [ "$(cat "${status_file}")" = "ok" ]; then
+		echo "[seed] ok: ${task_name}" >> /tmp/hal-tfe-cli-seed-runs.log
+	else
+		failures=$((failures + 1))
+		echo "[seed] failed: ${task_name}" >> /tmp/hal-tfe-cli-seed-runs.log
+	fi
+done
+
+# hal-ibut intentionally untouched
+
+if [ "$failures" -eq 0 ]; then
+	echo seeded > %s
+else
+	echo "[seed] completed with ${failures} failure(s)" >> /tmp/hal-tfe-cli-seed-runs.log
+fi
+EOF_HAL_SEED
+
+chmod +x /tmp/hal-tfe-cli-seed-runs.sh
+nohup /tmp/hal-tfe-cli-seed-runs.sh >/tmp/hal-tfe-cli-seed-runs.log 2>&1 &
+`, tfeCLIRunsSeedFile, tfeCLIRunsSeedLock, tfeCLIRunsSeedLock, tfeCLIRunsSeedLock, tfeCLIRunsSeedFile)
+
+	out, err := exec.Command(engine, "exec", tfeCLIContainerName, "sh", "-lc", launchScript).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	}
+
+	return nil
+}
+
+func ensureDefaultScenarioWorkspaces(token string) error {
+	baseURL := strings.TrimSuffix(strings.TrimSpace(tfeCLIURL), "/")
+	if baseURL == "" {
+		return fmt.Errorf("tfe url cannot be empty")
+	}
+
+	org := strings.ToLower(strings.TrimSpace(tfeCLIDefaultOrg))
+	if org == "" {
+		return fmt.Errorf("tfe org cannot be empty")
+	}
+
+	if strings.TrimSpace(tfeCLIProjectSeed) == "" {
+		// Backward compatibility cleanup: older helper flows created a HAL-CLI project
+		// by default. Remove it when not explicitly requested.
+		_ = removeLegacyTFEProject(baseURL, org, token, "HAL-CLI")
+	}
+
+	daveProjectID, err := ensureTFEOrgAndProject(baseURL, token, org, "Dave")
+	if err != nil {
+		return fmt.Errorf("failed to ensure TFE project Dave: %w", err)
+	}
+
+	frankProjectID, err := ensureTFEOrgAndProject(baseURL, token, org, "Frank")
+	if err != nil {
+		return fmt.Errorf("failed to ensure TFE project Frank: %w", err)
+	}
+
+	scenarioWorkspaces := []struct {
+		Name      string
+		ProjectID string
+	}{
+		{Name: "hal-lucinated", ProjectID: daveProjectID},
+		{Name: "hal-ogen", ProjectID: frankProjectID},
+		{Name: "hal-lelujah", ProjectID: daveProjectID},
+		{Name: "hal-oween", ProjectID: frankProjectID},
+		{Name: "hal-ibut", ProjectID: daveProjectID},
+	}
+
+	for _, ws := range scenarioWorkspaces {
+		if err := ensureTFESCenarioWorkspace(baseURL, org, token, ws.Name, ws.ProjectID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func removeLegacyTFEProject(baseURL, org, token, projectName string) error {
+	listURL := fmt.Sprintf("%s/api/v2/organizations/%s/projects", baseURL, org)
+	body, _, err := integrations.TFERequest("GET", listURL, token, nil)
+	if err != nil {
+		return err
+	}
+
+	var listResp map[string]interface{}
+	_ = json.Unmarshal(body, &listResp)
+	data, _ := listResp["data"].([]interface{})
+
+	for _, item := range data {
+		project, _ := item.(map[string]interface{})
+		attrs, _ := project["attributes"].(map[string]interface{})
+		if fmt.Sprintf("%v", attrs["name"]) != projectName {
+			continue
+		}
+
+		projectID := strings.TrimSpace(fmt.Sprintf("%v", project["id"]))
+		if projectID == "" || projectID == "<nil>" {
+			continue
+		}
+
+		delURL := fmt.Sprintf("%s/api/v2/projects/%s", baseURL, projectID)
+		_, _, delErr := integrations.TFERequest("DELETE", delURL, token, nil)
+		return delErr
+	}
+
+	return nil
+}
+
+func ensureTFESCenarioWorkspace(baseURL, org, token, workspaceName, projectID string) error {
+	getURL := fmt.Sprintf("%s/api/v2/organizations/%s/workspaces/%s", baseURL, org, workspaceName)
+	getBody, getStatus, getErr := integrations.TFERequest("GET", getURL, token, nil)
+
+	attributes := map[string]interface{}{
+		"name":           workspaceName,
+		"auto-apply":     true,
+		"execution-mode": "remote",
+	}
+
+	if getErr == nil {
+		workspaceID := extractTFEDataID(getBody)
+		if workspaceID == "" {
+			return fmt.Errorf("workspace lookup for %s did not return an id", workspaceName)
+		}
+
+		patchPayload := map[string]interface{}{
+			"data": map[string]interface{}{
+				"type":       "workspaces",
+				"id":         workspaceID,
+				"attributes": attributes,
+				"relationships": map[string]interface{}{
+					"project": map[string]interface{}{
+						"data": map[string]interface{}{
+							"id":   projectID,
+							"type": "projects",
+						},
+					},
+				},
+			},
+		}
+
+		patchURL := fmt.Sprintf("%s/api/v2/workspaces/%s", baseURL, workspaceID)
+		patchBody, _, patchErr := integrations.TFERequest("PATCH", patchURL, token, patchPayload)
+		if patchErr != nil {
+			return fmt.Errorf("failed to patch workspace %s: %s", workspaceName, strings.TrimSpace(string(patchBody)))
+		}
+
+		return nil
+	}
+
+	if getStatus != 404 {
+		return fmt.Errorf("workspace lookup failed for %s: %s", workspaceName, strings.TrimSpace(string(getBody)))
+	}
+
+	createPayload := map[string]interface{}{
+		"data": map[string]interface{}{
+			"type":       "workspaces",
+			"attributes": attributes,
+			"relationships": map[string]interface{}{
+				"project": map[string]interface{}{
+					"data": map[string]interface{}{
+						"id":   projectID,
+						"type": "projects",
+					},
+				},
+			},
+		},
+	}
+
+	createURL := fmt.Sprintf("%s/api/v2/organizations/%s/workspaces", baseURL, org)
+	createBody, _, createErr := integrations.TFERequest("POST", createURL, token, createPayload)
+	if createErr != nil {
+		return fmt.Errorf("failed to create workspace %s: %s", workspaceName, strings.TrimSpace(string(createBody)))
 	}
 
 	return nil
@@ -967,7 +1242,7 @@ func init() {
 	cliCmd.Flags().StringVar(&tfeCLIAdminUsername, "tfe-admin-username", "haladmin", "Terraform Enterprise admin username used for helper token bootstrap")
 	cliCmd.Flags().StringVar(&tfeCLIAdminEmail, "tfe-admin-email", "haladmin@localhost", "Terraform Enterprise admin email used for helper token bootstrap")
 	cliCmd.Flags().StringVar(&tfeCLIAdminPassword, "tfe-admin-password", "hal9000FTW", "Terraform Enterprise admin password used for helper token bootstrap")
-	cliCmd.Flags().StringVar(&tfeCLIProjectSeed, "tfe-project", "HAL-CLI", "Terraform Enterprise project ensured during helper token bootstrap")
+	cliCmd.Flags().StringVar(&tfeCLIProjectSeed, "tfe-project", "", "Optional Terraform Enterprise project to ensure during helper token bootstrap")
 	cliCmd.Flags().BoolVar(&tfeCLIVerbose, "verbose", false, "Show raw Docker build logs instead of HAL build animation")
 
 	Cmd.AddCommand(cliCmd)

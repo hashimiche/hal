@@ -39,7 +39,10 @@ Use this skill when the user wants to:
 - Mints a TFE user token for the helper session
 - Writes `/root/.tfx.hcl`
 - Writes `/root/.terraform.d/credentials.tfrc.json`
+- Ensures scenario projects `Dave` and `Frank` in TFE
+- Ensures default scenario workspaces in TFE and assigns them to `Dave`/`Frank`
 - Seeds default demo repos under `/workspaces`
+- By default, does not create a `HAL-CLI` project unless `--tfe-project` is explicitly provided
 
 ## Lifecycle Workflow
 
@@ -55,6 +58,7 @@ This reports whether:
 - the helper container exists or is running
 - `hal-tfe` is running
 - the target TFE URL is reachable from the expected flow
+- scenario repos/workspaces are expected to be ensured on first `-c` after a fresh reset
 
 ### Step 2: Build or refresh the helper image
 
@@ -141,7 +145,8 @@ If the user asks for proof, provide the exact helper-shell commands to verify `t
 4. **Container exits unexpectedly:** Recommend `hal tf cli --disable --force` followed by `hal tf cli -e -f` and then `hal tf cli -c`.
 5. **Image exists but mount expectations changed:** Recommend `--force` recreation.
 6. **User asks where repos live:** Point them to `/workspaces` in the helper container.
-7. **User asks why auth already works:** Explain that HAL writes `.tfx.hcl` and Terraform credentials before opening the shell.
+7. **User expects workspaces in TFE after fresh restart:** Explain they are ensured during `hal tf cli -c` and mapped across `Dave`/`Frank`.
+8. **User asks why auth already works:** Explain that HAL writes `.tfx.hcl` and Terraform credentials before opening the shell.
 
 ## Operator Guidance
 

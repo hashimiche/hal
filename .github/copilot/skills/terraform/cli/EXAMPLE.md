@@ -9,7 +9,7 @@ Assistant:
     hal tf cli -e
     hal tf cli -c
 
-Assistant: This builds the helper image, bootstraps auth in the container, and opens the shell without requiring host trust-store changes.
+Assistant: This builds the helper image, bootstraps auth in the container, ensures the default scenario workspaces in TFE (`Dave`/`Frank` mapping), and opens the shell without requiring host trust-store changes.
 
 ## Example 2: Check Current State
 
@@ -20,6 +20,18 @@ Assistant:
     hal terraform cli
 
 Assistant: Use the status view first. It shows whether the helper image exists, whether `hal-tfe-cli` is running, and whether `hal-tfe` is up.
+
+## Example 2b: Fresh Reset Expectations
+
+User: After `hal tf deploy`, `hal tf cli -e`, `hal tf cli -c`, what should I see in TFE?
+
+Assistant:
+
+    Projects: Dave, Frank
+    Workspaces: hal-lucinated, hal-lelujah, hal-ibut (Dave)
+                hal-ogen, hal-oween (Frank)
+
+Assistant: By default, `HAL-CLI` is no longer auto-created unless you pass `--tfe-project`.
 
 ## Example 3: Verify Helper Tooling
 

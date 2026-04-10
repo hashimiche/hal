@@ -15,6 +15,7 @@ Build and run the ephemeral Terraform/TFX helper shell for local TFE workflows.
 ## Behavior
 - Ensures helper image/container lifecycle for local TFE usage.
 - Bootstraps helper auth context for Terraform and TFX.
+- Ensures default scenario projects/workspaces in TFE (`Dave`, `Frank`, and the `hal-*` workspace set) during console bootstrap.
 - Supports status view when run with no lifecycle flag.
 
 ## Detailed Reference
@@ -42,7 +43,7 @@ Build and run the ephemeral Terraform/TFX helper shell for local TFE workflows.
 --tfe-admin-password string   Terraform Enterprise admin password used for helper token bootstrap (default "hal9000FTW")
 --tfe-admin-username string   Terraform Enterprise admin username used for helper token bootstrap (default "haladmin")
 --tfe-org string              Default Terraform Enterprise organization written to ~/.tfx.hcl (default "hal")
---tfe-project string          Terraform Enterprise project ensured during helper token bootstrap (default "HAL-CLI")
+--tfe-project string          Optional Terraform Enterprise project to ensure during helper token bootstrap
 --tfe-url string              Terraform Enterprise URL used for helper auth bootstrap (default "https://tfe.localhost:8443")
 --verbose                     Show raw Docker build logs instead of HAL build animation
 ```
