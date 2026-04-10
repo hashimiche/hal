@@ -1,0 +1,34 @@
+# HAL Vault Deploy Command Spec
+
+## Command
+- `hal vault deploy`
+
+## Purpose
+Deploy a local Vault instance and baseline configuration for HAL labs.
+
+## Related
+- Parent namespace: [vault.md](vault.md)
+
+## Prerequisites
+- HAL CLI is available in your local environment.
+- The relevant product base deployment should be running when this command targets an existing stack.
+## Flags
+- Command flags from `hal vault deploy --help`:
+```text
+--configure-obs         Refresh Prometheus target and Grafana dashboard artifacts without redeploying Vault
+-e, --edition string        Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise) (default "ce")
+-f, --force                 Force redeploy
+-h, --help                  help for deploy
+--helper-image string   Helper image used for one-shot setup tasks during Vault deploy (default "alpine:3.22")
+-c, --join-consul           Tether Vault to the global HAL Consul instance
+-v, --version string        Vault version to deploy (default "1.21")
+```
+- Global flags: `--debug`, `--dry-run`
+
+## Side Effects
+- This command may create, mutate, or remove local lab resources depending on its operation.
+
+## Example
+```bash
+hal vault deploy
+```
