@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -28,9 +30,12 @@ const (
 	codeTimeout             = "timeout"
 	codeParseError          = "parse_error"
 	codeUnsupportedOp       = "unsupported_operation"
+	mcpContractVersion      = "2026-04-13"
+	mcpPolicyVersion        = "2026-04-13"
 )
 
 type opContractResponse struct {
+	ContractVersion     string         `json:"contract_version,omitempty"`
 	Status              string         `json:"status"`
 	Code                string         `json:"code"`
 	Message             string         `json:"message"`
@@ -42,6 +47,7 @@ type opContractResponse struct {
 	Checks              []opCheck      `json:"checks"`
 	NextSteps           []opNextStep   `json:"next_steps,omitempty"`
 	Credentials         *opCredentials `json:"credentials,omitempty"`
+	Grounding           *opGrounding   `json:"grounding,omitempty"`
 	Docs                []string       `json:"docs"`
 }
 
@@ -63,11 +69,24 @@ type opCredentials struct {
 	Redacted   bool     `json:"redacted"`
 }
 
+type opGrounding struct {
+	Source     string  `json:"source"`
+	Mode       string  `json:"mode"`
+	Confidence float64 `json:"confidence"`
+	Profile    string  `json:"profile,omitempty"`
+	Version    string  `json:"version,omitempty"`
+}
+
 func mcpOpsTools() []map[string]interface{} {
 	return []map[string]interface{}{
 		{
 			"name":        "get_runtime_status",
 			"description": "Return products, versions, endpoints, deployment state and feature state in structured form.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "hal_status_baseline",
+			"description": "Alias of get_runtime_status for deterministic LLM routing.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
@@ -96,6 +115,16 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
+			"name":        "hal_policy_profile",
+			"description": "Return HAL-first runtime policy profile for clients (mandatory checks, fallback behavior, and contract versions).",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"profile": map[string]interface{}{"type": "string", "enum": []string{"strict", "standard"}},
+				},
+			},
+		},
+		{
 			"name":        "get_help_for_topic",
 			"description": "Input topic like 'vault oidc' or 'vault jwt'; returns usage, flags, and verified command examples.",
 			"inputSchema": map[string]interface{}{
@@ -116,6 +145,29 @@ func mcpOpsTools() []map[string]interface{} {
 					"context": map[string]interface{}{"type": "string"},
 				},
 				"required": []string{"intent"},
+			},
+		},
+		{
+			"name":        "hal_plan_deploy",
+			"description": "Alias of plan_next_steps with deploy/setup intent focus.",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"intent":  map[string]interface{}{"type": "string"},
+					"context": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"intent"},
+			},
+		},
+		{
+			"name":        "hal_plan_verify",
+			"description": "Return deterministic post-action verification commands for a HAL component/workflow.",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"component": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"component"},
 			},
 		},
 		{
@@ -189,6 +241,11 @@ func mcpOpsTools() []map[string]interface{} {
 		{
 			"name":        "get_tfe_status",
 			"description": "Return Terraform Enterprise runtime and workspace wiring status.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "get_tfe_cli_status",
+			"description": "Return Terraform CLI helper readiness for local TFE workflows.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
@@ -300,7 +357,7 @@ func modeSchema() map[string]interface{} {
 
 func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult, bool) {
 	switch strings.TrimSpace(name) {
-	case "get_runtime_status":
+	case "get_runtime_status", "hal_status_baseline":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
 			return opError(codeParseError, err.Error(), nil, []string{"hal status"}, nil), true
 		}
@@ -330,7 +387,7 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
 			return opErrorForTool("get_terraform_status", codeParseError, err.Error(), nil, []string{"hal terraform status"}, nil, nil, nil), true
 		}
-		return handleStatusCommandTool("get_terraform_status", []string{"terraform", "status"}, []string{"hal terraform status", "hal terraform deploy"}, []string{"https://developer.hashicorp.com/terraform/enterprise"}), true
+		return handleTerraformRuntimeStatus("get_terraform_status"), true
 
 	case "enable_terraform":
 		return handleEnableScenarioMode("enable_terraform", []string{"terraform", "deploy"}, []string{"hal terraform status"}, args), true
@@ -362,6 +419,27 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		return opSuccess("capabilities collected", cap, []string{"hal --help"}, nil), true
 
+	case "hal_policy_profile":
+		if err := ensureOnlyKeys(args, map[string]bool{"profile": true}); err != nil {
+			return opErrorForTool("hal_policy_profile", codeParseError, err.Error(), nil, []string{"hal mcp policy --json"}, nil, nil, nil), true
+		}
+		profile := "strict"
+		if raw, ok := args["profile"]; ok {
+			parsed, ok := raw.(string)
+			if !ok {
+				return opErrorForTool("hal_policy_profile", codeParseError, "profile must be a string", nil, []string{"hal mcp policy --json"}, nil, nil, nil), true
+			}
+			if strings.TrimSpace(parsed) != "" {
+				profile = strings.TrimSpace(parsed)
+			}
+		}
+		policy, err := buildPolicyProfile(profile)
+		if err != nil {
+			return opErrorForTool("hal_policy_profile", codeParseError, err.Error(), nil, []string{"hal mcp policy --json"}, nil, nil, nil), true
+		}
+		checks := []opCheck{{Name: "policy", Status: "ok", Details: "runtime policy profile resolved"}}
+		return opSuccessForTool("hal_policy_profile", "policy profile resolved", policy, []string{"hal mcp policy --json", "hal mcp status"}, checks, nil, nil, nil), true
+
 	case "get_help_for_topic":
 		if err := ensureOnlyKeys(args, map[string]bool{"topic": true}); err != nil {
 			return opError(codeParseError, err.Error(), nil, []string{"hal --help"}, nil), true
@@ -382,7 +460,7 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		help["recommended_commands"] = sortedUnique(append([]string{helpcmd}, extractCommandsFromHelp(execRes.Output)...))
 		return opSuccess("topic help parsed", help, help["recommended_commands"].([]string), nil), true
 
-	case "plan_next_steps":
+	case "plan_next_steps", "hal_plan_deploy":
 		if err := ensureOnlyKeys(args, map[string]bool{"intent": true, "context": true}); err != nil {
 			return opError(codeParseError, err.Error(), nil, []string{"get_capabilities"}, nil), true
 		}
@@ -400,6 +478,55 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		recommended := extractPlanCommands(plan)
 		return opSuccess("plan generated", plan, recommended, nil), true
+
+	case "hal_plan_verify":
+		if err := ensureOnlyKeys(args, map[string]bool{"component": true}); err != nil {
+			return opErrorForTool("hal_plan_verify", codeParseError, err.Error(), nil, []string{"get_runtime_status"}, nil, nil, nil), true
+		}
+		component, ok := args["component"].(string)
+		if !ok || strings.TrimSpace(component) == "" {
+			return opErrorForTool("hal_plan_verify", codeParseError, "component is required", nil, []string{"get_capabilities"}, nil, nil, nil), true
+		}
+		comp := strings.ToLower(strings.TrimSpace(component))
+		commands := []string{}
+		docs := []string{}
+		checks := []opCheck{{Name: "verification_plan", Status: "ok", Details: "component verification sequence generated"}}
+
+		switch comp {
+		case "vault":
+			commands = []string{"hal vault status", "hal status"}
+			docs = []string{"https://developer.hashicorp.com/vault"}
+		case "vault_k8s", "vault_vso", "vault_csi", "k8s", "vso", "csi":
+			commands = []string{"hal vault k8s", "kubectl get pods -A", "kubectl get svc -A"}
+			docs = []string{"https://developer.hashicorp.com/vault/docs/platform/k8s/vso", "https://developer.hashicorp.com/vault/docs/platform/k8s/csi"}
+		case "consul":
+			commands = []string{"hal consul status", "hal status"}
+			docs = []string{"https://developer.hashicorp.com/consul"}
+		case "nomad":
+			commands = []string{"hal nomad status", "hal status"}
+			docs = []string{"https://developer.hashicorp.com/nomad"}
+		case "boundary", "boundary_ssh", "boundary_mariadb":
+			commands = []string{"hal boundary status", "hal boundary ssh"}
+			docs = []string{"https://developer.hashicorp.com/boundary"}
+		case "terraform", "terraform_workspace", "tfe":
+			commands = []string{"hal terraform status", "hal terraform workspace"}
+			docs = []string{"https://developer.hashicorp.com/terraform/enterprise"}
+		case "terraform_cli", "tfe_cli":
+			commands = []string{"hal terraform cli", "hal tf cli -c", "hal terraform status"}
+			docs = []string{"https://developer.hashicorp.com/terraform/enterprise"}
+		case "obs", "observability":
+			commands = []string{"hal obs status", "hal status"}
+			docs = []string{"https://grafana.com/docs/", "https://prometheus.io/docs/", "https://grafana.com/oss/loki/"}
+		default:
+			return opErrorForTool("hal_plan_verify", codeUnsupportedOp, "unsupported component", map[string]interface{}{"component": comp}, []string{"get_capabilities", "get_component_context"}, []opCheck{{Name: "verification_plan", Status: "error", Details: "unsupported component"}}, nil, nil), true
+		}
+
+		data := map[string]interface{}{
+			"component":             comp,
+			"verification_commands": commands,
+			"notes":                 []string{"Run commands in order and confirm expected healthy states before next operations."},
+		}
+		return opSuccessForTool("hal_plan_verify", "verification plan generated", data, commands, checks, nil, nil, docs), true
 
 	case "validate_command":
 		if err := ensureOnlyKeys(args, map[string]bool{"command": true}); err != nil {
@@ -513,17 +640,13 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
 			return opErrorForTool("get_tfe_status", codeParseError, err.Error(), nil, []string{"hal terraform status"}, nil, nil, nil), true
 		}
-		tfeExec := runHAL("terraform", "status")
-		wsExec := runHAL("terraform", "workspace")
-		checks := []opCheck{
-			{Name: "terraform_status", Status: statusFromExecution(tfeExec), Details: "tfe runtime check"},
-			{Name: "terraform_workspace", Status: statusFromExecution(wsExec), Details: "workspace wiring check"},
+		return handleTFEStatus(), true
+
+	case "get_tfe_cli_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_tfe_cli_status", codeParseError, err.Error(), nil, []string{"hal terraform cli"}, nil, nil, nil), true
 		}
-		data := map[string]interface{}{"terraform_status": tfeExec, "workspace_status": wsExec}
-		if tfeExec.ExitCode != 0 {
-			return opErrorForTool("get_tfe_status", classifyContractError(tfeExec.Output), "tfe runtime not healthy; deploy terraform first", data, []string{"hal terraform deploy", "hal terraform status"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"}), true
-		}
-		return opSuccessForTool("get_tfe_status", "tfe status collected", data, []string{"hal terraform status", "hal terraform workspace --enable"}, checks, nil, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"}), true
+		return handleTFECLIStatus(), true
 
 	case "setup_tfe_workspace":
 		return handleEnableScenarioMode("setup_tfe_workspace", []string{"terraform", "workspace", "--enable"}, []string{"hal terraform workspace", "hal terraform status"}, args), true
@@ -631,6 +754,7 @@ func opError(code string, message string, data interface{}, commands []string, d
 
 func opSuccessForTool(toolName, message string, data interface{}, commands []string, checks []opCheck, next []opNextStep, creds *opCredentials, docs []string) mcpToolCallResult {
 	resp := opContractResponse{
+		ContractVersion:     mcpContractVersion,
 		Status:              statusSuccess,
 		Code:                "ok",
 		Message:             strings.TrimSpace(message),
@@ -642,6 +766,7 @@ func opSuccessForTool(toolName, message string, data interface{}, commands []str
 		Checks:              normalizeChecks(checks),
 		NextSteps:           normalizeNextSteps(next),
 		Credentials:         creds,
+		Grounding:           defaultGrounding(toolName),
 		Docs:                sortedUnique(docs),
 	}
 	if err := validateContractEnvelope(resp); err != nil {
@@ -659,6 +784,7 @@ func opErrorForTool(toolName, code, message string, data interface{}, commands [
 		message = strings.TrimSpace(message) + "; run a recommended command for remediation"
 	}
 	resp := opContractResponse{
+		ContractVersion:     mcpContractVersion,
 		Status:              statusError,
 		Code:                code,
 		Message:             message,
@@ -669,6 +795,7 @@ func opErrorForTool(toolName, code, message string, data interface{}, commands [
 		RecommendedCommands: sanitizeRecommendedCommands(commands),
 		Checks:              normalizeChecks(checks),
 		NextSteps:           normalizeNextSteps(next),
+		Grounding:           defaultGrounding(toolName),
 		Docs:                sortedUnique(docs),
 	}
 	if err := validateContractEnvelope(resp); err != nil {
@@ -680,6 +807,7 @@ func opErrorForTool(toolName, code, message string, data interface{}, commands [
 
 func contractValidationFailure(toolName string, err error) opContractResponse {
 	return opContractResponse{
+		ContractVersion:     mcpContractVersion,
 		Status:              statusError,
 		Code:                codeParseError,
 		Message:             "contract validation failed: " + strings.TrimSpace(err.Error()) + "; run a recommended command for remediation",
@@ -689,6 +817,7 @@ func contractValidationFailure(toolName string, err error) opContractResponse {
 		Data:                map[string]interface{}{"validation_error": err.Error()},
 		RecommendedCommands: []string{"hal --help"},
 		Checks:              []opCheck{{Name: "contract_validation", Status: "error", Details: strings.TrimSpace(err.Error())}},
+		Grounding:           defaultGrounding(toolName),
 		Docs:                []string{},
 	}
 }
@@ -699,6 +828,9 @@ func validateContractEnvelope(resp opContractResponse) error {
 	}
 	if strings.TrimSpace(resp.Code) == "" {
 		return fmt.Errorf("code is required")
+	}
+	if strings.TrimSpace(resp.ContractVersion) == "" {
+		return fmt.Errorf("contract_version is required")
 	}
 	if strings.TrimSpace(resp.Message) == "" {
 		return fmt.Errorf("message is required")
@@ -751,7 +883,71 @@ func validateContractEnvelope(resp opContractResponse) error {
 	if resp.Credentials != nil && !resp.Credentials.Redacted {
 		return fmt.Errorf("credentials must be redacted by default")
 	}
+	if resp.Grounding != nil {
+		if strings.TrimSpace(resp.Grounding.Source) == "" {
+			return fmt.Errorf("grounding source is required")
+		}
+		allowedModes := map[string]bool{"tool_verified": true, "fallback": true}
+		if !allowedModes[resp.Grounding.Mode] {
+			return fmt.Errorf("invalid grounding mode: %s", resp.Grounding.Mode)
+		}
+		if resp.Grounding.Confidence < 0 || resp.Grounding.Confidence > 1 {
+			return fmt.Errorf("grounding confidence must be between 0 and 1")
+		}
+	}
 	return nil
+}
+
+func defaultGrounding(toolName string) *opGrounding {
+	profile := "standard"
+	if strings.Contains(toolName, "policy") || strings.Contains(toolName, "status") || strings.Contains(toolName, "validate") {
+		profile = "strict"
+	}
+	return &opGrounding{
+		Source:     "hal-mcp",
+		Mode:       "tool_verified",
+		Confidence: 1,
+		Profile:    profile,
+		Version:    mcpPolicyVersion,
+	}
+}
+
+func buildPolicyProfile(profile string) (map[string]interface{}, error) {
+	selected := strings.ToLower(strings.TrimSpace(profile))
+	if selected == "" {
+		selected = "strict"
+	}
+	if selected != "strict" && selected != "standard" {
+		return nil, fmt.Errorf("unsupported profile: %s", selected)
+	}
+
+	requiredPrefetch := []string{"hal_status_baseline", "get_capabilities", "hal_policy_profile"}
+	if selected == "strict" {
+		requiredPrefetch = append(requiredPrefetch, "validate_command")
+	}
+
+	return map[string]interface{}{
+		"policy_version":   mcpPolicyVersion,
+		"contract_version": mcpContractVersion,
+		"profile":          selected,
+		"answer_policy": map[string]interface{}{
+			"mode":                           "hal_first",
+			"disallow_unverified_claims":     true,
+			"disallow_non_hal_primary_paths": true,
+			"include_verification_commands":  true,
+			"include_official_docs":          true,
+		},
+		"tool_policy": map[string]interface{}{
+			"required_prefetch_tools": requiredPrefetch,
+			"on_uncertain_then_call":  []string{"validate_command", "get_help_for_topic"},
+			"fallback": map[string]interface{}{
+				"mode":         "fail_closed",
+				"allow_answer": false,
+				"message":      "HAL MCP policy unavailable; run hal mcp status and retry.",
+			},
+		},
+		"recommended_bootstrap": []string{"hal mcp status", "hal status", "hal --help"},
+	}, nil
 }
 
 func validateCommandList(commands []string) error {
@@ -1103,7 +1299,28 @@ func componentContext(component string) (map[string]interface{}, []string, error
 			"notes":      "Use command without flags for smart status and next-step guidance",
 		}, []string{"hal vault mariadb", "hal vault mariadb --enable", "hal vault mariadb --disable"}, nil
 	case "terraform":
-		return map[string]interface{}{"component": component, "endpoint": "https://tfe.localhost:8443", "auth": map[string]interface{}{"token_reference": "~/.hal/tfe-app-api-token", "sensitive": true}}, []string{"hal terraform status", "hal terraform deploy", "hal terraform workspace"}, nil
+		return map[string]interface{}{
+			"component": component,
+			"endpoint":  "https://tfe.localhost:8443",
+			"auth": map[string]interface{}{
+				"token_reference": "~/.hal/tfe-app-api-token",
+				"sensitive":       true,
+			},
+			"license": map[string]interface{}{
+				"environment_variable": "TFE_LICENSE",
+				"required":             true,
+			},
+			"browser": map[string]interface{}{
+				"self_signed_certificate": true,
+				"user_action":             "accept browser risk warning",
+			},
+			"related_endpoints": []string{
+				"http://127.0.0.1:19000",
+				"http://127.0.0.1:19001",
+				"http://grafana.localhost:3000",
+				"http://prometheus.localhost:9090",
+			},
+		}, []string{"hal terraform status", "hal terraform deploy", "hal terraform workspace", "hal terraform cli"}, nil
 	case "terraform_workspace":
 		return map[string]interface{}{
 			"component":  "terraform_workspace",
@@ -1111,6 +1328,15 @@ func componentContext(component string) (map[string]interface{}, []string, error
 			"workflow":   "prepare gitlab repo + wire TFE workspace VCS",
 			"trigger":    "push commit to main branch",
 		}, []string{"hal terraform workspace", "hal terraform workspace --enable", "hal terraform status"}, nil
+	case "terraform_cli":
+		return map[string]interface{}{
+			"component":        "terraform_cli",
+			"helper_container": "hal-tfe-cli",
+			"default_org":      "hal",
+			"auth_files":       []string{"/root/.tfx.hcl", "/root/.terraform.d/credentials.tfrc.json"},
+			"seeded_projects":  []string{"Dave", "Frank"},
+			"workflow":         "build helper image, then open console against local TFE",
+		}, []string{"hal terraform cli", "hal tf cli -e", "hal tf cli -c", "hal terraform status"}, nil
 	case "consul":
 		return map[string]interface{}{"component": component, "endpoint": "http://consul.localhost:8500"}, []string{"hal consul status"}, nil
 	case "nomad":
@@ -1159,6 +1385,18 @@ func buildFeaturePlan(intent string) (map[string]interface{}, bool) {
 			"postchecks":   []string{"hal terraform workspace", "hal terraform status"},
 			"next_trigger": []string{"Push a commit to main to validate end-to-end VCS run"},
 			"rollback":     []string{"hal terraform destroy"},
+		}, true
+	case strings.Contains(lower, "terraform") && (strings.Contains(lower, "cli") || strings.Contains(lower, "tfx") || strings.Contains(lower, "helper")):
+		return map[string]interface{}{
+			"intent":    intent,
+			"action":    "terraform_cli_helper",
+			"prechecks": []string{"hal terraform status", "hal terraform cli"},
+			"steps": []map[string]string{
+				{"command": "hal tf cli -e", "reason": "Build or refresh the Terraform/TFX helper image"},
+				{"command": "hal tf cli -c", "reason": "Enter the helper container with trust and auth preloaded"},
+			},
+			"postchecks": []string{"hal terraform cli", "hal terraform status"},
+			"notes":      []string{"Use the helper instead of changing the host trust store."},
 		}, true
 	case strings.Contains(lower, "vault") && (strings.Contains(lower, "k8s") || strings.Contains(lower, "vso") || strings.Contains(lower, "csi")):
 		stepCmd := "hal vault k8s --enable"
@@ -1428,6 +1666,136 @@ func handleStatusCommandTool(toolName string, command []string, recommended []st
 		return opErrorForTool(toolName, classifyContractError(execRes.Output), "status command failed; run recovery commands", data, recommended, checks, nil, docs)
 	}
 	return opSuccessForTool(toolName, "status collected", data, recommended, checks, nil, nil, docs)
+}
+
+func terraformRuntimeState() (string, map[string]interface{}, error) {
+	status, err := buildStructuredStatus()
+	if err != nil {
+		return "", nil, err
+	}
+	engine, _ := status["engine"].(string)
+	products, _ := status["products"].([]map[string]interface{})
+	for _, product := range products {
+		if name, _ := product["product"].(string); name == "terraform" {
+			return engine, product, nil
+		}
+	}
+	return engine, nil, fmt.Errorf("terraform runtime state unavailable")
+}
+
+func terraformFeatureState(product map[string]interface{}, featureName string) string {
+	features, _ := product["features"].([]map[string]string)
+	for _, feature := range features {
+		if feature["feature"] == featureName {
+			return feature["state"]
+		}
+	}
+	return "unknown"
+}
+
+func checkStatusFromState(state string) string {
+	switch strings.TrimSpace(strings.ToLower(state)) {
+	case "running":
+		return "ok"
+	case "enabled":
+		return "ok"
+	case "partial":
+		return "warn"
+	case "not_deployed":
+		return "error"
+	case "disabled":
+		return "error"
+	default:
+		return "unknown"
+	}
+}
+
+func runtimeCodeFromState(state string) string {
+	switch strings.TrimSpace(strings.ToLower(state)) {
+	case "running":
+		return "ok"
+	case "partial":
+		return codeEndpointUnreachable
+	case "not_deployed":
+		return codeNotDeployed
+	default:
+		return codeTimeout
+	}
+}
+
+func handleTerraformRuntimeStatus(toolName string) mcpToolCallResult {
+	_, product, err := terraformRuntimeState()
+	if err != nil {
+		return opErrorForTool(toolName, codeTimeout, err.Error(), nil, []string{"hal status", "hal terraform status"}, []opCheck{{Name: "terraform_runtime", Status: "error", Details: "unable to resolve runtime state"}}, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+	}
+	state, _ := product["state"].(string)
+	reason, _ := product["reason"].(string)
+	checks := []opCheck{{Name: "terraform_runtime", Status: checkStatusFromState(state), Details: reason}}
+	data := map[string]interface{}{"runtime": product}
+	if state != "running" {
+		return opErrorForTool(toolName, runtimeCodeFromState(state), "terraform enterprise runtime not healthy; deploy terraform first", data, []string{"hal terraform deploy", "hal terraform status"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+	}
+	return opSuccessForTool(toolName, "terraform runtime status collected", data, []string{"hal terraform status", "hal terraform deploy"}, checks, nil, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+}
+
+func handleTFEStatus() mcpToolCallResult {
+	_, product, err := terraformRuntimeState()
+	if err != nil {
+		return opErrorForTool("get_tfe_status", codeTimeout, err.Error(), nil, []string{"hal status", "hal terraform status"}, []opCheck{{Name: "terraform_runtime", Status: "error", Details: "unable to resolve runtime state"}}, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+	}
+	state, _ := product["state"].(string)
+	reason, _ := product["reason"].(string)
+	workspaceState := terraformFeatureState(product, "workspace")
+	checks := []opCheck{
+		{Name: "terraform_runtime", Status: checkStatusFromState(state), Details: reason},
+		{Name: "terraform_workspace", Status: checkStatusFromState(workspaceState), Details: "workspace automation readiness"},
+	}
+	data := map[string]interface{}{
+		"runtime":         product,
+		"workspace_state": workspaceState,
+		"workspace_hint":  "Use get_help_for_topic(terraform workspace) and get_component_context(terraform_workspace) for workspace-specific guidance.",
+	}
+	if state != "running" {
+		return opErrorForTool("get_tfe_status", runtimeCodeFromState(state), "tfe runtime not healthy; deploy terraform first", data, []string{"hal terraform deploy", "hal terraform status"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+	}
+	return opSuccessForTool("get_tfe_status", "tfe status collected", data, []string{"hal terraform status", "hal terraform workspace --enable"}, checks, nil, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+}
+
+func handleTFECLIStatus() mcpToolCallResult {
+	engine, product, err := terraformRuntimeState()
+	if err != nil {
+		return opErrorForTool("get_tfe_cli_status", codeTimeout, err.Error(), nil, []string{"hal status", "hal terraform status"}, []opCheck{{Name: "terraform_runtime", Status: "error", Details: "unable to resolve runtime state"}}, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+	}
+	state, _ := product["state"].(string)
+	reason, _ := product["reason"].(string)
+	cliHelperReady := checkContainer(engine, "hal-tfe-cli")
+	homeDir, _ := os.UserHomeDir()
+	tokenPath := filepath.Join(homeDir, ".hal", "tfe-app-api-token")
+	_, tokenErr := os.Stat(tokenPath)
+	tokenReady := tokenErr == nil
+	checks := []opCheck{
+		{Name: "terraform_runtime", Status: checkStatusFromState(state), Details: reason},
+		{Name: "terraform_cli_helper", Status: checkStatusFromState(boolState(cliHelperReady)), Details: "hal-tfe-cli helper availability"},
+		{Name: "terraform_cli_token_cache", Status: checkStatusFromState(boolState(tokenReady)), Details: tokenPath},
+	}
+	data := map[string]interface{}{
+		"runtime": product,
+		"cli_helper": map[string]interface{}{
+			"container": "hal-tfe-cli",
+			"state":     boolState(cliHelperReady),
+		},
+		"token_cache": map[string]interface{}{
+			"path":    tokenPath,
+			"present": tokenReady,
+		},
+	}
+	if state != "running" {
+		return opErrorForTool("get_tfe_cli_status", runtimeCodeFromState(state), "tfe runtime not healthy; deploy terraform first", data, []string{"hal terraform deploy", "hal terraform status"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+	}
+	if !cliHelperReady {
+		return opErrorForTool("get_tfe_cli_status", codeNotDeployed, "tfe cli helper is not ready; run hal terraform cli", data, []string{"hal terraform cli", "hal tf cli -e", "hal tf cli -c"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+	}
+	return opSuccessForTool("get_tfe_cli_status", "tfe cli helper status collected", data, []string{"hal terraform cli", "hal tf cli -e", "hal tf cli -c"}, checks, nil, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
 }
 
 func handleEnableBoundaryMariaDB(args map[string]interface{}) mcpToolCallResult {

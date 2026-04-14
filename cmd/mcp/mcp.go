@@ -35,6 +35,8 @@ var (
 	createBinaryPath  string
 	createJSONOnly    bool
 	upTransport       string
+	policyProfile     string
+	policyJSON        bool
 )
 
 // Cmd is the exported HAL MCP base command.
@@ -209,6 +211,32 @@ var downCmd = &cobra.Command{
 
 		_ = os.Remove(pidPath)
 		fmt.Printf("✅ Sent SIGTERM to HAL MCP process %d and removed PID file.\n", pid)
+	},
+}
+
+var policyCmd = &cobra.Command{
+	Use:   "policy",
+	Short: "Print HAL MCP runtime policy profile",
+	Run: func(cmd *cobra.Command, args []string) {
+		policy, err := buildPolicyProfile(policyProfile)
+		if err != nil {
+			fmt.Printf("❌ Failed to build policy profile: %v\n", err)
+			return
+		}
+
+		if policyJSON {
+			payload, err := json.MarshalIndent(policy, "", "  ")
+			if err != nil {
+				fmt.Printf("❌ Failed to render policy JSON: %v\n", err)
+				return
+			}
+			fmt.Println(string(payload))
+			return
+		}
+
+		fmt.Printf("HAL MCP Policy (%s)\n", policyProfile)
+		fmt.Println("========================")
+		fmt.Println("Use '--json' for machine-readable output.")
 	},
 }
 
@@ -658,7 +686,7 @@ func runHAL(args ...string) toolExecution {
 	}
 	commandPath := exePath
 	base := strings.ToLower(filepath.Base(exePath))
-	if strings.Contains(base, ".test") {
+	if strings.Contains(base, ".test") || strings.Contains(base, "hal-mcp") {
 		if halPath, lookErr := exec.LookPath("hal"); lookErr == nil {
 			commandPath = halPath
 		}
@@ -740,9 +768,12 @@ func init() {
 	createCmd.Flags().StringVar(&createBinaryPath, "binary-path", "", "Path to write the managed HAL binary used by MCP clients (default ~/.hal/bin/hal-mcp)")
 	createCmd.Flags().BoolVar(&createJSONOnly, "json", false, "Only generate/update MCP config JSON (skip managed binary provisioning)")
 	upCmd.Flags().StringVar(&upTransport, "transport", "stdio", "MCP transport to use (stdio for MVP)")
+	policyCmd.Flags().StringVar(&policyProfile, "profile", "strict", "Policy profile to emit (strict or standard)")
+	policyCmd.Flags().BoolVar(&policyJSON, "json", true, "Print policy as JSON")
 
 	Cmd.AddCommand(createCmd)
 	Cmd.AddCommand(upCmd)
 	Cmd.AddCommand(statusCmd)
 	Cmd.AddCommand(downCmd)
+	Cmd.AddCommand(policyCmd)
 }

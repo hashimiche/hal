@@ -3,6 +3,7 @@
   "title": "HAL MCP Tool Response Contract (Multi-Product)",
   "type": "object",
   "required": [
+    "contract_version",
     "status",
     "code",
     "message",
@@ -15,6 +16,7 @@
     "docs"
   ],
   "properties": {
+    "contract_version": { "type": "string", "minLength": 1 },
     "status": { "type": "string", "enum": ["success", "error"] },
     "code": { "type": "string" },
     "message": { "type": "string" },
@@ -78,6 +80,18 @@
           "items": { "type": "string" }
         },
         "redacted": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "grounding": {
+      "type": "object",
+      "required": ["source", "mode", "confidence"],
+      "properties": {
+        "source": { "type": "string" },
+        "mode": { "type": "string", "enum": ["tool_verified", "fallback"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "profile": { "type": "string" },
+        "version": { "type": "string" }
       },
       "additionalProperties": false
     },

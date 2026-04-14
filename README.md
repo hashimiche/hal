@@ -133,6 +133,9 @@ MCP tools exposed by HAL (read-only MVP+):
 - `hal_product_status` (per-product status, strict args)
 - `hal_help` (returns real HAL help output to ground command syntax)
 - `hal_snapshot` (batched grounded snapshot across status/capacity/product status)
+- `hal_status_baseline` (alias for runtime baseline status routing)
+- `hal_plan_deploy` (alias for intent-driven deploy/setup planning)
+- `hal_plan_verify` (deterministic post-action verification command plan)
 
 Anti-hallucination behavior:
 

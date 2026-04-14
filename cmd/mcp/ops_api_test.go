@@ -22,6 +22,7 @@ func TestRequiredOpsToolsRegistered(t *testing.T) {
 		"get_terraform_status",
 		"enable_terraform",
 		"get_capabilities",
+		"hal_policy_profile",
 		"get_help_for_topic",
 		"plan_next_steps",
 		"validate_command",
@@ -73,6 +74,7 @@ func TestOpsResponsesContainContractFields(t *testing.T) {
 		{name: "get_terraform_status", args: map[string]interface{}{}},
 		{name: "enable_terraform", args: map[string]interface{}{"mode": "dry_run"}},
 		{name: "get_capabilities", args: map[string]interface{}{}},
+		{name: "hal_policy_profile", args: map[string]interface{}{}},
 		{name: "get_help_for_topic", args: map[string]interface{}{"topic": "vault oidc"}},
 		{name: "plan_next_steps", args: map[string]interface{}{"intent": "setup terraform workspace"}},
 		{name: "validate_command", args: map[string]interface{}{"command": "hal status"}},
@@ -119,7 +121,7 @@ func TestOpsResponsesContainContractFields(t *testing.T) {
 			t.Fatalf("invalid json content for %s: %v", tc.name, err)
 		}
 
-		requiredKeys := []string{"status", "code", "message", "domain", "capability", "resource", "data", "recommended_commands", "checks", "docs"}
+		requiredKeys := []string{"contract_version", "status", "code", "message", "domain", "capability", "resource", "data", "recommended_commands", "checks", "docs"}
 		for _, k := range requiredKeys {
 			if _, ok := envelope[k]; !ok {
 				t.Fatalf("missing key %s for %s", k, tc.name)

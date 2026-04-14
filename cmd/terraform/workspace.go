@@ -184,6 +184,11 @@ var workspaceCmd = &cobra.Command{
 		} else {
 			repoIdentifier := fmt.Sprintf("root/%s", workspaceProjectPath)
 			workspaceURL, err := ensureTFEWorkspace(strings.ToLower(tfeOrgName), tfeProjectID, repoIdentifier)
+			if err != nil && strings.Contains(strings.ToLower(err.Error()), "tags regex") {
+				fmt.Println("⚠️  TFE rejected tags-regex with current trigger settings; retrying without tags-regex...")
+				tfeTagsRegex = ""
+				workspaceURL, err = ensureTFEWorkspace(strings.ToLower(tfeOrgName), tfeProjectID, repoIdentifier)
+			}
 			if err != nil && strings.Contains(strings.ToLower(err.Error()), "failed to create webhook on repository") {
 				fmt.Println("⚠️  Webhook creation failed with current OAuth token; rotating token and retrying once...")
 				if refreshedID, rotateErr := ensureTFEGitLabOAuthTokenID(tfeOrgName, vcsToken); rotateErr == nil {
@@ -721,7 +726,7 @@ func init() {
 	workspaceCmd.Flags().StringVar(&tfeAdminUsername, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
 	workspaceCmd.Flags().StringVar(&tfeAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
 	workspaceCmd.Flags().StringVar(&tfeAdminPassword, "tfe-admin-password", "hal9000FTW", "Initial TFE admin password used when bootstrapping via IACT")
-	workspaceCmd.Flags().StringVar(&tfeTagsRegex, "tfe-tags-regex", `^v\d+\.\d+\.\d+(?:-\w+)?$`, "Regex for VCS tag-triggered runs (set empty string to disable tag triggers)")
+	workspaceCmd.Flags().StringVar(&tfeTagsRegex, "tfe-tags-regex", "", "Optional regex for VCS tag-triggered runs (leave empty to disable)")
 
 	Cmd.AddCommand(workspaceCmd)
 }
