@@ -107,15 +107,13 @@ var deployCmd = &cobra.Command{
 			"--name", "hal-vault",
 			"--network", "hal-net",
 			"--cap-add", "IPC_LOCK",
+			"--cap-add", "SETFCAP",
 			"-p", "8200:8200",
 			"-v", "hal-vault-logs:/vault/logs",
 		}
 
-		// Vault Enterprise 2.x requires SETFCAP in some runtimes (notably rootless Podman)
-		// to initialize process capabilities cleanly.
-		if vaultEdition == "ent" || vaultEdition == "enterprise" {
-			vaultArgs = append(vaultArgs, "--cap-add", "SETFCAP")
-		}
+		// Vault 2.x images can require SETFCAP in some runtimes (notably rootless Podman)
+		// to initialize process capabilities cleanly for both CE and Enterprise.
 
 		// Inject the Enterprise License (we already know it exists thanks to the pre-flight check)
 		if vaultEdition == "ent" || vaultEdition == "enterprise" {
