@@ -71,7 +71,7 @@ Use explicit image/version flags when you want deterministic labs across machine
 
 ```bash
 # Vault core with explicit version + helper image
-hal vault deploy --version 1.21 --helper-image alpine:3.22
+hal vault deploy --version 2.0 --helper-image alpine:3.22
 
 # Vault LDAP demo with pinned OpenLDAP + phpLDAPadmin tags
 hal vault ldap --enable --openldap-version 1.5.0 --phpldapadmin-version 0.9.0

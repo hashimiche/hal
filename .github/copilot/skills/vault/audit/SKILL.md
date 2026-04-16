@@ -21,6 +21,7 @@ Use this skill to manage Vault audit devices in the local HAL lab.
 - Verifying mounted audit devices and their target paths
 - Showing the user how to inspect or tail the logs safely
 - Troubleshooting blocked Vault behavior caused by audit device write failures
+- Confirming the observability URLs when the obs stack is present
 
 ## Workflow
 
@@ -54,6 +55,10 @@ If MCP is not available, use CLI verification commands:
     docker exec -it hal-vault ls -l /vault/logs
     docker exec -it hal-vault tail -n 20 /vault/logs/audit.log
 
+If observability is enabled, also verify:
+
+    hal obs status
+
 ### Step 3: Explain the architecture clearly
 
 State that the HAL lab favors the file audit device pointed at `/vault/logs/audit.log`.
@@ -86,7 +91,11 @@ Provide at least one of these commands:
     vault read sys/audit
     docker exec -it hal-vault tail -f /vault/logs/audit.log
 
-If the user also has observability deployed, mention that Grafana/Loki can query the same log stream after `hal obs deploy`.
+If the user also has observability deployed, mention these surfaces explicitly:
+
+- Grafana: `http://grafana.localhost:3000`
+- Loki: `http://loki.localhost:3100/ready`
+- Prometheus: `http://prometheus.localhost:9090`
 
 ## Expected Lab State
 

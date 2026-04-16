@@ -87,7 +87,7 @@ var mariadbCmd = &cobra.Command{
 				// Vault Guardrail
 				out, err = exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-vault").Output()
 				if err != nil || strings.TrimSpace(string(out)) != "running" {
-					fmt.Println("❌ Error: Vault is not running! Run: hal vault deploy && hal vault mariadb -e")
+					fmt.Println("❌ Error: Vault is not running! Run: hal vault deploy && hal vault database -e")
 					return
 				}
 				dbContainerName = "hal-vault-mariadb"

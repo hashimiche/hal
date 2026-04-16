@@ -23,6 +23,8 @@ This skill covers the local GitLab-backed JWT auth demo implemented by `hal vaul
 - Policy: `cicd-read`
 - Role: `auth/jwt/role/cicd-role`
 - Bound issuer: `http://gitlab.localhost:8080`
+- Bound claims: `project_path=root/secret-zero` and `ref=v*`
+- Bound claims type: `glob` (tag-based guardrail)
 
 ## Workflow
 
@@ -72,6 +74,7 @@ Provide a brief confirmation that the JWT auth method is enabled and configured.
 | JWKS URL | `http://gitlab.localhost:8080/oauth/discovery/keys` | Public key source |
 | Role | `cicd-role` | The role used by the GitLab pipeline |
 | Policy | `cicd-read` | Read access to the demo secret |
+| Bound Claims | `project_path=root/secret-zero`, `ref=v*` | Restricts access to this repository and protected tag pattern |
 
 **Tier 3 — Actionable Testing Commands**
 
@@ -86,4 +89,5 @@ Provide a brief confirmation that the JWT auth method is enabled and configured.
 1. **Vault is not running:** Instruct the user to run `hal vault deploy` first.
 2. **GitLab is not ready yet:** Tell the user the GitLab boot sequence can take several minutes.
 3. **Missing or mismatched claims:** Point the user to `vault read auth/jwt/role/cicd-role` and compare `bound_claims`, `bound_claims_type`, and `bound_audiences`.
-4. **User wants to modify the configured role after deployment:** Provide exact `vault write auth/jwt/role/...` commands rather than suggesting Go code edits.
+4. **Tag/branch mismatch in CI:** Explain that the default lab policy is tag-focused (`ref=v*`) and suggest explicit role updates if branch-based auth is desired.
+5. **User wants to modify the configured role after deployment:** Provide exact `vault write auth/jwt/role/...` commands rather than suggesting Go code edits.

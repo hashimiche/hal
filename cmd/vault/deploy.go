@@ -88,7 +88,7 @@ var deployCmd = &cobra.Command{
 
 			// If the user didn't explicitly specify a version, give them the Enterprise default
 			if !cmd.Flags().Changed("version") {
-				actualVersion = "1.21-ent"
+				actualVersion = "2.0-ent"
 			}
 		}
 
@@ -109,6 +109,12 @@ var deployCmd = &cobra.Command{
 			"--cap-add", "IPC_LOCK",
 			"-p", "8200:8200",
 			"-v", "hal-vault-logs:/vault/logs",
+		}
+
+		// Vault Enterprise 2.x requires SETFCAP in some runtimes (notably rootless Podman)
+		// to initialize process capabilities cleanly.
+		if vaultEdition == "ent" || vaultEdition == "enterprise" {
+			vaultArgs = append(vaultArgs, "--cap-add", "SETFCAP")
 		}
 
 		// Inject the Enterprise License (we already know it exists thanks to the pre-flight check)
@@ -207,7 +213,7 @@ func handleDockerFailure(container string, engine string) {
 }
 
 func init() {
-	deployCmd.Flags().StringVarP(&vaultVersion, "version", "v", "1.21", "Vault version to deploy")
+	deployCmd.Flags().StringVarP(&vaultVersion, "version", "v", "2.0", "Vault version to deploy")
 	deployCmd.Flags().StringVarP(&vaultEdition, "edition", "e", "ce", "Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise)")
 	deployCmd.Flags().StringVar(&vaultHelperImage, "helper-image", "alpine:3.22", "Helper image used for one-shot setup tasks during Vault deploy")
 	deployCmd.Flags().BoolVarP(&vaultForce, "force", "f", false, "Force redeploy")

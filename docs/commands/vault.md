@@ -38,9 +38,9 @@
   - Deploy and configure OpenLDAP auth and related flows
   - Spec: [vault-ldap.md](vault-ldap.md)
 
-- `hal vault mariadb`
-  - Deploy MariaDB and configure dynamic DB credentials scenario
-  - Spec: [vault-mariadb.md](vault-mariadb.md)
+- `hal vault database`
+  - Configure dynamic DB credentials scenario (defaults to `mariadb`; `postgres` planned)
+  - Spec: [vault-database.md](vault-database.md)
 
 ## Local Lab Assumptions
 - Vault local endpoint defaults to `http://127.0.0.1:8200`

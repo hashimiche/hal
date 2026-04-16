@@ -21,7 +21,7 @@ This index maps the HAL command tree to one spec file per command area.
 - [Vault jwt](vault-jwt.md)
 - [Vault k8s](vault-k8s.md)
 - [Vault ldap](vault-ldap.md)
-- [Vault mariadb](vault-mariadb.md)
+- [Vault database](vault-database.md)
 - [Boundary](boundary.md)
 - [Boundary deploy](boundary-deploy.md)
 - [Boundary status](boundary-status.md)

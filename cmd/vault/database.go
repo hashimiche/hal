@@ -3,6 +3,7 @@ package vault
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	"hal/internal/global"
@@ -12,16 +13,18 @@ import (
 )
 
 var (
-	mariadbEnable  bool
-	mariadbDisable bool
-	mariadbForce   bool
-	mariadbVersion string
+	databaseEnable  bool
+	databaseDisable bool
+	databaseForce   bool
+	databaseBackend string
+	mariadbVersion  string
 )
 
-var vaultMariadbCmd = &cobra.Command{
-	Use:   "mariadb",
-	Short: "Deploy MariaDB and configure Vault Dynamic Database Credentials",
-	Args:  cobra.NoArgs,
+var vaultDatabaseCmd = &cobra.Command{
+	Use:     "database",
+	Aliases: []string{"db"},
+	Short:   "Configure Vault dynamic database credentials workflows",
+	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
 		if err != nil {
@@ -29,16 +32,47 @@ var vaultMariadbCmd = &cobra.Command{
 			return
 		}
 
+		backend := strings.ToLower(strings.TrimSpace(databaseBackend))
+		if backend != "mariadb" {
+			if backend == "postgres" || backend == "pgsql" {
+				fmt.Println("❌ Backend pgsql is not implemented yet in HAL. Use --backend mariadb for now.")
+				fmt.Println("💡 Next Step: hal vault database --enable")
+				return
+			}
+			fmt.Printf("❌ Unsupported backend %q. Valid value today: mariadb (pgsql planned).\n", databaseBackend)
+			return
+		}
+		backendLabel := "MariaDB"
+
+		containerName := "hal-vault-mariadb"
+		hostAlias := "mariadb.localhost"
+		containerPort := "3306"
+		pluginName := "mysql-database-plugin"
+		setupCmd := []string{"mariadb", "-u", "root", "-pvaultroot", "-e", `
+				CREATE USER 'vaultadmin'@'%' IDENTIFIED BY 'temp-vault-pass';
+				GRANT ALL PRIVILEGES ON *.* TO 'vaultadmin'@'%' WITH GRANT OPTION;
+				FLUSH PRIVILEGES;
+			`}
+		connectionURL := "{{username}}:{{password}}@tcp(hal-vault-mariadb:3306)/"
+		createStmt := "CREATE USER '{{name}}'@'%' IDENTIFIED BY '{{password}}'; GRANT ALL PRIVILEGES ON *.* TO '{{name}}'@'%';"
+		startArgs := []string{
+			"run", "-d", "--name", "hal-vault-mariadb",
+			"--network", "hal-net",
+			"--network-alias", "mariadb.localhost",
+			"-p", "3306:3306",
+			"-e", "MARIADB_ROOT_PASSWORD=vaultroot",
+			fmt.Sprintf("mariadb:%s", mariadbVersion),
+		}
+
 		client, vaultErr := GetHealthyClient()
 
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !mariadbEnable && !mariadbDisable && !mariadbForce {
+		if !databaseEnable && !databaseDisable && !databaseForce {
 			fmt.Println("🔍 Checking Vault Database Engine Status...")
 
-			// Check Docker
-			dbExists := (exec.Command(engine, "inspect", "hal-vault-mariadb").Run() == nil)
+			dbExists := exec.Command(engine, "inspect", containerName).Run() == nil
 
 			// Check Vault API (if Vault is alive)
 			dbMounted := false
@@ -49,9 +83,9 @@ var vaultMariadbCmd = &cobra.Command{
 
 			// Output Status
 			if dbExists {
-				fmt.Printf("  ✅ MariaDB       : Active (mariadb.localhost:3306)\n")
+				fmt.Printf("  ✅ Backend       : %s active (%s:%s)\n", backend, hostAlias, containerPort)
 			} else {
-				fmt.Printf("  ❌ MariaDB       : Not running\n")
+				fmt.Printf("  ❌ Backend       : %s not running\n", backend)
 			}
 
 			if dbMounted {
@@ -64,15 +98,15 @@ var vaultMariadbCmd = &cobra.Command{
 			fmt.Println("\n💡 Next Step:")
 			if !dbExists && !dbMounted {
 				fmt.Println("   To deploy MariaDB and wire up Vault, run:")
-				fmt.Println("   hal vault mariadb --enable")
+				fmt.Println("   hal vault database --enable")
 			} else if dbExists && dbMounted {
 				fmt.Println("   Demo is ready! Request a dynamic credential:")
 				fmt.Println("   vault read database/creds/dba-role")
 				fmt.Println("\n   To completely remove this database environment, run:")
-				fmt.Println("   hal vault mariadb --disable")
+				fmt.Println("   hal vault database --disable")
 			} else {
 				fmt.Println("   Environment is partially degraded. To safely reset, run:")
-				fmt.Println("   hal vault mariadb --force")
+				fmt.Println("   hal vault database --force")
 			}
 			return
 		}
@@ -80,13 +114,13 @@ var vaultMariadbCmd = &cobra.Command{
 		// ==========================================
 		// 2. TEARDOWN / RESET PATH (--disable / --force)
 		// ==========================================
-		if mariadbDisable || mariadbForce {
+		if databaseDisable || databaseForce {
 			if global.DryRun {
-				fmt.Println("[DRY RUN] Would execute: docker rm -f hal-vault-mariadb")
+				fmt.Printf("[DRY RUN] Would execute: %s rm -f %s\n", engine, containerName)
 				fmt.Println("[DRY RUN] Would call API to force-revoke leases and unmount 'database/'")
 			} else {
-				if mariadbDisable {
-					fmt.Println("🛑 Tearing down MariaDB environment...")
+				if databaseDisable {
+					fmt.Printf("🛑 Tearing down %s environment...\n", backend)
 				} else {
 					fmt.Println("♻️  Force flag detected. Destroying database environment for reset...")
 				}
@@ -100,15 +134,15 @@ var vaultMariadbCmd = &cobra.Command{
 					fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
 				}
 
-				fmt.Println("⚙️  Removing MariaDB container...")
-				_ = exec.Command(engine, "rm", "-f", "hal-vault-mariadb").Run()
+				fmt.Printf("⚙️  Removing %s container...\n", backend)
+				_ = exec.Command(engine, "rm", "-f", containerName).Run()
 
-				if mariadbDisable {
-					fmt.Println("✅ MariaDB environment destroyed successfully!")
+				if databaseDisable {
+					fmt.Printf("✅ %s environment destroyed successfully!\n", backendLabel)
 				}
 			}
 
-			if mariadbDisable && !global.DryRun {
+			if databaseDisable && !global.DryRun {
 				return
 			}
 		}
@@ -116,52 +150,38 @@ var vaultMariadbCmd = &cobra.Command{
 		// ==========================================
 		// 3. DEPLOY / ENABLE PATH (--enable / --force)
 		// ==========================================
-		if mariadbEnable || mariadbForce {
+		if databaseEnable || databaseForce {
 			if vaultErr != nil {
 				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
 				return
 			}
 
 			if global.DryRun {
-				fmt.Println("[DRY RUN] Would execute Docker run command for MariaDB.")
+				fmt.Printf("[DRY RUN] Would execute Docker run command for %s.\n", backend)
 				fmt.Println("[DRY RUN] Would provision 'vaultadmin' least-privilege account via SQL.")
 				fmt.Println("[DRY RUN] Would configure Vault Database secrets engine and rotate root.")
 				return
 			}
 
-			fmt.Printf("🚀 Booting MariaDB Database (mariadb:%s)...\n", mariadbVersion)
-			_ = exec.Command(engine, "rm", "-f", "hal-vault-mariadb").Run()
+			fmt.Printf("🚀 Booting %s database...\n", backendLabel)
+			_ = exec.Command(engine, "rm", "-f", containerName).Run()
 
-			dbArgs := []string{
-				"run", "-d", "--name", "hal-vault-mariadb",
-				"--network", "hal-net",
-				"--network-alias", "mariadb.localhost",
-				"-p", "3306:3306",
-				"-e", "MARIADB_ROOT_PASSWORD=vaultroot",
-				fmt.Sprintf("mariadb:%s", mariadbVersion),
-			}
-
-			if err := exec.Command(engine, dbArgs...).Run(); err != nil {
-				fmt.Printf("❌ Failed to start MariaDB: %v\n", err)
+			if err := exec.Command(engine, startArgs...).Run(); err != nil {
+				fmt.Printf("❌ Failed to start %s: %v\n", backend, err)
 				return
 			}
 
-			fmt.Println("⏳ Waiting for MariaDB to initialize (this usually takes 10-15 seconds)...")
-			if err := waitForMariaDB(engine, 30); err != nil {
-				fmt.Println("\n❌ MariaDB failed to initialize within the time limit.")
+			fmt.Printf("⏳ Waiting for %s to initialize...\n", backend)
+			waitErr := waitForMariaDB(engine, containerName, 30)
+			if waitErr != nil {
+				fmt.Printf("\n❌ %s failed to initialize within the time limit.\n", backendLabel)
 				return
 			}
-			fmt.Println("\n✅ MariaDB is online and accepting connections!")
+			fmt.Printf("\n✅ %s is online and accepting connections!\n", backendLabel)
 
-			// 🎯 BEST PRACTICE 1: Create a least-privileged vaultadmin account
-			// Updated to ALL PRIVILEGES so it can generate DBA users for Boundary
 			fmt.Println("⚙️  Provisioning least-privileged 'vaultadmin' broker account...")
-			setupSQL := `
-				CREATE USER 'vaultadmin'@'%' IDENTIFIED BY 'temp-vault-pass';
-				GRANT ALL PRIVILEGES ON *.* TO 'vaultadmin'@'%' WITH GRANT OPTION;
-				FLUSH PRIVILEGES;
-			`
-			err = exec.Command(engine, "exec", "hal-vault-mariadb", "mariadb", "-u", "root", "-pvaultroot", "-e", setupSQL).Run()
+			execArgs := append([]string{"exec", containerName}, setupCmd...)
+			err = exec.Command(engine, execArgs...).Run()
 			if err != nil {
 				fmt.Printf("❌ Failed to provision vaultadmin account: %v\n", err)
 				return
@@ -180,10 +200,10 @@ var vaultMariadbCmd = &cobra.Command{
 			}
 
 			// 2. Configure Vault Connection
-			fmt.Println("⚙️  Wiring Vault to MariaDB via the 'vaultadmin' account...")
-			_, err = client.Logical().Write("database/config/hal-vault-mariadb", map[string]interface{}{
-				"plugin_name":    "mysql-database-plugin",
-				"connection_url": "{{username}}:{{password}}@tcp(hal-vault-mariadb:3306)/",
+			fmt.Printf("⚙️  Wiring Vault to %s via the 'vaultadmin' account...\n", backendLabel)
+			_, err = client.Logical().Write("database/config/"+containerName, map[string]interface{}{
+				"plugin_name":    pluginName,
+				"connection_url": connectionURL,
 				"allowed_roles":  "dba-role",
 				"username":       "vaultadmin",
 				"password":       "temp-vault-pass",
@@ -195,7 +215,7 @@ var vaultMariadbCmd = &cobra.Command{
 
 			// 🎯 BEST PRACTICE 2: Rotate the Vault Admin Password
 			fmt.Println("⚙️  Executing Password Rotation (Vault is taking exclusive ownership)...")
-			_, err = client.Logical().Write("database/rotate-root/hal-vault-mariadb", map[string]interface{}{})
+			_, err = client.Logical().Write("database/rotate-root/"+containerName, map[string]interface{}{})
 			if err != nil {
 				fmt.Printf("❌ Failed to rotate Vault connection password: %v\n", err)
 				return
@@ -204,8 +224,8 @@ var vaultMariadbCmd = &cobra.Command{
 			// 3. Create the Role (Updated for DBA to match Boundary integration)
 			fmt.Println("⚙️  Injecting Dynamic SQL Creation Statements...")
 			_, err = client.Logical().Write("database/roles/dba-role", map[string]interface{}{
-				"db_name":             "hal-vault-mariadb",
-				"creation_statements": "CREATE USER '{{name}}'@'%' IDENTIFIED BY '{{password}}'; GRANT ALL PRIVILEGES ON *.* TO '{{name}}'@'%';",
+				"db_name":             containerName,
+				"creation_statements": createStmt,
 				"default_ttl":         "1h",
 				"max_ttl":             "24h",
 			})
@@ -229,14 +249,14 @@ var vaultMariadbCmd = &cobra.Command{
 
 			fmt.Println("\n✅ Enterprise Dynamic Database Credentials Generated!")
 			fmt.Println("---------------------------------------------------------")
-			fmt.Println("🔗 Database Host: mariadb.localhost:3306")
+			fmt.Printf("🔗 Database Host: %s:%s\n", hostAlias, containerPort)
 			fmt.Println("👤 JIT Username:  " + username)
 			fmt.Println("🔑 JIT Password:  " + password)
 			fmt.Println("\n💡 THE SECURE WORKFLOW:")
 			fmt.Println("   1. A least-privileged 'vaultadmin' account was created.")
 			fmt.Println("   2. Vault immediately rotated the 'vaultadmin' password. Nobody knows it!")
 			fmt.Println("   3. Vault used that account to dynamically create the JIT user above.")
-			fmt.Println("   4. Try logging in: `mysql -h mariadb.localhost -P 3306 -u " + username + " -p" + password + "`")
+			fmt.Println("   4. Try logging in: `mysql -h " + hostAlias + " -P " + containerPort + " -u " + username + " -p" + password + "`")
 			fmt.Println("   5. This user has DBA privileges and will self-destruct in 1 hour.")
 			fmt.Println("---------------------------------------------------------")
 		}
@@ -247,9 +267,9 @@ var vaultMariadbCmd = &cobra.Command{
 // Helper Functions
 // -----------------------------------------------------------------------------
 
-func waitForMariaDB(engine string, maxRetries int) error {
+func waitForMariaDB(engine, containerName string, maxRetries int) error {
 	for i := 0; i < maxRetries; i++ {
-		cmd := exec.Command(engine, "exec", "hal-vault-mariadb", "mariadb-admin", "ping", "-h", "127.0.0.1", "-u", "root", "-pvaultroot", "--silent")
+		cmd := exec.Command(engine, "exec", containerName, "mariadb-admin", "ping", "-h", "127.0.0.1", "-u", "root", "-pvaultroot", "--silent")
 		if err := cmd.Run(); err == nil {
 			return nil
 		}
@@ -261,12 +281,13 @@ func waitForMariaDB(engine string, maxRetries int) error {
 
 func init() {
 	// Standard Lifecycle Flags
-	vaultMariadbCmd.Flags().BoolVarP(&mariadbEnable, "enable", "e", false, "Deploy MariaDB and configure Vault")
-	vaultMariadbCmd.Flags().BoolVarP(&mariadbDisable, "disable", "d", false, "Remove MariaDB and clean up Vault configurations")
-	vaultMariadbCmd.Flags().BoolVarP(&mariadbForce, "force", "f", false, "Force a clean redeployment of the database")
+	vaultDatabaseCmd.Flags().BoolVarP(&databaseEnable, "enable", "e", false, "Deploy selected database backend and configure Vault")
+	vaultDatabaseCmd.Flags().BoolVarP(&databaseDisable, "disable", "d", false, "Remove selected backend and clean up Vault database configuration")
+	vaultDatabaseCmd.Flags().BoolVarP(&databaseForce, "force", "f", false, "Force a clean redeployment of the selected backend")
 
-	// Feature-Specific Flags
-	vaultMariadbCmd.Flags().StringVar(&mariadbVersion, "mariadb-version", "11.4", "Version of the MariaDB container image to deploy")
+	// Backend selection and version pinning
+	vaultDatabaseCmd.Flags().StringVarP(&databaseBackend, "backend", "b", "mariadb", "Database backend to use (mariadb; pgsql planned, postgres alias accepted)")
+	vaultDatabaseCmd.Flags().StringVar(&mariadbVersion, "mariadb-version", "11.4", "Version of the MariaDB container image to deploy")
 
-	Cmd.AddCommand(vaultMariadbCmd)
+	Cmd.AddCommand(vaultDatabaseCmd)
 }

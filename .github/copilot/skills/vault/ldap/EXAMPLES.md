@@ -8,7 +8,11 @@ Assistant:
 
     hal vault ldap --enable
 
-Assistant: I verify LDAP auth and secrets mounts, then provide login tests.
+Assistant: I verify LDAP auth and secrets mounts, then provide login and secrets tests.
+
+    vault login -method=ldap username=bob password=password
+    vault read ldap/creds/dynamic-reader
+    vault read ldap/static-cred/static-app
 
 ## Example 2: LDAP Login Failure
 

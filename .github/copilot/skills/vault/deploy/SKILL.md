@@ -13,10 +13,16 @@ Handle hal vault deploy requests with a stable lifecycle pattern.
 
 - hal vault deploy
 
+## Edition And Token Baseline
+
+- Default deploy is Vault CE in dev mode.
+- Dev mode root token is `root`.
+- Enterprise deploy requires `hal vault deploy --edition ent` and `VAULT_LICENSE` exported.
+
 ## Validation
 
 - Confirm Vault is reachable after deployment.
-- Summarize UI/API endpoints and next steps.
+- Summarize UI/API endpoints (`http://vault.localhost:8200`) and next steps.
 - If Grafana/Prometheus are already running, mention that Vault metrics target registration and dashboard import happen automatically.
 
 ## Observability Notes
@@ -31,3 +37,4 @@ Handle hal vault deploy requests with a stable lifecycle pattern.
 
 - If ports are already in use, explain likely conflicts and next actions.
 - If an old broken deployment exists, suggest force or teardown path.
+- If Enterprise is requested without `VAULT_LICENSE`, explain the failure and provide the exact export + redeploy command.

@@ -28,3 +28,27 @@ Assistant:
     hal vault destroy
     hal vault deploy
     hal vault ldap --enable
+
+## Example 4: Enterprise Feature Request
+
+User: I want CSI projection for VSO and Sentinel policy examples.
+
+Assistant: Those are Enterprise-only in this lab, so I switch Vault to Enterprise first.
+
+    export VAULT_LICENSE='your_license_string'
+    hal vault deploy --edition ent --force
+    hal vault k8s --enable --csi
+
+## Example 5: Observability Backfill
+
+User: Vault was already deployed. I now want metrics and dashboards in obs.
+
+Assistant:
+
+    hal obs deploy
+    hal vault deploy --configure-obs
+
+Assistant: Then verify surfaces:
+
+    hal obs status
+    hal vault status

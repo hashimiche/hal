@@ -12,7 +12,7 @@ Assistant: I verify service health and entry points, then mention observability 
 
     hal vault status
 
-Assistant: If `hal obs deploy` is already active, Vault metrics are auto-registered in Prometheus and the Vault dashboard is auto-imported into Grafana folder HAL.
+Assistant: I remind the user Vault is in dev mode with root token `root`. If `hal obs deploy` is already active, Vault metrics are auto-registered in Prometheus and the Vault dashboard is auto-imported into Grafana folder HAL.
 
 ## Example 2: Redeploy After Bad State
 
@@ -54,3 +54,13 @@ Assistant:
 
     hal vault deploy
     hal vault oidc --enable
+
+## Example 6: Deploy Vault Enterprise
+
+User: I need Enterprise features for this Vault lab.
+
+Assistant:
+
+    export VAULT_LICENSE='your_license_string'
+    hal vault deploy --edition ent --force
+    hal vault status

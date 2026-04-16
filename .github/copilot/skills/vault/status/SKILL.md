@@ -17,8 +17,10 @@ Handle hal vault status requests with a stable lifecycle pattern.
 
 - Summarize service health and configured integrations.
 - Recommend the next lifecycle command based on state.
+- Include scenario-specific guidance (JWT/OIDC/K8s/LDAP/MariaDB) when one integration is degraded.
 
 ## Edge Cases
 
 - If Vault is unreachable, suggest deploy or restart path.
 - If environment is partially degraded, suggest targeted reset command.
+- If the user asked for Enterprise-only capabilities, include an edition/license check in the recommendation.

@@ -187,7 +187,7 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"component": map[string]interface{}{"type": "string", "enum": []string{"vault", "vault_k8s", "vault_vso", "vault_csi", "vault_oidc", "vault_jwt", "vault_ldap", "vault_mariadb", "terraform", "terraform_workspace", "consul", "nomad", "boundary", "boundary_ssh", "boundary_mariadb", "obs"}},
+					"component": map[string]interface{}{"type": "string", "enum": []string{"vault", "vault_k8s", "vault_vso", "vault_csi", "vault_oidc", "vault_jwt", "vault_ldap", "vault_database", "terraform", "terraform_workspace", "consul", "nomad", "boundary", "boundary_ssh", "boundary_mariadb", "obs"}},
 				},
 				"required": []string{"component"},
 			},
@@ -286,13 +286,13 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": modeSchema(),
 		},
 		{
-			"name":        "get_vault_mariadb_status",
-			"description": "Return Vault MariaDB database secrets demo readiness and key checks.",
+			"name":        "get_vault_database_status",
+			"description": "Return Vault database secrets demo readiness and key checks.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
-			"name":        "enable_vault_mariadb",
-			"description": "Enable Vault MariaDB lab flow in dry_run/apply mode.",
+			"name":        "enable_vault_database",
+			"description": "Enable Vault database lab flow in dry_run/apply mode.",
 			"inputSchema": modeSchema(),
 		},
 		{
@@ -694,14 +694,14 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 	case "enable_ldap":
 		return handleEnableScenarioMode("enable_ldap", []string{"vault", "ldap", "--enable"}, []string{"hal vault ldap", "hal vault status"}, args), true
 
-	case "get_vault_mariadb_status":
+	case "get_vault_database_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
-			return opErrorForTool("get_vault_mariadb_status", codeParseError, err.Error(), nil, []string{"hal vault mariadb"}, nil, nil, nil), true
+			return opErrorForTool("get_vault_database_status", codeParseError, err.Error(), nil, []string{"hal vault database"}, nil, nil, nil), true
 		}
-		return handleStatusCommandTool("get_vault_mariadb_status", []string{"vault", "mariadb"}, []string{"hal vault mariadb", "hal vault mariadb --enable"}, []string{"https://developer.hashicorp.com/vault/docs/secrets/databases"}), true
+		return handleStatusCommandTool("get_vault_database_status", []string{"vault", "database"}, []string{"hal vault database", "hal vault database --enable --backend mariadb"}, []string{"https://developer.hashicorp.com/vault/docs/secrets/databases"}), true
 
-	case "enable_vault_mariadb":
-		return handleEnableScenarioMode("enable_vault_mariadb", []string{"vault", "mariadb", "--enable"}, []string{"hal vault mariadb", "hal vault status"}, args), true
+	case "enable_vault_database":
+		return handleEnableScenarioMode("enable_vault_database", []string{"vault", "database", "--enable"}, []string{"hal vault database", "hal vault status"}, args), true
 
 	case "get_boundary_mariadb_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
@@ -1292,12 +1292,12 @@ func componentContext(component string) (map[string]interface{}, []string, error
 			"status_cmd": "hal vault ldap",
 			"notes":      "Use command without flags for smart status and next-step guidance",
 		}, []string{"hal vault ldap", "hal vault ldap --enable", "hal vault ldap --disable"}, nil
-	case "vault_mariadb":
+	case "vault_database":
 		return map[string]interface{}{
-			"component":  "vault_mariadb",
-			"status_cmd": "hal vault mariadb",
+			"component":  "vault_database",
+			"status_cmd": "hal vault database",
 			"notes":      "Use command without flags for smart status and next-step guidance",
-		}, []string{"hal vault mariadb", "hal vault mariadb --enable", "hal vault mariadb --disable"}, nil
+		}, []string{"hal vault database", "hal vault database --enable", "hal vault database --disable"}, nil
 	case "terraform":
 		return map[string]interface{}{
 			"component": component,
@@ -1422,14 +1422,14 @@ func buildFeaturePlan(intent string) (map[string]interface{}, bool) {
 			"postchecks": []string{"hal vault ldap", "hal vault status"},
 			"rollback":   []string{"hal vault ldap --disable"},
 		}, true
-	case strings.Contains(lower, "vault") && strings.Contains(lower, "mariadb"):
+	case strings.Contains(lower, "vault") && (strings.Contains(lower, "database") || strings.Contains(lower, " db") || strings.Contains(lower, "db ") || strings.Contains(lower, "mariadb")):
 		return map[string]interface{}{
 			"intent":     intent,
-			"action":     "vault_mariadb_workflow",
-			"prechecks":  []string{"hal vault status", "hal vault mariadb"},
-			"steps":      []map[string]string{{"command": "hal vault mariadb --enable", "reason": "Enable Vault DB secrets lab with MariaDB"}},
-			"postchecks": []string{"hal vault mariadb", "hal vault status"},
-			"rollback":   []string{"hal vault mariadb --disable"},
+			"action":     "vault_database_workflow",
+			"prechecks":  []string{"hal vault status", "hal vault database"},
+			"steps":      []map[string]string{{"command": "hal vault database --enable --backend mariadb", "reason": "Enable Vault database secrets lab (default backend: MariaDB)"}},
+			"postchecks": []string{"hal vault database", "hal vault status"},
+			"rollback":   []string{"hal vault database --disable"},
 		}, true
 	case strings.Contains(lower, "boundary") && strings.Contains(lower, "mariadb"):
 		return map[string]interface{}{

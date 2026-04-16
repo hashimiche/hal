@@ -21,7 +21,7 @@ Deploy a local Vault instance and baseline configuration for HAL labs.
 -h, --help                  help for deploy
 --helper-image string   Helper image used for one-shot setup tasks during Vault deploy (default "alpine:3.22")
 -c, --join-consul           Tether Vault to the global HAL Consul instance
--v, --version string        Vault version to deploy (default "1.21")
+-v, --version string        Vault version to deploy (default "2.0")
 ```
 - Global flags: `--debug`, `--dry-run`
 

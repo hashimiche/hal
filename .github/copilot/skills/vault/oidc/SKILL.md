@@ -22,6 +22,7 @@ This skill covers the Keycloak-backed OIDC demo implemented by `hal vault oidc`.
 - Policies: `admin`, `user-ro`
 - External identity groups mapped from Keycloak groups `admin` and `user-ro`
 - Demo users: `alice` and `bob`
+- Keycloak realm: `hal`
 
 ## Workflow
 
@@ -61,6 +62,7 @@ Provide a brief confirmation that the OIDC auth method is enabled.
 | Client ID | `vault` | The OIDC client registered in Keycloak |
 | Default Role | `default` | The configured default Vault OIDC role |
 | Discovery URL | `http://keycloak.localhost:8081/realms/hal` | The OIDC discovery endpoint |
+| External Groups | `admin`, `user-ro` | Keycloak groups mapped to Vault identity groups and policies |
 
 **Tier 3 — Actionable Testing Commands**
 
@@ -75,4 +77,5 @@ Provide a brief confirmation that the OIDC auth method is enabled.
 
 1. **Callback URL mismatch:** Ensure the allowed callback URL matches `http://localhost:8250/oidc/callback`.
 2. **Vault is offline:** Instruct the user to run `hal vault deploy` first.
-3. **User asks about groups or policies after deployment:** Provide exact `vault read/write` commands for `identity/group`, `identity/group-alias`, or `auth/oidc/role/default`.
+3. **Group claim mismatch:** Verify Keycloak group membership and `groups_claim` on `auth/oidc/role/default`.
+4. **User asks about groups or policies after deployment:** Provide exact `vault read/write` commands for `identity/group`, `identity/group-alias`, or `auth/oidc/role/default`.

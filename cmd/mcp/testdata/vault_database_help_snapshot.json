@@ -1,0 +1,22 @@
+{
+  "flags": [
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "help for vault",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal vault [command] --help",
+    "hal vault database --help"
+  ],
+  "topic": "vault database",
+  "usage": ""
+}

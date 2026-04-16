@@ -64,6 +64,7 @@ For product-level destroy flows, prefer deleting the known local ecosystem direc
 - HAL MCP command namespace (`hal mcp`) is a stdio-first MVP for external tool integration.
     - `hal mcp create|up|status|down` should stay stable for operator UX consistency.
     - Initial MCP tool surface is read-only and should leverage existing HAL command paths (`status`, `capacity`, `<product> status`) instead of reimplementing product logic.
+    - Product status tools (for example `get_tfe_status`) should keep product-specific `recommended_commands` first (`hal terraform status`) so AI clients can answer quick health prompts without falling back to generic checks like `hal capacity`.
 - Terraform Enterprise local deployment depends on a mocked PostgreSQL, Redis, and MinIO stack and uses local TLS material under `~/.hal/tfe-certs`.
     - Rootless Podman path uses `https://tfe.localhost:8443` through `hal-tfe-proxy`.
     - Task worker agent-run config must keep `/tmp/terraform` writable (not read-only) so remote plans can download Terraform binaries.
@@ -88,3 +89,8 @@ For product-level destroy flows, prefer deleting the known local ecosystem direc
 ## Maintenance Rule
 
 If guidance here starts duplicating `.github/copilot-instructions.md`, move the canonical rule there and keep only the repo-specific reminder here.
+
+## Cross-Repo AI Sync Rule
+
+- When changes affect AI-facing behavior (MCP tools, skills metadata, grounding contracts, prompt/response schemas, or deterministic intent routing), apply coordinated updates in both repos: `hal` (truth/tooling) and `hal-plus` (UX/orchestration).
+- Do not ship AI contract changes in only one repo when the other side consumes or exposes the same contract.

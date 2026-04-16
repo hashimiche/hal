@@ -71,11 +71,39 @@ var vaultStatusCmd = &cobra.Command{
 			{"OIDC (Keycloak)", "hal-keycloak", "oidc"},
 			{"JWT (GitLab)", "hal-gitlab", "jwt"},
 			{"LDAP (OpenLDAP)", "hal-openldap", "ldap"},
-			{"DBs (MariaDB)", "hal-mariadb", "mariadb"},
+			{"DBs (MariaDB/PgSQL)", "hal-vault-mariadb", "database"},
 			{"K8s (KinD)", "kind-control-plane", "k8s"},
 		}
 
 		for _, f := range features {
+			if f.Command == "database" {
+				mariaOut, mariaErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-vault-mariadb").Output()
+				postgresOut, postgresErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-vault-postgres").Output()
+				mariaStatus := strings.TrimSpace(string(mariaOut))
+				postgresStatus := strings.TrimSpace(string(postgresOut))
+
+				dbStatus := ""
+				if mariaErr != nil && postgresErr != nil {
+					dbStatus = "down"
+				} else if mariaStatus == "running" || postgresStatus == "running" {
+					dbStatus = "running"
+				} else if mariaStatus != "" {
+					dbStatus = mariaStatus
+				} else {
+					dbStatus = postgresStatus
+				}
+
+				switch dbStatus {
+				case "down":
+					fmt.Printf("  ⚪ %-18s : Down (hal vault database -e --backend / -b mariadb/pgsql)\n", f.Name)
+				case "running":
+					fmt.Printf("  🟢 %-18s : Up   (hal vault database -d)\n", f.Name)
+				default:
+					fmt.Printf("  🟡 %-18s : %-4s (hal vault database -f)\n", f.Name, strings.ToUpper(dbStatus))
+				}
+				continue
+			}
+
 			// 🎯 FIX: Same here. Ignore stderr, just check the error code.
 			out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", f.Container).Output()
 			status := strings.TrimSpace(string(out))

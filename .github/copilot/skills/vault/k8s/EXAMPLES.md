@@ -14,6 +14,8 @@ Assistant: I verify auth config and role mapping:
     vault read auth/kubernetes/config
     vault read auth/kubernetes/role/app1-role
 
+Assistant: I also validate the demo site is reachable at `http://web.localhost:8088` and explain that native mode rolls app pods automatically when synced secrets change.
+
 ## Example 2: Enable CSI Mode
 
 User: I want CSI mode.
