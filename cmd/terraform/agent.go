@@ -3,6 +3,7 @@ package terraform
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +20,7 @@ const (
 	defaultTFEAgentImage       = "hashicorp/tfc-agent:1.28"
 	defaultTFEAgentPoolName    = "hal-agent-pool"
 	defaultTFEAgentDisplayName = "hal-tfc-agent"
+	tfeProxyInternalIP         = "10.89.3.54"
 )
 
 type tfeAgentState struct {
@@ -200,19 +202,30 @@ func enableTFEAgent(engine string) error {
 		return fmt.Errorf("missing local TFE certificate: %w", err)
 	}
 
+	addHostArg := ""
+	if parsed, parseErr := url.Parse(baseURL); parseErr == nil {
+		if strings.EqualFold(parsed.Hostname(), "tfe.localhost") {
+			addHostArg = "tfe.localhost:" + tfeProxyInternalIP
+		}
+	}
+
 	runArgs := []string{
 		"run", "-d",
 		"--name", tfeAgentContainerName,
 		"--network", "hal-net",
-		"-e", "TFC_ADDRESS=" + baseURL,
-		"-e", "TFC_AGENT_TOKEN=" + tokenValue,
-		"-e", "TFC_AGENT_NAME=" + agentName,
+	}
+	if addHostArg != "" {
+		runArgs = append(runArgs, "--add-host", addHostArg)
+	}
+	runArgs = append(runArgs,
+		"-e", "TFC_ADDRESS="+baseURL,
+		"-e", "TFC_AGENT_TOKEN="+tokenValue,
+		"-e", "TFC_AGENT_NAME="+agentName,
 		"-e", "TFC_AGENT_SINGLE=false",
+		"-e", "SSL_CERT_FILE=/hal/certs/tfe-localhost.crt",
 		"-v", fmt.Sprintf("%s:/hal/certs/tfe-localhost.crt:ro", certPath),
 		image,
-		"sh", "-lc",
-		"set -e; cp /hal/certs/tfe-localhost.crt /usr/local/share/ca-certificates/tfe-localhost.crt 2>/dev/null || true; update-ca-certificates >/dev/null 2>&1 || true; exec tfc-agent",
-	}
+	)
 
 	out, runErr := exec.Command(engine, runArgs...).CombinedOutput()
 	if runErr != nil {
