@@ -349,7 +349,11 @@ func ensureCerts(certDir string) error {
 	keyPath := filepath.Join(certDir, "key.pem")
 
 	if _, err := os.Stat(certPath); err == nil {
-		return nil
+		if !shouldRotatePrimaryTFECert(certPath) {
+			return nil
+		}
+		_ = os.Remove(certPath)
+		_ = os.Remove(keyPath)
 	}
 
 	os.MkdirAll(certDir, 0755)
@@ -359,11 +363,20 @@ func ensureCerts(certDir string) error {
 		return err
 	}
 
+	serialLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialLimit)
+	if err != nil {
+		return err
+	}
+	if serialNumber.Sign() == 0 {
+		serialNumber = big.NewInt(time.Now().UnixNano())
+	}
+
 	template := x509.Certificate{
-		SerialNumber: big.NewInt(1),
+		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"HAL Local Dev Environment"},
-			CommonName:   "localhost",
+			Organization: []string{"HAL Primary TFE Local Dev Environment"},
+			CommonName:   "tfe.localhost",
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
@@ -389,6 +402,41 @@ func ensureCerts(certDir string) error {
 	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
 
 	return nil
+}
+
+func shouldRotatePrimaryTFECert(certPath string) bool {
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return true
+	}
+
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return true
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return true
+	}
+
+	hasPrimaryDNS := false
+	for _, name := range cert.DNSNames {
+		if name == "tfe.localhost" {
+			hasPrimaryDNS = true
+			break
+		}
+	}
+	if !hasPrimaryDNS {
+		return true
+	}
+
+	legacyIssuer := strings.Contains(strings.Join(cert.Subject.Organization, ","), "HAL Local Dev Environment")
+	if legacyIssuer && cert.SerialNumber.Cmp(big.NewInt(1)) == 0 {
+		return true
+	}
+
+	return false
 }
 
 func waitForService(name string, url string, maxRetries int) error {
