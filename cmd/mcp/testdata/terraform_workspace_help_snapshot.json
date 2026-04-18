@@ -53,7 +53,7 @@
       "name": "--tfe-project string"
     },
     {
-      "description": "Regex for VCS tag-triggered runs (set empty string to disable tag triggers) (default \"^v\\\\d+\\\\.\\\\d+\\\\.\\\\d+(?:-\\\\w+)?$\")",
+      "description": "Optional regex for VCS tag-triggered runs (leave empty to disable)",
       "name": "--tfe-tags-regex string"
     },
     {

@@ -1,0 +1,77 @@
+{
+  "flags": [
+    {
+      "description": "Print helper welcome banner without opening a shell",
+      "name": "--banner"
+    },
+    {
+      "description": "Base image used to build the helper image (default \"ghcr.io/straubt1/tfx:latest\")",
+      "name": "--base-image string"
+    },
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "Optional host directory to mount into the helper at /workspaces",
+      "name": "--local-directory string"
+    },
+    {
+      "description": "Terraform Enterprise admin email used for helper token bootstrap (default \"haladmin@localhost\")",
+      "name": "--tfe-admin-email string"
+    },
+    {
+      "description": "Terraform Enterprise admin password used for helper token bootstrap (default \"hal9000FTW\")",
+      "name": "--tfe-admin-password string"
+    },
+    {
+      "description": "Terraform Enterprise admin username used for helper token bootstrap (default \"haladmin\")",
+      "name": "--tfe-admin-username string"
+    },
+    {
+      "description": "Default Terraform Enterprise organization written to ~/.tfx.hcl (default \"hal\")",
+      "name": "--tfe-org string"
+    },
+    {
+      "description": "Optional Terraform Enterprise project to ensure during helper token bootstrap",
+      "name": "--tfe-project string"
+    },
+    {
+      "description": "Terraform Enterprise URL used for helper auth bootstrap (default \"https://tfe.localhost:8443\")",
+      "name": "--tfe-url string"
+    },
+    {
+      "description": "Show raw Docker build logs instead of HAL build animation",
+      "name": "--verbose"
+    },
+    {
+      "description": "Start helper container and open an interactive shell",
+      "name": "-c, --console"
+    },
+    {
+      "description": "Remove the helper container and delete HAL-managed scenario workspaces",
+      "name": "-d, --disable"
+    },
+    {
+      "description": "Build or refresh the Terraform/TFX helper image",
+      "name": "-e, --enable"
+    },
+    {
+      "description": "Rebuild image and recreate helper container",
+      "name": "-f, --force"
+    },
+    {
+      "description": "help for cli",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal terraform cli --help"
+  ],
+  "topic": "terraform cli",
+  "usage": ""
+}

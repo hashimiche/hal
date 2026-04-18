@@ -1,0 +1,22 @@
+{
+  "flags": [
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "help for terraform",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal terraform [command] --help",
+    "hal terraform agent --help"
+  ],
+  "topic": "terraform agent",
+  "usage": ""
+}

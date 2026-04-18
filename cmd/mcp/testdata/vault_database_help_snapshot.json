@@ -9,12 +9,31 @@
       "name": "--dry-run"
     },
     {
-      "description": "help for vault",
+      "description": "Version of the MariaDB container image to deploy (default \"11.4\")",
+      "name": "--mariadb-version string"
+    },
+    {
+      "description": "Database backend to use (mariadb; pgsql planned, postgres alias accepted) (default \"mariadb\")",
+      "name": "-b, --backend string"
+    },
+    {
+      "description": "Remove selected backend and clean up Vault database configuration",
+      "name": "-d, --disable"
+    },
+    {
+      "description": "Deploy selected database backend and configure Vault",
+      "name": "-e, --enable"
+    },
+    {
+      "description": "Force a clean redeployment of the selected backend",
+      "name": "-f, --force"
+    },
+    {
+      "description": "help for database",
       "name": "-h, --help"
     }
   ],
   "recommended_commands": [
-    "hal vault [command] --help",
     "hal vault database --help"
   ],
   "topic": "vault database",

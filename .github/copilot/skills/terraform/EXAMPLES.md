@@ -17,6 +17,7 @@ User: Provision Terraform lab.
 Assistant:
 
     hal terraform deploy
+    hal terraform agent --enable
     hal terraform workspace -e
     hal terraform status
 
@@ -38,3 +39,13 @@ Assistant:
 
     UI: https://tfe.localhost:8443
     Password baseline: hal9000FTW
+
+## Example 5: Enable TFE Agent Pool Runtime
+
+User: I need workspace runs on a custom TFE agent pool.
+
+Assistant:
+
+    hal terraform status
+    hal terraform agent --enable
+    hal terraform agent

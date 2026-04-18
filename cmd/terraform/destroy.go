@@ -20,6 +20,7 @@ var tfeEcosystem = []string{
 	"hal-tfe-redis",
 	"hal-tfe-minio",
 	"hal-tfe-cli",
+	"hal-tfe-agent",
 }
 
 var destroyCmd = &cobra.Command{
@@ -104,6 +105,12 @@ var destroyCmd = &cobra.Command{
 			fmt.Printf("⚠️  Could not remove cached TFE API token: %v\n", err)
 		} else {
 			fmt.Println("  🧹 Removed cached TFE API token.")
+		}
+
+		if err := removeTFEAgentState(); err != nil {
+			fmt.Printf("⚠️  Could not remove cached TFE agent state: %v\n", err)
+		} else {
+			fmt.Println("  🧹 Removed cached TFE agent state.")
 		}
 
 		if !global.DryRun {
