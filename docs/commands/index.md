@@ -43,6 +43,7 @@ This index maps the HAL command tree to one spec file per command area.
 - [Terraform destroy](terraform-destroy.md)
 - [Terraform workspace](terraform-workspace.md)
 - [Terraform cli](terraform-cli.md)
+- [Terraform agent](terraform-agent.md)
 - [Observability](observability.md)
 - [Observability deploy](observability-deploy.md)
 - [Observability status](observability-status.md)

@@ -710,7 +710,7 @@ func validateCommand(proposed string) map[string]interface{} {
 		"consul":    {"deploy", "status", "destroy"},
 		"nomad":     {"deploy", "status", "destroy", "job"},
 		"boundary":  {"deploy", "status", "destroy", "mariadb", "ssh"},
-		"terraform": {"deploy", "status", "destroy", "workspace"},
+		"terraform": {"deploy", "status", "destroy", "workspace", "cli", "agent"},
 		"obs":       {"deploy", "status", "destroy"},
 	}
 

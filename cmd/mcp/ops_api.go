@@ -511,6 +511,9 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		case "terraform", "terraform_workspace", "tfe":
 			commands = []string{"hal terraform status", "hal terraform workspace"}
 			docs = []string{"https://developer.hashicorp.com/terraform/enterprise"}
+		case "terraform_agent", "tfe_agent":
+			commands = []string{"hal terraform agent", "hal terraform agent --enable", "hal terraform status"}
+			docs = []string{"https://developer.hashicorp.com/terraform/enterprise/agents"}
 		case "terraform_cli", "tfe_cli":
 			commands = []string{"hal terraform cli", "hal tf cli -c", "hal terraform status"}
 			docs = []string{"https://developer.hashicorp.com/terraform/enterprise"}
@@ -1320,7 +1323,7 @@ func componentContext(component string) (map[string]interface{}, []string, error
 				"http://grafana.localhost:3000",
 				"http://prometheus.localhost:9090",
 			},
-		}, []string{"hal terraform status", "hal terraform deploy", "hal terraform workspace", "hal terraform cli"}, nil
+		}, []string{"hal terraform status", "hal terraform deploy", "hal terraform workspace", "hal terraform cli", "hal terraform agent"}, nil
 	case "terraform_workspace":
 		return map[string]interface{}{
 			"component":  "terraform_workspace",
@@ -1328,6 +1331,14 @@ func componentContext(component string) (map[string]interface{}, []string, error
 			"workflow":   "prepare gitlab repo + wire TFE workspace VCS",
 			"trigger":    "push commit to main branch",
 		}, []string{"hal terraform workspace", "hal terraform workspace --enable", "hal terraform status"}, nil
+	case "terraform_agent":
+		return map[string]interface{}{
+			"component":         "terraform_agent",
+			"agent_container":   "hal-tfe-agent",
+			"default_pool_name": "hal-agent-pool",
+			"default_image":     "hashicorp/tfc-agent:1.28",
+			"workflow":          "create/reuse agent pool, mint token, register local tfc-agent",
+		}, []string{"hal terraform agent", "hal terraform agent --enable", "hal terraform agent --disable", "hal terraform status"}, nil
 	case "terraform_cli":
 		return map[string]interface{}{
 			"component":        "terraform_cli",

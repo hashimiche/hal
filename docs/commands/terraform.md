@@ -29,6 +29,11 @@
   - Lifecycle flags: `--enable/-e`, `--console/-c`, `--disable/-d`, `--force/-f`
   - Spec: [terraform-cli.md](terraform-cli.md)
 
+- `hal terraform agent`
+  - Manage local TFE custom agent pool runtime and `hal-tfe-agent` lifecycle
+  - Lifecycle flags: `--enable/-e`, `--disable/-d`, `--force/-f`
+  - Spec: [terraform-agent.md](terraform-agent.md)
+
 ## Related Detailed Specs
 - [Terraform CLI Container Spec](../terraform-cli-container-spec.md)
 

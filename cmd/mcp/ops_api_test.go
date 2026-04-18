@@ -191,6 +191,7 @@ func TestHelpSnapshotsAcrossProducts(t *testing.T) {
 		{name: "boundary_mariadb", topic: "boundary mariadb", fixture: "boundary_mariadb_help_snapshot.json"},
 		{name: "terraform", topic: "terraform", fixture: "terraform_help_snapshot.json"},
 		{name: "terraform_workspace", topic: "terraform workspace", fixture: "terraform_workspace_help_snapshot.json"},
+		{name: "terraform_agent", topic: "terraform agent", fixture: "terraform_agent_help_snapshot.json"},
 		{name: "consul", topic: "consul", fixture: "consul_help_snapshot.json"},
 		{name: "nomad", topic: "nomad", fixture: "nomad_help_snapshot.json"},
 		{name: "obs", topic: "obs", fixture: "obs_help_snapshot.json"},
