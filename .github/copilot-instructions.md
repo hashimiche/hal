@@ -45,3 +45,11 @@ Whenever CLI behavior, naming, or lifecycle semantics change:
 1. Update `docs/cli-lifecycle-model.md` first (detailed model and mapping).
 2. Update this file (`.github/copilot-instructions.md`) with concise policy deltas only.
 3. Update `README.md` when contributor-facing command behavior changes.
+4. Update all LLM-oriented markdown that encodes command guidance, including at minimum:
+	- `LLM_CONTEXT.md`
+	- `.github/copilot/skills/**/*.md`
+	- `docs/commands/mcp*.md` and `docs/commands/mcp.md` when MCP command behavior or examples change
+5. Update MCP-facing contracts and generated help snapshots when command syntax changes:
+	- `HAL_MCP_CONTRACT.json` when schema/contracts change
+	- `cmd/mcp/ops_api.go` behavior and command synthesis
+	- `cmd/mcp/testdata/*_help_snapshot.json` fixtures

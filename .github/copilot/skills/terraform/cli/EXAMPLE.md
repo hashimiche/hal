@@ -51,7 +51,7 @@ User: The helper container feels stale. Recreate it cleanly.
 
 Assistant:
 
-    hal tf cli disable --force
+    hal tf cli disable --update
     hal tf cli update
     hal tf cli -c
 

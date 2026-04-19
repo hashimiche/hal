@@ -31,7 +31,6 @@ var (
 	tfeCLIConsole        bool
 	tfeCLIDisable        bool
 	tfeCLIUpdate         bool
-	tfeCLIForce          bool
 	tfeCLILocalDirectory string
 	tfeCLIBaseImage      string
 	tfeCLIURL            string
@@ -60,11 +59,11 @@ var cliCmd = &cobra.Command{
 		}
 
 		if tfeCLIDisable {
-			if tfeCLIEnable || tfeCLIUpdate || tfeCLIConsole || tfeCLIShowBannerOnly {
-				fmt.Println("❌ '--disable' cannot be combined with '--enable', '--update', '--console', or '--banner'.")
+			if tfeCLIEnable || tfeCLIConsole || tfeCLIShowBannerOnly {
+				fmt.Println("❌ '--disable' cannot be combined with '--enable', '--console', or '--banner'.")
 				return
 			}
-			if err := disableTFECLI(engine); err != nil {
+			if err := disableTFECLI(engine, tfeCLIUpdate); err != nil {
 				fmt.Printf("❌ Failed to disable Terraform CLI helper: %v\n", err)
 			}
 			return
@@ -72,7 +71,6 @@ var cliCmd = &cobra.Command{
 
 		if tfeCLIUpdate {
 			tfeCLIEnable = true
-			tfeCLIForce = true
 		}
 
 		if !tfeCLIEnable && !tfeCLIConsole && !tfeCLIShowBannerOnly {
@@ -80,9 +78,9 @@ var cliCmd = &cobra.Command{
 			return
 		}
 
-		shouldBuild := tfeCLIEnable || tfeCLIForce || (tfeCLIConsole && !imageExists(engine, tfeCLIImageName))
+		shouldBuild := tfeCLIEnable || tfeCLIUpdate || (tfeCLIConsole && !imageExists(engine, tfeCLIImageName))
 		if shouldBuild {
-			if tfeCLIForce {
+			if tfeCLIUpdate {
 				_ = exec.Command(engine, "rm", "-f", tfeCLIContainerName).Run()
 			}
 
@@ -192,7 +190,7 @@ func showTFECLIStatus(engine string) {
 	fmt.Println("\n💡 Next Step:")
 	fmt.Println("   hal tf cli enable")
 	fmt.Println("   hal tf cli -c")
-	fmt.Println("   hal tf cli disable --force")
+	fmt.Println("   hal tf cli disable --update")
 }
 
 func buildTFECLIImage(engine string) error {
@@ -393,7 +391,7 @@ func tailText(input string, maxLines int) string {
 func ensureTFECLIContainer(engine, certPath, localDir string) error {
 	if global.IsContainerRunning(engine, tfeCLIContainerName) {
 		if localDir != "" && !containerHasMount(engine, tfeCLIContainerName, "/workspaces") {
-			return fmt.Errorf("existing helper container is running without /workspaces mount; re-run with '--force' to recreate with --local-directory")
+			return fmt.Errorf("existing helper container is running without /workspaces mount; re-run with '--update' to recreate with --local-directory")
 		}
 		return nil
 	}
@@ -611,12 +609,12 @@ type tfeCLIAuthConfig struct {
 	Token        string
 }
 
-func disableTFECLI(engine string) error {
-	if !tfeCLIForce {
+func disableTFECLI(engine string, nonInteractiveConfirm bool) error {
+	if !nonInteractiveConfirm {
 		if !isInteractiveTTY() {
 			fmt.Println("⚠️  'hal tf cli disable' is destructive.")
 			fmt.Println("   It removes the helper container and deletes HAL-managed scenario workspaces tracked in TFE.")
-			fmt.Println("   Re-run with 'hal tf cli disable --force' to confirm in non-interactive mode.")
+			fmt.Println("   Re-run with 'hal tf cli disable --update' to confirm in non-interactive mode.")
 			return nil
 		}
 
@@ -1245,11 +1243,9 @@ func init() {
 	cliCmd.Flags().BoolVarP(&tfeCLIConsole, "console", "c", false, "Start helper container and open an interactive shell")
 	cliCmd.Flags().BoolVarP(&tfeCLIDisable, "disable", "d", false, "Remove the helper container and delete HAL-managed scenario workspaces")
 	cliCmd.Flags().BoolVarP(&tfeCLIUpdate, "update", "u", false, "Reconcile helper image/container and refresh runtime configuration")
-	cliCmd.Flags().BoolVarP(&tfeCLIForce, "force", "f", false, "Rebuild image and recreate helper container")
 	_ = cliCmd.Flags().MarkHidden("enable")
 	_ = cliCmd.Flags().MarkHidden("disable")
 	_ = cliCmd.Flags().MarkHidden("update")
-	_ = cliCmd.Flags().MarkDeprecated("force", "use --update instead")
 	cliCmd.Flags().BoolVar(&tfeCLIShowBannerOnly, "banner", false, "Print helper welcome banner without opening a shell")
 	cliCmd.Flags().StringVar(&tfeCLILocalDirectory, "local-directory", "", "Optional host directory to mount into the helper at /workspaces")
 	cliCmd.Flags().StringVar(&tfeCLIBaseImage, "base-image", defaultTFECLIBase, "Base image used to build the helper image")

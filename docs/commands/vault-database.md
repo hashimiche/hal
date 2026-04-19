@@ -13,9 +13,9 @@ Deploy MariaDB and configure Vault dynamic database credentials workflow.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
+- Deprecated: older HAL docs may reference `hal vault database --force`. That flag has been removed from the CLI. Use `hal vault database update`.
 - Command flags from `hal vault database --help`:
 ```text
--f, --force                    Force a clean redeployment of the selected backend
 -h, --help                     help for database
       --backend string           Database backend to use (mariadb; pgsql planned, postgres alias accepted) (default "mariadb")
       --mariadb-version string   Version of the MariaDB container image to deploy (default "11.4")

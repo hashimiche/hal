@@ -13,9 +13,10 @@ Deploy Prometheus, Loki, Grafana, and Promtail stack components.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
+- Deprecated: older HAL docs may reference `hal obs create --force`. That flag has been removed from the CLI. Use `hal obs update` or `hal obs create --update`.
 - Command flags from `hal obs create --help`:
 ```text
--f, --force                     Force a clean redeployment
+-u, --update                    Reconcile an existing observability stack in place
 --grafana-version string    Tag for the grafana/grafana image (default "main")
 -h, --help                      help for deploy
 --loki-version string       Tag for the grafana/loki image (default "3.7")

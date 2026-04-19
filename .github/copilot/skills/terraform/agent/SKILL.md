@@ -41,5 +41,5 @@ Use this skill when the user asks to:
 ## Troubleshooting Notes
 
 - If agent registration fails with TLS trust errors, keep HAL-generated cert wiring in place and avoid bypassing TLS verification.
-- If runtime is stale, use `hal terraform agent enable --force` to rotate token and recreate the container.
+- If runtime is stale, use `hal terraform agent enable --update` to rotate token and recreate the container.
 - If pool assignment fails in UI, verify the pool has at least one registered running agent.

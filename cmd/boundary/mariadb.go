@@ -14,7 +14,6 @@ var (
 	mariadbEnable    bool
 	mariadbDisable   bool
 	mariadbUpdate    bool
-	mariadbForce     bool
 	mariadbWithVault bool
 	targetMariadbVer string
 )
@@ -35,7 +34,7 @@ var mariadbCmd = &cobra.Command{
 		}
 
 		// 1. STATUS CHECK
-		if !mariadbEnable && !mariadbDisable && !mariadbUpdate && !mariadbForce {
+		if !mariadbEnable && !mariadbDisable && !mariadbUpdate {
 			out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-boundary-target-mariadb").Output()
 			status := strings.TrimSpace(string(out))
 			if err != nil {
@@ -47,7 +46,7 @@ var mariadbCmd = &cobra.Command{
 		}
 
 		// 2. TEARDOWN
-		if mariadbDisable || mariadbUpdate || mariadbForce {
+		if mariadbDisable || mariadbUpdate {
 			fmt.Println("🛑 Tearing down MariaDB and Boundary resources...")
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would clean Boundary MariaDB lab resources via API")
@@ -66,7 +65,7 @@ var mariadbCmd = &cobra.Command{
 		}
 
 		// 3. DEPLOY
-		if mariadbEnable || mariadbUpdate || mariadbForce {
+		if mariadbEnable || mariadbUpdate {
 			dbContainerName := "hal-boundary-target-mariadb"
 			if global.DryRun {
 				if mariadbWithVault {
@@ -129,13 +128,11 @@ func init() {
 	mariadbCmd.Flags().BoolVarP(&mariadbEnable, "enable", "e", false, "Deploy MariaDB")
 	mariadbCmd.Flags().BoolVarP(&mariadbDisable, "disable", "d", false, "Remove MariaDB")
 	mariadbCmd.Flags().BoolVarP(&mariadbUpdate, "update", "u", false, "Reconcile MariaDB target and Boundary target configuration")
-	mariadbCmd.Flags().BoolVarP(&mariadbForce, "force", "f", false, "Force Reset")
 	_ = mariadbCmd.Flags().MarkHidden("enable")
 	_ = mariadbCmd.Flags().MarkHidden("disable")
 	_ = mariadbCmd.Flags().MarkHidden("update")
 	mariadbCmd.Flags().BoolVar(&mariadbWithVault, "with-vault", false, "Link with Vault Dynamic Creds")
 	mariadbCmd.Flags().StringVar(&targetMariadbVer, "mariadb-version", "11.4", "Version")
-	_ = mariadbCmd.Flags().MarkDeprecated("force", "use --update instead")
 	Cmd.AddCommand(mariadbCmd)
 }
 

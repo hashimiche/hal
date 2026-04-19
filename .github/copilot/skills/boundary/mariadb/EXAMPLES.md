@@ -23,7 +23,7 @@ User: Rebuild MariaDB and wire Boundary to Vault dynamic creds.
 
 Assistant:
 
-    hal boundary mariadb enable --with-vault --force
+    hal boundary mariadb enable --with-vault --update
 
 Assistant: I confirm the target has brokered credential sources attached, then use the DB-aware connect flow.
 
@@ -40,7 +40,7 @@ User: MariaDB runs but target auth fails.
 
 Assistant:
 
-    hal boundary mariadb --force
+    hal boundary mariadb --update
 
 Assistant: I re-check current IDs and command shape before retrying connect.
 

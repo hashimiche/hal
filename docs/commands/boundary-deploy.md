@@ -13,10 +13,11 @@ Deploy the local Boundary control plane and required services.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
+- Deprecated: older HAL docs may reference `hal boundary create --force`. That flag has been removed from the CLI. Use `hal boundary update` or `hal boundary create --update`.
 - Command flags from `hal boundary create --help`:
 ```text
 --configure-obs       Refresh Prometheus target and Grafana dashboard artifacts without redeploying Boundary
--f, --force               Force redeploy
+-u, --update              Reconcile an existing Boundary deployment in place
 -h, --help                help for deploy
 -c, --join-consul         Tether Boundary to the global HAL Consul instance
 --pg-version string   PostgreSQL version for Boundary backend (default "16")

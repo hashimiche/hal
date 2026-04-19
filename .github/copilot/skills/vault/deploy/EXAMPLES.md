@@ -62,5 +62,5 @@ User: I need Enterprise features for this Vault lab.
 Assistant:
 
     export VAULT_LICENSE='your_license_string'
-    hal vault create --edition ent --force
+    hal vault create --edition ent --update
     hal vault status

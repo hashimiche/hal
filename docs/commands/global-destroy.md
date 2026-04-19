@@ -8,8 +8,11 @@ Destroy all HAL-managed infrastructure globally.
 
 ## Safety
 - Interactive confirmation by default
-- `--force` bypasses prompt
+- `--yes` bypasses prompt
 - Supports global `--dry-run`
+
+## Deprecated
+- Older HAL docs may reference `--force` for non-interactive teardown. That flag has been removed from the CLI. Use `--yes` instead.
 
 ## Related
 - Parent: [global.md](global.md)
@@ -20,7 +23,7 @@ Destroy all HAL-managed infrastructure globally.
 ## Flags
 - Command flags from `hal delete --help`:
 ```text
--f, --force   Force destruction without confirmation prompt
+-y, --yes     Skip confirmation prompt
 -h, --help    help for delete
 ```
 - Global flags: `--debug`, `--dry-run`

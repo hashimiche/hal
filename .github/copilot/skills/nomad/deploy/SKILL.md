@@ -30,4 +30,4 @@ Handle hal nomad create requests with a stable lifecycle pattern.
 ## Edge Cases
 
 - If prerequisites are missing, explain exactly what to install or start first.
-- If resources are partially deployed, suggest force or cleanup path when supported.
+- If resources are partially deployed, suggest update or cleanup path when supported.

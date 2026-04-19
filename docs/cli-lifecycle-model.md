@@ -115,7 +115,7 @@ Rules:
 ## Migration Policy
 
 - New UX/docs should prefer explicit `update` over `--force`.
-- During transition, compatibility aliases may keep `--force` with deprecation guidance.
+- Legacy docs may mention removed `--force` flows, but the CLI should not keep active `--force` aliases unless there is a hard technical reason.
 - New features should not introduce new `--force` flags unless there is a hard technical reason.
 
 ## Documentation Maintenance Rule
@@ -125,3 +125,11 @@ Whenever CLI behavior, verbs, or lifecycle semantics change:
 1. Update this file: `docs/cli-lifecycle-model.md`.
 2. Update `.github/copilot-instructions.md` with concise policy deltas and a pointer back to this file.
 3. If contributor-facing behavior changed, reflect it in `README.md`.
+4. Update LLM-oriented markdown guidance so AI assistants do not emit stale commands:
+	- `LLM_CONTEXT.md`
+	- `.github/copilot/skills/**/*.md`
+	- MCP command docs under `docs/commands/mcp*.md` and `docs/commands/mcp.md`
+5. Update MCP implementation/fixtures when syntax changes affect generated command guidance:
+	- `cmd/mcp/ops_api.go`
+	- `cmd/mcp/testdata/*_help_snapshot.json`
+	- `HAL_MCP_CONTRACT.json` if response contract/schema changed

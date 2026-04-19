@@ -19,10 +19,11 @@ Deploy the local Terraform Enterprise (TFE) stack for HAL labs.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
+- Deprecated: older HAL docs may reference `hal terraform create --force`. That flag has been removed from the CLI. Use `hal terraform update` or `hal terraform create --update`.
 - Command flags from `hal terraform create --help`:
 ```text
 --configure-obs                Refresh Prometheus target and Grafana dashboard artifacts without redeploying Terraform Enterprise
--f, --force                        Force redeploy
+-u, --update                       Reconcile an existing Terraform Enterprise deployment in place
 -h, --help                         help for deploy
 --minio-api-port int           Host port mapped to MinIO S3 API container port 9000 (default 19000)
 --minio-console-port int       Host port mapped to MinIO console container port 9001 (default 19001)

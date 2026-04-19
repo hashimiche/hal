@@ -17,7 +17,7 @@ User: UI says selected pool has no registered agents.
 Assistant:
 
     hal terraform agent
-    hal terraform agent enable --force
+    hal terraform agent enable --update
     hal terraform agent
 
 ## Example 3: Disable Agent Runtime

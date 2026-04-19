@@ -27,7 +27,6 @@ var (
 	tfeTwinEnable              bool
 	tfeTwinDisable             bool
 	tfeTwinUpdate              bool
-	tfeTwinForce               bool
 	tfeTwinVersion             string
 	tfeTwinPassword            string
 	tfeTwinOrg                 string
@@ -108,7 +107,6 @@ var twinCmd = &cobra.Command{
 
 		if tfeTwinUpdate {
 			tfeTwinEnable = true
-			tfeTwinForce = true
 		}
 
 		if !tfeTwinEnable {
@@ -152,8 +150,8 @@ var twinCmd = &cobra.Command{
 
 		isPodman := strings.Contains(engine, "podman")
 
-		if tfeTwinForce {
-			fmt.Println("♻️  Force flag detected. Purging existing twin TFE resources...")
+		if tfeTwinUpdate {
+			fmt.Println("♻️  Update requested. Purging existing twin TFE resources...")
 			destroyTFETwin(engine, layout)
 		}
 
@@ -693,11 +691,9 @@ func init() {
 	twinCmd.Flags().BoolVar(&tfeTwinDisable, "disable", false, "Destroy the twin Terraform Enterprise instance and remove its local artifacts")
 	twinCmd.Flags().BoolVarP(&tfeTwinUpdate, "update", "u", false, "Reconcile the twin Terraform Enterprise instance in place")
 	twinCmd.Flags().BoolVar(&tfeTwinConfigureObsOnly, "configure-obs", false, "Refresh only the twin Prometheus target file")
-	twinCmd.Flags().BoolVarP(&tfeTwinForce, "force", "f", false, "Force redeploy by deleting any existing twin resources first")
 	_ = twinCmd.Flags().MarkHidden("enable")
 	_ = twinCmd.Flags().MarkHidden("disable")
 	_ = twinCmd.Flags().MarkHidden("update")
-	_ = twinCmd.Flags().MarkDeprecated("force", "use --update instead")
 	twinCmd.Flags().StringVarP(&tfeTwinVersion, "version", "v", "1.2.0", "Terraform Enterprise Docker image tag for the twin instance")
 	twinCmd.Flags().StringVarP(&tfeTwinPassword, "password", "p", "hal-secret-encryption-password", "Twin TFE encryption password")
 	twinCmd.Flags().StringVar(&tfeTwinOrg, "tfe-org", "hal", "Terraform Enterprise organization name to auto-bootstrap for the twin instance")

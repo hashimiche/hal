@@ -16,8 +16,8 @@ Handle hal boundary mariadb requests with a stable lifecycle pattern, including 
 ## Common Variants
 
 - Deploy standalone DB target: hal boundary mariadb enable
-- Deploy and re-bootstrap from scratch: hal boundary mariadb enable --force
-- Attach Boundary target to Vault dynamic DB creds: hal boundary mariadb enable --with-vault --force
+- Deploy and re-bootstrap from scratch: hal boundary mariadb enable --update
+- Attach Boundary target to Vault dynamic DB creds: hal boundary mariadb enable --with-vault --update
 - Disable lab resources: hal boundary mariadb disable
 
 ## Post-Deploy Access Guidance
@@ -40,7 +40,7 @@ Handle hal boundary mariadb requests with a stable lifecycle pattern, including 
 ## Edge Cases
 
 - If prerequisites are missing, explain exactly what to install or start first.
-- If resources are partially deployed, suggest force or cleanup path when supported.
+- If resources are partially deployed, suggest update or cleanup path when supported.
 - If user gets authorize-session or malformed identifier errors, verify command shape and current target ID.
 - If Vault creds do not appear, verify the target has brokered credential source attachment.
 - Prefer one-shot env assignment for password auth so no shell cleanup (unset) is needed.

@@ -33,4 +33,4 @@ User: Rebuild the JWT lab.
 
 Assistant:
 
-    hal vault jwt --force
+    hal vault jwt --update

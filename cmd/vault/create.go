@@ -18,7 +18,6 @@ var (
 	vaultEdition      string // ce or ent
 	vaultHelperImage  string
 	vaultUpdate       bool
-	vaultForce        bool
 	vaultJoinConsul   bool
 	vaultConfigureObs bool
 )
@@ -72,9 +71,9 @@ var deployCmd = &cobra.Command{
 			}
 		}
 
-		if vaultUpdate || vaultForce {
+		if vaultUpdate {
 			if global.Debug {
-				fmt.Println("[DEBUG] --update/--force detected. Reconciling Vault by replacing runtime artifacts...")
+				fmt.Println("[DEBUG] --update detected. Reconciling Vault by replacing runtime artifacts...")
 			}
 			_ = exec.Command(engine, "rm", "-f", "hal-vault").Run()
 			_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-logs").Run() // Purge des anciens logs
@@ -211,17 +210,30 @@ func handleDockerFailure(container string, engine string) {
 	fmt.Println("⚠️  Deployment halted. Run 'hal vault delete' to clean up the broken resources.")
 }
 
+var updateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Reconcile an existing Vault instance",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		vaultUpdate = true
+		deployCmd.Run(cmd, args)
+	},
+}
+
+func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
+	cmd.Flags().StringVarP(&vaultVersion, "version", "v", "2.0", "Vault version to deploy")
+	cmd.Flags().StringVarP(&vaultEdition, "edition", "e", "ce", "Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise)")
+	cmd.Flags().StringVar(&vaultHelperImage, "helper-image", "alpine:3.22", "Helper image used for one-shot setup tasks during Vault deploy")
+	if includeUpdate {
+		cmd.Flags().BoolVarP(&vaultUpdate, "update", "u", false, "Reconcile an existing Vault deployment in place")
+	}
+	cmd.Flags().BoolVar(&vaultConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Vault")
+	cmd.Flags().BoolVarP(&vaultJoinConsul, "join-consul", "c", false, "Tether Vault to the global HAL Consul instance")
+}
+
 func init() {
-	deployCmd.Flags().StringVarP(&vaultVersion, "version", "v", "2.0", "Vault version to deploy")
-	deployCmd.Flags().StringVarP(&vaultEdition, "edition", "e", "ce", "Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise)")
-	deployCmd.Flags().StringVar(&vaultHelperImage, "helper-image", "alpine:3.22", "Helper image used for one-shot setup tasks during Vault deploy")
-	deployCmd.Flags().BoolVarP(&vaultUpdate, "update", "u", false, "Reconcile an existing Vault deployment in place")
-	deployCmd.Flags().BoolVarP(&vaultForce, "force", "f", false, "Force redeploy")
-	deployCmd.Flags().BoolVar(&vaultConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Vault")
-	_ = deployCmd.Flags().MarkDeprecated("force", "use --update instead")
-
-	// The unified global join flag
-	deployCmd.Flags().BoolVarP(&vaultJoinConsul, "join-consul", "c", false, "Tether Vault to the global HAL Consul instance")
-
+	bindLifecycleFlags(deployCmd, true)
+	bindLifecycleFlags(updateCmd, false)
 	Cmd.AddCommand(deployCmd)
+	Cmd.AddCommand(updateCmd)
 }

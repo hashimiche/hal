@@ -14,7 +14,6 @@ var (
 	enableFlag  bool
 	disableFlag bool
 	updateFlag  bool
-	forceFlag   bool
 	lokiStack   bool
 	auditType   string
 	auditPath   string
@@ -44,7 +43,7 @@ var vaultAuditCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !enableFlag && !disableFlag && !updateFlag && !forceFlag {
+		if !enableFlag && !disableFlag && !updateFlag {
 			fmt.Println("🔍 Checking Vault Audit Status...")
 
 			// Check Vault for the audit mount
@@ -72,16 +71,16 @@ var vaultAuditCmd = &cobra.Command{
 		}
 
 		// ==========================================
-		// 2. TEARDOWN / RESET PATH (--disable / --force)
+		// 2. TEARDOWN / RESET PATH (--disable / --update)
 		// ==========================================
-		if disableFlag || updateFlag || forceFlag {
+		if disableFlag || updateFlag {
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would disable audit device: %s\n", apiPath)
 			} else {
 				if disableFlag {
 					fmt.Printf("🛑 Disabling audit device at path '%s'...\n", apiPath)
 				} else {
-					fmt.Printf("♻️  Force flag detected. Resetting audit device at '%s'...\n", apiPath)
+					fmt.Printf("♻️  Update requested. Resetting audit device at '%s'...\n", apiPath)
 				}
 
 				err := client.Sys().DisableAudit(apiPath)
@@ -113,9 +112,9 @@ var vaultAuditCmd = &cobra.Command{
 		}
 
 		// ==========================================
-		// 3. DEPLOY / ENABLE PATH (--enable / --force)
+		// 3. DEPLOY / ENABLE PATH (--enable / --update)
 		// ==========================================
-		if enableFlag || updateFlag || forceFlag {
+		if enableFlag || updateFlag {
 			if lokiStack {
 				auditType = "file"
 				fmt.Println("🌊 Loki flag detected! Using shared Docker volume architecture...")
@@ -149,7 +148,7 @@ var vaultAuditCmd = &cobra.Command{
 
 			err = client.Sys().EnableAuditWithOptions(auditPath, options)
 			if err != nil {
-				fmt.Printf("⚠️  Note: Could not enable %s (It might already be enabled! Try --force)\n", auditType)
+				fmt.Printf("⚠️  Note: Could not enable %s (It might already be enabled! Try --update)\n", auditType)
 			} else {
 				fmt.Printf("✅ Audit device (%s) enabled successfully!\n", auditType)
 			}
@@ -171,11 +170,9 @@ func init() {
 	vaultAuditCmd.Flags().BoolVarP(&enableFlag, "enable", "e", false, "Enable the audit configuration")
 	vaultAuditCmd.Flags().BoolVarP(&disableFlag, "disable", "d", false, "Disable the audit configuration")
 	vaultAuditCmd.Flags().BoolVarP(&updateFlag, "update", "u", false, "Reconcile the audit configuration (disable then enable)")
-	vaultAuditCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force a clean reconfiguration (disable then enable)")
 	_ = vaultAuditCmd.Flags().MarkHidden("enable")
 	_ = vaultAuditCmd.Flags().MarkHidden("disable")
 	_ = vaultAuditCmd.Flags().MarkHidden("update")
-	_ = vaultAuditCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	// Feature-Specific Flags
 	vaultAuditCmd.Flags().StringVarP(&auditType, "type", "t", "file", "Type of audit device (file, socket, syslog)")

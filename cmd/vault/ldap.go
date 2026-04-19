@@ -16,7 +16,6 @@ var (
 	ldapEnable           bool
 	ldapDisable          bool
 	ldapUpdate           bool
-	ldapForce            bool
 	ldapServerImageTag   string
 	phpLDAPAdminImageTag string
 )
@@ -42,7 +41,7 @@ var vaultLdapCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !ldapEnable && !ldapDisable && !ldapUpdate && !ldapForce {
+		if !ldapEnable && !ldapDisable && !ldapUpdate {
 			fmt.Println("🔍 Checking Vault LDAP / Directory Status...")
 
 			// Check Docker
@@ -103,9 +102,9 @@ var vaultLdapCmd = &cobra.Command{
 		}
 
 		// ==========================================
-		// 2. TEARDOWN / RESET PATH (--disable / --force)
+		// 2. TEARDOWN / RESET PATH (--disable / --update)
 		// ==========================================
-		if ldapDisable || ldapUpdate || ldapForce {
+		if ldapDisable || ldapUpdate {
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would execute: docker rm -f hal-openldap hal-phpldapadmin")
 				fmt.Println("[DRY RUN] Would call API to clean up Vault LDAP mounts and policies")
@@ -113,7 +112,7 @@ var vaultLdapCmd = &cobra.Command{
 				if ldapDisable {
 					fmt.Println("🛑 Tearing down LDAP environment...")
 				} else {
-					fmt.Println("♻️  Force flag detected. Destroying LDAP environment for reset...")
+					fmt.Println("♻️  Update requested. Destroying LDAP environment for reset...")
 				}
 
 				// 🎯 FIX 1: Vault Cleanup MUST happen BEFORE killing the containers!
@@ -148,9 +147,9 @@ var vaultLdapCmd = &cobra.Command{
 		}
 
 		// ==========================================
-		// 3. DEPLOY / ENABLE PATH (--enable / --force)
+		// 3. DEPLOY / ENABLE PATH (--enable / --update)
 		// ==========================================
-		if ldapEnable || ldapUpdate || ldapForce {
+		if ldapEnable || ldapUpdate {
 			if vaultErr != nil {
 				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
 				return
@@ -408,11 +407,9 @@ func init() {
 	vaultLdapCmd.Flags().BoolVarP(&ldapEnable, "enable", "e", false, "Deploy OpenLDAP and configure Vault engines")
 	vaultLdapCmd.Flags().BoolVarP(&ldapDisable, "disable", "d", false, "Remove OpenLDAP and strip configuration from Vault")
 	vaultLdapCmd.Flags().BoolVarP(&ldapUpdate, "update", "u", false, "Reconcile OpenLDAP and Vault LDAP integration")
-	vaultLdapCmd.Flags().BoolVarP(&ldapForce, "force", "f", false, "Force a clean redeployment of the entire environment")
 	_ = vaultLdapCmd.Flags().MarkHidden("enable")
 	_ = vaultLdapCmd.Flags().MarkHidden("disable")
 	_ = vaultLdapCmd.Flags().MarkHidden("update")
-	_ = vaultLdapCmd.Flags().MarkDeprecated("force", "use --update instead")
 	vaultLdapCmd.Flags().StringVar(&ldapServerImageTag, "openldap-version", "1.5.0", "OpenLDAP image tag for the LDAP demo")
 	vaultLdapCmd.Flags().StringVar(&phpLDAPAdminImageTag, "phpldapadmin-version", "0.9.0", "phpLDAPadmin image tag for the LDAP demo UI")
 

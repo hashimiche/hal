@@ -24,7 +24,7 @@ Assistant: I identify degraded components and choose targeted reset commands.
 
 User: What should I run now?
 
-Assistant: I route to `deploy`, feature `--force`, or day-2 `vault read` commands based on status output.
+Assistant: I route to `deploy`, feature `--update`, or day-2 `vault read` commands based on status output.
 
 ## Example 4: Enterprise Capability Request
 

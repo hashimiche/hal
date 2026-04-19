@@ -37,7 +37,7 @@ Use smart status mode if needed:
 Then use the correct lifecycle command:
 
     hal vault jwt enable
-    hal vault jwt --force
+    hal vault jwt --update
     hal vault jwt disable
 
 ### Step 2: Verify the resulting Vault config

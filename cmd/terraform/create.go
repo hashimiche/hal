@@ -32,7 +32,6 @@ var (
 	minioConsolePort    int
 	tfeProxyNginxTag    string
 	tfeUpdate           bool
-	tfeForce            bool
 	tfeConfigureObs     bool
 	deployTFEOrg        string
 	deployTFEProject    string
@@ -109,7 +108,7 @@ var deployCmd = &cobra.Command{
 		homeDir, _ := os.UserHomeDir()
 		certDir := filepath.Join(homeDir, ".hal", "tfe-certs")
 
-		if tfeUpdate || tfeForce {
+		if tfeUpdate {
 			fmt.Println("♻️  Update requested. Reconciling existing TFE resources...")
 			// 🎯 Included the proxy in the teardown list
 			_ = exec.Command(engine, "rm", "-f", "hal-tfe", "hal-tfe-proxy", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio").Run()
@@ -468,23 +467,39 @@ func handleDockerFailure(container string, engine string) {
 	fmt.Println(strings.TrimSpace(string(out)))
 }
 
+var updateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Reconcile an existing Terraform Enterprise deployment",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		tfeUpdate = true
+		deployCmd.Run(cmd, args)
+	},
+}
+
+func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
+	cmd.Flags().StringVarP(&tfeVersion, "version", "v", "1.2.0", "Terraform Enterprise Docker image tag")
+	cmd.Flags().StringVar(&pgVersion, "pg-version", "16", "PostgreSQL version for TFE backend")
+	cmd.Flags().StringVar(&redisVersion, "redis-version", "7", "Redis version for TFE background jobs")
+	cmd.Flags().StringVar(&minioVersion, "minio-version", "latest", "MinIO image tag for TFE object storage")
+	cmd.Flags().IntVar(&minioAPIPort, "minio-api-port", 19000, "Host port mapped to MinIO S3 API container port 9000")
+	cmd.Flags().IntVar(&minioConsolePort, "minio-console-port", 19001, "Host port mapped to MinIO console container port 9001")
+	cmd.Flags().StringVar(&tfeProxyNginxTag, "proxy-nginx-version", "alpine", "Nginx image tag for the TFE ingress proxy")
+	cmd.Flags().StringVarP(&tfePassword, "password", "p", "hal-secret-encryption-password", "TFE Encryption Password")
+	cmd.Flags().StringVar(&deployTFEOrg, "tfe-org", "hal", "Terraform Enterprise organization name to auto-bootstrap during deploy")
+	cmd.Flags().StringVar(&deployTFEProject, "tfe-project", "Dave", "Terraform Enterprise project name to auto-bootstrap during deploy")
+	cmd.Flags().StringVar(&deployTFEAdminUser, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
+	cmd.Flags().StringVar(&deployTFEAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
+	cmd.Flags().StringVar(&deployTFEAdminPass, "tfe-admin-password", "hal9000FTW", "Initial TFE admin password used when bootstrapping via IACT")
+	if includeUpdate {
+		cmd.Flags().BoolVarP(&tfeUpdate, "update", "u", false, "Reconcile an existing Terraform Enterprise deployment in place")
+	}
+	cmd.Flags().BoolVar(&tfeConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Terraform Enterprise")
+}
+
 func init() {
-	deployCmd.Flags().StringVarP(&tfeVersion, "version", "v", "1.2.0", "Terraform Enterprise Docker image tag")
-	deployCmd.Flags().StringVar(&pgVersion, "pg-version", "16", "PostgreSQL version for TFE backend")
-	deployCmd.Flags().StringVar(&redisVersion, "redis-version", "7", "Redis version for TFE background jobs")
-	deployCmd.Flags().StringVar(&minioVersion, "minio-version", "latest", "MinIO image tag for TFE object storage")
-	deployCmd.Flags().IntVar(&minioAPIPort, "minio-api-port", 19000, "Host port mapped to MinIO S3 API container port 9000")
-	deployCmd.Flags().IntVar(&minioConsolePort, "minio-console-port", 19001, "Host port mapped to MinIO console container port 9001")
-	deployCmd.Flags().StringVar(&tfeProxyNginxTag, "proxy-nginx-version", "alpine", "Nginx image tag for the TFE ingress proxy")
-	deployCmd.Flags().StringVarP(&tfePassword, "password", "p", "hal-secret-encryption-password", "TFE Encryption Password")
-	deployCmd.Flags().StringVar(&deployTFEOrg, "tfe-org", "hal", "Terraform Enterprise organization name to auto-bootstrap during deploy")
-	deployCmd.Flags().StringVar(&deployTFEProject, "tfe-project", "Dave", "Terraform Enterprise project name to auto-bootstrap during deploy")
-	deployCmd.Flags().StringVar(&deployTFEAdminUser, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
-	deployCmd.Flags().StringVar(&deployTFEAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
-	deployCmd.Flags().StringVar(&deployTFEAdminPass, "tfe-admin-password", "hal9000FTW", "Initial TFE admin password used when bootstrapping via IACT")
-	deployCmd.Flags().BoolVarP(&tfeUpdate, "update", "u", false, "Reconcile an existing Terraform Enterprise deployment in place")
-	deployCmd.Flags().BoolVarP(&tfeForce, "force", "f", false, "Force redeploy")
-	deployCmd.Flags().BoolVar(&tfeConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Terraform Enterprise")
-	_ = deployCmd.Flags().MarkDeprecated("force", "use --update instead")
+	bindLifecycleFlags(deployCmd, true)
+	bindLifecycleFlags(updateCmd, false)
 	Cmd.AddCommand(deployCmd)
+	Cmd.AddCommand(updateCmd)
 }

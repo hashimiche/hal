@@ -17,7 +17,7 @@ The spread is intentionally split across the Terraform Enterprise projects `Dave
 ## Run From Host
 
 1. Ensure the helper is ready:
-   go run main.go tf cli -e --force
+   go run main.go tf cli update
    go run main.go tf cli -c --banner
 
 2. Copy and execute bootstrap script inside helper:
@@ -46,10 +46,10 @@ To remove the helper container and delete HAL-managed scenario workspaces tracke
 go run main.go tf cli --disable
 ```
 
-Use `--force` to skip the interactive confirmation prompt:
+Deprecated migration note: older examples may reference `--force` here. That flag has been removed from the CLI. Use `--update` to skip the interactive confirmation prompt:
 
 ```bash
-go run main.go tf cli --disable --force
+go run main.go tf cli --disable --update
 ```
 
 Leaving the shell with `exit` or `CTRL+D` does not destroy the helper container. Re-enter with:

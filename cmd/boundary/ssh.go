@@ -15,7 +15,6 @@ var (
 	sshEnable      bool
 	sshDisable     bool
 	sshUpdate      bool
-	sshForce       bool
 	sshUbuntuImage string
 	sshVMCPUs      string
 	sshVMMem       string
@@ -38,7 +37,7 @@ var sshCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE
 		// ==========================================
-		if !sshEnable && !sshDisable && !sshUpdate && !sshForce {
+		if !sshEnable && !sshDisable && !sshUpdate {
 			fmt.Println("🔍 Checking Boundary SSH Target Status...")
 			fmt.Println()
 
@@ -58,7 +57,7 @@ var sshCmd = &cobra.Command{
 			} else {
 				fmt.Println("  ⚠️  SSH Target : OFFLINE/SUSPENDED")
 				fmt.Println("\n💡 Next Step:")
-				fmt.Println("   hal boundary ssh --force")
+				fmt.Println("   hal boundary ssh update")
 			}
 			return
 		}
@@ -66,11 +65,11 @@ var sshCmd = &cobra.Command{
 		// ==========================================
 		// 2. TEARDOWN PATH
 		// ==========================================
-		if sshDisable || sshUpdate || sshForce {
+		if sshDisable || sshUpdate {
 			if sshDisable {
 				fmt.Println("🛑 Tearing down SSH Target VM and Boundary resources...")
 			} else {
-				fmt.Println("♻️  Force flag detected. Resetting SSH Target VM and Boundary resources...")
+				fmt.Println("♻️  Update requested. Resetting SSH Target VM and Boundary resources...")
 			}
 
 			if global.DryRun {
@@ -94,7 +93,7 @@ var sshCmd = &cobra.Command{
 		// ==========================================
 		// 3. DEPLOY PATH
 		// ==========================================
-		if sshEnable || sshUpdate || sshForce {
+		if sshEnable || sshUpdate {
 			fmt.Println("🚀 Deploying Ubuntu VM SSH Target via Multipass (this takes a few seconds)...")
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would launch Multipass VM hal-boundary-ssh (%s, %s CPU, %s RAM)\n", sshUbuntuImage, sshVMCPUs, sshVMMem)
@@ -130,14 +129,12 @@ func init() {
 	sshCmd.Flags().BoolVarP(&sshEnable, "enable", "e", false, "Deploy the SSH Target")
 	sshCmd.Flags().BoolVarP(&sshDisable, "disable", "d", false, "Remove the SSH Target")
 	sshCmd.Flags().BoolVarP(&sshUpdate, "update", "u", false, "Reconcile SSH target VM and Boundary target wiring")
-	sshCmd.Flags().BoolVarP(&sshForce, "force", "f", false, "Force a clean redeployment")
 	_ = sshCmd.Flags().MarkHidden("enable")
 	_ = sshCmd.Flags().MarkHidden("disable")
 	_ = sshCmd.Flags().MarkHidden("update")
 	sshCmd.Flags().StringVar(&sshUbuntuImage, "ubuntu-image", "22.04", "Multipass image/channel used for the SSH target VM")
 	sshCmd.Flags().StringVar(&sshVMCPUs, "cpus", "1", "Number of CPUs for the SSH target VM")
 	sshCmd.Flags().StringVar(&sshVMMem, "mem", "512M", "Amount of RAM for the SSH target VM")
-	_ = sshCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	Cmd.AddCommand(sshCmd)
 }

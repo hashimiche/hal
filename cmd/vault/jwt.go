@@ -21,7 +21,6 @@ var (
 	jwtEnable     bool
 	jwtDisable    bool
 	jwtUpdate     bool
-	jwtForce      bool
 	gitlabVersion string
 )
 
@@ -46,7 +45,7 @@ var vaultJwtCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !jwtEnable && !jwtDisable && !jwtUpdate && !jwtForce {
+		if !jwtEnable && !jwtDisable && !jwtUpdate {
 			fmt.Println("🔍 Checking Vault JWT / GitLab Status...")
 
 			// Check Docker
@@ -111,9 +110,9 @@ var vaultJwtCmd = &cobra.Command{
 		}
 
 		// ==========================================
-		// 2. TEARDOWN / RESET PATH (--disable / --force)
+		// 2. TEARDOWN / RESET PATH (--disable / --update)
 		// ==========================================
-		if jwtDisable || jwtUpdate || jwtForce {
+		if jwtDisable || jwtUpdate {
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would execute: docker rm -f hal-gitlab hal-gitlab-runner")
 				fmt.Println("[DRY RUN] Would call API to disable: auth/jwt and kv-jwt")
@@ -121,7 +120,7 @@ var vaultJwtCmd = &cobra.Command{
 				if jwtDisable {
 					fmt.Println("🛑 Tearing down GitLab CI/CD environment...")
 				} else {
-					fmt.Println("♻️  Force flag detected. Destroying environment for reset...")
+					fmt.Println("♻️  Update requested. Destroying environment for reset...")
 				}
 
 				if vaultErr == nil && client != nil {
@@ -131,22 +130,9 @@ var vaultJwtCmd = &cobra.Command{
 					// We don't delete the root identity as it might be used by other things.
 				}
 
-				if jwtForce {
-					_ = exec.Command(engine, "rm", "-f", "hal-gitlab", "hal-gitlab-runner").Run()
-					_ = global.ClearSharedService("gitlab")
-					fmt.Println("✅ GitLab containers removed and Vault API cleaned up.")
-				} else {
-					remaining, err := global.RemoveSharedServiceConsumer("gitlab", "vault-jwt")
-					if err != nil {
-						fmt.Printf("⚠️  Could not update shared service ownership metadata: %v\n", err)
-					}
-					if len(remaining) == 0 {
-						_ = exec.Command(engine, "rm", "-f", "hal-gitlab", "hal-gitlab-runner").Run()
-						fmt.Println("✅ GitLab containers removed and Vault API cleaned up.")
-					} else {
-						fmt.Printf("✅ Vault JWT configuration removed. Reused GitLab remains active (in use by: %s).\n", strings.Join(remaining, ", "))
-					}
-				}
+				_ = exec.Command(engine, "rm", "-f", "hal-gitlab", "hal-gitlab-runner").Run()
+				_ = global.ClearSharedService("gitlab")
+				fmt.Println("✅ GitLab containers removed and Vault API cleaned up.")
 			}
 
 			if jwtDisable && !global.DryRun {
@@ -155,9 +141,9 @@ var vaultJwtCmd = &cobra.Command{
 		}
 
 		// ==========================================
-		// 3. DEPLOY / ENABLE PATH (--enable / --force)
+		// 3. DEPLOY / ENABLE PATH (--enable / --update)
 		// ==========================================
-		if jwtEnable || jwtUpdate || jwtForce {
+		if jwtEnable || jwtUpdate {
 			if vaultErr != nil {
 				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
 				return
@@ -643,11 +629,9 @@ func init() {
 	vaultJwtCmd.Flags().BoolVarP(&jwtEnable, "enable", "e", false, "Deploy GitLab CE and configure Vault JWT")
 	vaultJwtCmd.Flags().BoolVarP(&jwtDisable, "disable", "d", false, "Remove GitLab CE and strip JWT from Vault")
 	vaultJwtCmd.Flags().BoolVarP(&jwtUpdate, "update", "u", false, "Reconcile GitLab/Vault JWT integration settings")
-	vaultJwtCmd.Flags().BoolVarP(&jwtForce, "force", "f", false, "Force a clean redeployment of the entire environment")
 	_ = vaultJwtCmd.Flags().MarkHidden("enable")
 	_ = vaultJwtCmd.Flags().MarkHidden("disable")
 	_ = vaultJwtCmd.Flags().MarkHidden("update")
-	_ = vaultJwtCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	// 2. Feature-Specific Flags
 	vaultJwtCmd.Flags().StringVar(&gitlabVersion, "gitlab-version", "18.10.1-ce.0", "Version of the GitLab CE container image to deploy")

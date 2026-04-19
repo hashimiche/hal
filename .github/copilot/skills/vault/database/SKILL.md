@@ -33,7 +33,7 @@ Use smart status mode if needed:
 Then use the correct lifecycle command:
 
     hal vault database enable --backend mariadb
-    hal vault database --force
+    hal vault database --update
     hal vault database disable
 
 ### Step 2: Enrich with Vault MCP Context

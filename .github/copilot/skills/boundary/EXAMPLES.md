@@ -16,7 +16,7 @@ User: I need Boundary access to MariaDB with temporary Vault creds.
 
 Assistant:
 
-    hal boundary mariadb enable --with-vault --force
+    hal boundary mariadb enable --with-vault --update
 
 Assistant: After deploy, I route the user to the DB-aware connect flow.
 

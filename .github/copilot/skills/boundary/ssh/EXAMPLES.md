@@ -16,7 +16,7 @@ User: The VM exists but session auth fails.
 
 Assistant:
 
-    hal boundary ssh --force
+    hal boundary ssh --update
 
 Assistant: I confirm both VM and Boundary resources were reset and recreated.
 

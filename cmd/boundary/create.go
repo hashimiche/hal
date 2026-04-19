@@ -16,7 +16,6 @@ var (
 	boundaryVersion      string
 	pgVersion            string
 	boundaryUpdate       bool
-	boundaryForce        bool
 	boundaryJoinConsul   bool
 	boundaryConfigureObs bool
 )
@@ -58,7 +57,7 @@ var deployCmd = &cobra.Command{
 			return
 		}
 
-		if boundaryUpdate || boundaryForce {
+		if boundaryUpdate {
 			fmt.Println("♻️  Update requested. Reconciling existing Boundary Control Plane...")
 			_ = exec.Command(engine, "rm", "-f", "hal-boundary", "hal-boundary-backend").Run()
 		}
@@ -175,14 +174,29 @@ func handleDockerFailure(container string, engine string) {
 	fmt.Println("⚠️  Deployment halted. Run 'hal boundary delete' to clean up the broken resources.")
 }
 
-func init() {
-	deployCmd.Flags().StringVarP(&boundaryVersion, "version", "v", "0.15.2", "Boundary version to deploy")
-	deployCmd.Flags().StringVar(&pgVersion, "pg-version", "16", "PostgreSQL version for Boundary backend")
-	deployCmd.Flags().BoolVarP(&boundaryUpdate, "update", "u", false, "Reconcile an existing Boundary deployment in place")
-	deployCmd.Flags().BoolVarP(&boundaryForce, "force", "f", false, "Force redeploy")
-	deployCmd.Flags().BoolVar(&boundaryConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Boundary")
-	deployCmd.Flags().BoolVarP(&boundaryJoinConsul, "join-consul", "c", false, "Tether Boundary to the global HAL Consul instance")
-	_ = deployCmd.Flags().MarkDeprecated("force", "use --update instead")
+var updateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Reconcile an existing Boundary deployment",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		boundaryUpdate = true
+		deployCmd.Run(cmd, args)
+	},
+}
 
+func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
+	cmd.Flags().StringVarP(&boundaryVersion, "version", "v", "0.15.2", "Boundary version to deploy")
+	cmd.Flags().StringVar(&pgVersion, "pg-version", "16", "PostgreSQL version for Boundary backend")
+	if includeUpdate {
+		cmd.Flags().BoolVarP(&boundaryUpdate, "update", "u", false, "Reconcile an existing Boundary deployment in place")
+	}
+	cmd.Flags().BoolVar(&boundaryConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Boundary")
+	cmd.Flags().BoolVarP(&boundaryJoinConsul, "join-consul", "c", false, "Tether Boundary to the global HAL Consul instance")
+}
+
+func init() {
+	bindLifecycleFlags(deployCmd, true)
+	bindLifecycleFlags(updateCmd, false)
 	Cmd.AddCommand(deployCmd)
+	Cmd.AddCommand(updateCmd)
 }

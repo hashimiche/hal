@@ -13,10 +13,11 @@ Deploy a standalone local Consul server for labs/testing.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
+- Deprecated: older HAL docs may reference `hal consul create --force`. That flag has been removed from the CLI. Use `hal consul update` or `hal consul create --update`.
 - Command flags from `hal consul create --help`:
 ```text
 --configure-obs    Refresh Prometheus target and Grafana dashboard artifacts without redeploying Consul
--f, --force            Force redeploy
+-u, --update           Reconcile an existing Consul deployment in place
 -h, --help             help for deploy
 -v, --version string   Consul version to deploy (default "1.15.0")
 ```

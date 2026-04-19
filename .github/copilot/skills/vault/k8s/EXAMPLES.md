@@ -37,4 +37,4 @@ User: Recreate the k8s demo from scratch.
 
 Assistant:
 
-    hal vault k8s --force
+    hal vault k8s --update
