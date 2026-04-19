@@ -13,7 +13,7 @@ Configure a Terraform workspace lab with shared GitLab reuse and VCS workflow wi
 
 ## Related
 - Parent namespace: [terraform.md](terraform.md)
-- CLI helper: [terraform-cli.md](terraform-cli.md)
+- API workflow helper: [terraform-cli.md](terraform-cli.md)
 
 ## Prerequisites
 - HAL CLI is available in your local environment.

@@ -67,6 +67,7 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - Product status tools (for example `get_tfe_status`) should keep product-specific `recommended_commands` first (`hal terraform status`) so AI clients can answer quick health prompts without falling back to generic checks like `hal capacity`.
 - Terraform Enterprise local deployment depends on a mocked PostgreSQL, Redis, and MinIO stack and uses local TLS material under `~/.hal/tfe-certs`.
     - Rootless Podman path uses `https://tfe.localhost:8443` through `hal-tfe-proxy`.
+    - Twin TFE lifecycle is target-based on product CRUD commands (for example `hal terraform create --target twin`) instead of a dedicated `hal terraform twin` subcommand.
     - Custom local agent-pool flow uses `hal terraform agent enable` and should report running state via `hal terraform agent` before directing users to select Agent execution mode in TFE UI.
     - Task worker agent-run config must keep `/tmp/terraform` writable (not read-only) so remote plans can download Terraform binaries.
     - TFE API responses can emit archivist object links without `:8443`; proxy response rewriting keeps UI/raw plan/apply log links host-reachable.

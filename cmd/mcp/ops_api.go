@@ -245,7 +245,7 @@ func mcpOpsTools() []map[string]interface{} {
 		},
 		{
 			"name":        "get_tfe_cli_status",
-			"description": "Return Terraform CLI helper readiness for local TFE workflows.",
+			"description": "Return Terraform API helper readiness for local TFE workflows.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
@@ -512,7 +512,7 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 			commands = []string{"hal terraform agent", "hal terraform agent enable", "hal terraform status"}
 			docs = []string{"https://developer.hashicorp.com/terraform/enterprise/agents"}
 		case "terraform_cli", "tfe_cli":
-			commands = []string{"hal terraform cli", "hal tf cli -c", "hal terraform status"}
+			commands = []string{"hal terraform api-workflow", "hal tf api-workflow enable", "hal terraform status"}
 			docs = []string{"https://developer.hashicorp.com/terraform/enterprise"}
 		case "obs", "observability":
 			commands = []string{"hal obs status", "hal status"}
@@ -644,7 +644,7 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 
 	case "get_tfe_cli_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
-			return opErrorForTool("get_tfe_cli_status", codeParseError, err.Error(), nil, []string{"hal terraform cli"}, nil, nil, nil), true
+			return opErrorForTool("get_tfe_cli_status", codeParseError, err.Error(), nil, []string{"hal terraform api-workflow"}, nil, nil, nil), true
 		}
 		return handleTFECLIStatus(), true
 
@@ -1320,7 +1320,7 @@ func componentContext(component string) (map[string]interface{}, []string, error
 				"http://grafana.localhost:3000",
 				"http://prometheus.localhost:9090",
 			},
-		}, []string{"hal terraform status", "hal terraform create", "hal terraform workspace", "hal terraform cli", "hal terraform agent"}, nil
+		}, []string{"hal terraform status", "hal terraform create", "hal terraform workspace", "hal terraform api-workflow", "hal terraform agent"}, nil
 	case "terraform_workspace":
 		return map[string]interface{}{
 			"component":  "terraform_workspace",
@@ -1339,12 +1339,12 @@ func componentContext(component string) (map[string]interface{}, []string, error
 	case "terraform_cli":
 		return map[string]interface{}{
 			"component":        "terraform_cli",
-			"helper_container": "hal-tfe-cli",
+			"helper_container": "hal-tfe-api",
 			"default_org":      "hal",
 			"auth_files":       []string{"/root/.tfx.hcl", "/root/.terraform.d/credentials.tfrc.json"},
 			"seeded_projects":  []string{"Dave", "Frank"},
-			"workflow":         "build helper image, then open console against local TFE",
-		}, []string{"hal terraform cli", "hal tf cli enable", "hal tf cli -c", "hal terraform status"}, nil
+			"workflow":         "build helper image if needed, then open helper shell against local TFE",
+		}, []string{"hal terraform api-workflow", "hal tf api-workflow enable", "hal terraform status"}, nil
 	case "consul":
 		return map[string]interface{}{"component": component, "endpoint": "http://consul.localhost:8500"}, []string{"hal consul status"}, nil
 	case "nomad":
@@ -1398,12 +1398,11 @@ func buildFeaturePlan(intent string) (map[string]interface{}, bool) {
 		return map[string]interface{}{
 			"intent":    intent,
 			"action":    "terraform_cli_helper",
-			"prechecks": []string{"hal terraform status", "hal terraform cli"},
+			"prechecks": []string{"hal terraform status", "hal terraform api-workflow"},
 			"steps": []map[string]string{
-				{"command": "hal tf cli enable", "reason": "Build or refresh the Terraform/TFX helper image"},
-				{"command": "hal tf cli -c", "reason": "Enter the helper container with trust and auth preloaded"},
+				{"command": "hal tf api-workflow enable", "reason": "Build or refresh the Terraform/TFX helper image"},
 			},
-			"postchecks": []string{"hal terraform cli", "hal terraform status"},
+			"postchecks": []string{"hal terraform api-workflow", "hal terraform status"},
 			"notes":      []string{"Use the helper instead of changing the host trust store."},
 		}, true
 	case strings.Contains(lower, "vault") && (strings.Contains(lower, "k8s") || strings.Contains(lower, "vso") || strings.Contains(lower, "csi")):
@@ -1775,20 +1774,26 @@ func handleTFECLIStatus() mcpToolCallResult {
 	}
 	state, _ := product["state"].(string)
 	reason, _ := product["reason"].(string)
-	cliHelperReady := checkContainer(engine, "hal-tfe-cli")
+	newHelperReady := checkContainer(engine, "hal-tfe-api")
+	legacyHelperReady := checkContainer(engine, "hal-tfe-cli")
+	cliHelperReady := newHelperReady || legacyHelperReady
+	helperContainerName := "hal-tfe-api"
+	if !newHelperReady && legacyHelperReady {
+		helperContainerName = "hal-tfe-cli"
+	}
 	homeDir, _ := os.UserHomeDir()
 	tokenPath := filepath.Join(homeDir, ".hal", "tfe-app-api-token")
 	_, tokenErr := os.Stat(tokenPath)
 	tokenReady := tokenErr == nil
 	checks := []opCheck{
 		{Name: "terraform_runtime", Status: checkStatusFromState(state), Details: reason},
-		{Name: "terraform_cli_helper", Status: checkStatusFromState(boolState(cliHelperReady)), Details: "hal-tfe-cli helper availability"},
+		{Name: "terraform_cli_helper", Status: checkStatusFromState(boolState(cliHelperReady)), Details: helperContainerName + " helper availability"},
 		{Name: "terraform_cli_token_cache", Status: checkStatusFromState(boolState(tokenReady)), Details: tokenPath},
 	}
 	data := map[string]interface{}{
 		"runtime": product,
 		"cli_helper": map[string]interface{}{
-			"container": "hal-tfe-cli",
+			"container": helperContainerName,
 			"state":     boolState(cliHelperReady),
 		},
 		"token_cache": map[string]interface{}{
@@ -1800,9 +1805,9 @@ func handleTFECLIStatus() mcpToolCallResult {
 		return opErrorForTool("get_tfe_cli_status", runtimeCodeFromState(state), "tfe runtime not healthy; deploy terraform first", data, []string{"hal terraform create", "hal terraform status"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
 	}
 	if !cliHelperReady {
-		return opErrorForTool("get_tfe_cli_status", codeNotDeployed, "tfe cli helper is not ready; run hal terraform cli", data, []string{"hal terraform cli", "hal tf cli enable", "hal tf cli -c"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+		return opErrorForTool("get_tfe_cli_status", codeNotDeployed, "tfe api helper is not ready; run hal terraform api-workflow", data, []string{"hal terraform api-workflow", "hal tf api-workflow enable"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
 	}
-	return opSuccessForTool("get_tfe_cli_status", "tfe cli helper status collected", data, []string{"hal terraform cli", "hal tf cli enable", "hal tf cli -c"}, checks, nil, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+	return opSuccessForTool("get_tfe_cli_status", "tfe api helper status collected", data, []string{"hal terraform api-workflow", "hal tf api-workflow enable"}, checks, nil, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
 }
 
 func handleEnableBoundaryMariaDB(args map[string]interface{}) mcpToolCallResult {

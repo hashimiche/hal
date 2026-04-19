@@ -1,27 +1,29 @@
-# HAL Terraform CLI Command Spec
+# HAL Terraform API Command Spec
 
 ## Command
-- `hal terraform cli`
+- `hal terraform api-workflow`
+- Alias: `hal terraform api`
 
 ## Purpose
-Build and run the ephemeral Terraform/TFX helper shell for local TFE workflows.
+Build and run the ephemeral Terraform/TFX API helper shell for local TFE workflows.
 
 ## Core Lifecycle Actions
-- `enable`: build or refresh helper image
-- `--console`, `-c`: start helper container and open shell
+- `enable`: build helper image if missing and open shell
 - `disable`: remove helper container and HAL-managed scenario workspaces
-- `update`: reconcile helper image/container state
+- `update`: remove helper container/image, rebuild, and open shell
+- `--target`, `-t`: choose `primary` or `twin`
 
 ## Deprecated
-- Older HAL docs may reference `hal tf cli disable --force` or other `--force` helper flows. The force flag has been removed from the CLI.
-- Use `hal tf cli update` for rebuild/recreate flows.
-- Use `hal tf cli disable --update` for the non-interactive destructive confirmation path.
+- Older HAL docs may reference `hal tf cli ...` helper flows. Use `hal tf api-workflow ...` (or alias `hal tf api`) instead.
+- Older HAL docs may reference `--force` helper flows. The force flag has been removed from the CLI.
+- Use `hal tf api-workflow update` for rebuild/recreate flows.
+- Use `hal tf api-workflow disable --auto-approve` for the non-interactive destructive confirmation path.
 
 ## Behavior
 - Ensures helper image/container lifecycle for local TFE usage.
 - Bootstraps helper auth context for Terraform and TFX.
 - Ensures default scenario projects/workspaces in TFE (`Dave`, `Frank`, and the `hal-*` workspace set) during console bootstrap.
-- Supports status view when run with no lifecycle action.
+- Supports status view when run with no lifecycle action, including helper runtime versions (TFX/Terraform/Alpine).
 
 ## Detailed Reference
 - [../terraform-cli-container-spec.md](../terraform-cli-container-spec.md)
@@ -34,28 +36,20 @@ Build and run the ephemeral Terraform/TFX helper shell for local TFE workflows.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
-- Command flags from `hal terraform cli --help`:
+- Command flags from `hal terraform api-workflow --help`:
 ```text
---banner                      Print helper welcome banner without opening a shell
---base-image string           Base image used to build the helper image (default "ghcr.io/straubt1/tfx:latest")
--c, --console                     Start helper container and open an interactive shell
--h, --help                        help for cli
---local-directory string      Optional host directory to mount into the helper at /workspaces
---tfe-admin-email string      Terraform Enterprise admin email used for helper token bootstrap (default "haladmin@localhost")
---tfe-admin-password string   Terraform Enterprise admin password used for helper token bootstrap (default "hal9000FTW")
---tfe-admin-username string   Terraform Enterprise admin username used for helper token bootstrap (default "haladmin")
---tfe-org string              Default Terraform Enterprise organization written to ~/.tfx.hcl (default "hal")
---tfe-project string          Optional Terraform Enterprise project to ensure during helper token bootstrap
---tfe-url string              Terraform Enterprise URL used for helper auth bootstrap (default "https://tfe.localhost:8443")
--u, --update                      Reconcile helper image/container and refresh runtime configuration
---verbose                     Show raw Docker build logs instead of HAL build animation
+	--auto-approve    Skip interactive confirmation for destructive disable operations
+-h, --help            help for api-workflow
+-t, --target string   Terraform scope to act on: primary or twin (default "primary")
 ```
 - Global flags: `--debug`, `--dry-run`
+
+Advanced helper and twin-tuning flags remain available but are intentionally hidden from default help to keep the command surface concise.
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.
 
 ## Example
 ```bash
-hal terraform cli
+hal terraform api-workflow
 ```

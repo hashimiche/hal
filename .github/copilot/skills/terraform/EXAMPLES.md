@@ -49,3 +49,12 @@ Assistant:
     hal terraform status
     hal terraform agent enable
     hal terraform agent
+
+## Example 6: Manage Twin Instance With Product Targets
+
+User: I need a second TFE instance that reuses the existing backend.
+
+Assistant:
+
+    hal terraform create --target twin
+    hal terraform status --target twin

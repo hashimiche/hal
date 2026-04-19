@@ -123,7 +123,14 @@ For the full surface and latest flags, use `hal --help` and `hal <product> --hel
 | `hal consul` | `create`, `update`, `status`, `delete` | none | n/a |
 | `hal nomad` | `create`, `update`, `status`, `delete` | `job` | n/a |
 | `hal obs` | `create`, `update`, `status`, `delete` | none | n/a |
-| `hal terraform` (`hal tf`) | `create`, `update`, `status`, `delete` | `agent`, `cli`, `twin`, `workspace` | `enable`, `update`, `disable` |
+| `hal terraform` (`hal tf`) | `create`, `update`, `status`, `delete` | `agent`, `api-workflow` (alias `api`), `workspace` | `enable`, `update`, `disable` |
+
+Twin TFE lifecycle is now target-based on product CRUD commands:
+
+- `hal terraform create --target twin`
+- `hal terraform update --target twin`
+- `hal terraform status --target twin`
+- `hal terraform delete --target twin`
 | `hal mcp` | `create`, `update`, `status`, `delete` | `policy` | currently read-only (`policy`) |
 
 ### Common usage examples

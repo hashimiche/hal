@@ -2,6 +2,8 @@
 
 ## Command
 - `hal terraform status`
+- `hal terraform status --target twin`
+- `hal terraform status --target both`
 
 ## Purpose
 Display health and readiness of the local Terraform Enterprise deployment.
@@ -9,6 +11,7 @@ Display health and readiness of the local Terraform Enterprise deployment.
 ## Behavior
 - Reports key stack component status and endpoint readiness.
 - Used as default behavior when running `hal terraform` with no subcommand.
+- Uses `--target` to show primary, twin, or combined status (`primary` by default).
 
 ## Related
 - Parent namespace: [terraform.md](terraform.md)
@@ -20,7 +23,8 @@ Display health and readiness of the local Terraform Enterprise deployment.
 ## Flags
 - Command flags from `hal terraform status --help`:
 ```text
--h, --help   help for status
+-h, --help          help for status
+-t, --target string Terraform scope to act on: primary, twin, or both (default "primary")
 ```
 - Global flags: `--debug`, `--dry-run`
 
@@ -30,4 +34,6 @@ Display health and readiness of the local Terraform Enterprise deployment.
 ## Example
 ```bash
 hal terraform status
+hal terraform status --target twin
+hal terraform status --target both
 ```

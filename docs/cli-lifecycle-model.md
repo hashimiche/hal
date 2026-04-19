@@ -24,7 +24,7 @@ When command behavior changes, keep this file and `.github/copilot-instructions.
 | `hal consul` | `create`, `delete`, `status` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. |
 | `hal nomad` | `create`, `delete`, `status`, `job` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature command `job` remains action-based. |
 | `hal obs` | `create`, `delete`, `status` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. |
-| `hal terraform` (alias `hal tf`) | `create`, `delete`, `status`, `agent`, `cli`, `twin`, `workspace` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature lifecycle is action-based (`status|enable|disable|update`) with hidden compatibility flags. |
+| `hal terraform` (alias `hal tf`) | `create`, `delete`, `status`, `agent`, `api-workflow` (alias `api`), `workspace` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Twin lifecycle is target-based via `--target primary|twin|both` on `create`/`update`/`delete`/`status`. |
 | `hal vault` | `create`, `delete`, `status`, `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature lifecycle is action-based (`status|enable|disable|update`) with hidden compatibility flags. |
 | `hal mcp` | `create`, `update`, `delete`, `status`, `policy` | Product lifecycle is command-based (`create`/`update`/`delete`). `policy` is read-only today. |
 
@@ -61,8 +61,7 @@ Intent:
 | `hal boundary mariadb` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |
 | `hal boundary ssh` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |
 | `hal terraform agent` | `enable`, `update`, `disable`, `status` | Treat as product feature. |
-| `hal terraform cli` | `enable`, `update`, `disable`, `status` | Treat as product feature. |
-| `hal terraform twin` | `enable`, `update`, `disable`, `status` | Treat as product feature. |
+| `hal terraform api-workflow` (alias `api`) | `enable`, `update`, `disable`, `status` | Treat as product feature. |
 | `hal terraform workspace` | `enable`, `update`, `disable`, `status` | Treat as product feature. |
 | `hal mcp policy` | `create`, `update`, `delete`, `status` | Explicitly modeled as a managed resource. |
 
