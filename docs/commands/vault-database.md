@@ -15,12 +15,11 @@ Deploy MariaDB and configure Vault dynamic database credentials workflow.
 ## Flags
 - Command flags from `hal vault database --help`:
 ```text
--d, --disable                  Remove selected backend and clean up Vault database configuration
--e, --enable                   Deploy selected database backend and configure Vault
 -f, --force                    Force a clean redeployment of the selected backend
 -h, --help                     help for database
       --backend string           Database backend to use (mariadb; pgsql planned, postgres alias accepted) (default "mariadb")
       --mariadb-version string   Version of the MariaDB container image to deploy (default "11.4")
+-u, --update                    Reconcile selected backend and Vault database configuration
 ```
 - Global flags: `--debug`, `--dry-run`
 
@@ -29,5 +28,5 @@ Deploy MariaDB and configure Vault dynamic database credentials workflow.
 
 ## Example
 ```bash
-hal vault database --enable --backend mariadb
+hal vault database enable --backend mariadb
 ```

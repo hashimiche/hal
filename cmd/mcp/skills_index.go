@@ -181,10 +181,10 @@ func normalizeDisplayCommand(cmd string) string {
 	}
 	for i := range parts {
 		if parts[i] == "-e" {
-			parts[i] = "--enable"
+			parts[i] = "enable"
 		}
 		if parts[i] == "-d" {
-			parts[i] = "--disable"
+			parts[i] = "disable"
 		}
 	}
 	return strings.Join(parts, " ")
@@ -211,10 +211,10 @@ func inferActionKeyFromCommand(cmd string) (string, bool) {
 		return root + "_status", true
 	}
 	key := root + "_" + sub
-	if strings.Contains(cmd, " --enable") {
+	if strings.Contains(cmd, " --enable") || strings.Contains(cmd, " enable") {
 		key += "_enable"
 	}
-	if strings.Contains(cmd, " --disable") {
+	if strings.Contains(cmd, " --disable") || strings.Contains(cmd, " disable") {
 		key += "_disable"
 	}
 	return key, true
@@ -282,7 +282,7 @@ func parseDeprecatedCommands(content string) map[string]string {
 		if deprecatedCandidates[cmd] {
 			continue
 		}
-		if strings.Contains(cmd, "workspace --enable") {
+		if strings.Contains(cmd, "workspace enable") {
 			replacement = cmd
 			break
 		}

@@ -31,6 +31,7 @@ var (
 	minioAPIPort        int
 	minioConsolePort    int
 	tfeProxyNginxTag    string
+	tfeUpdate           bool
 	tfeForce            bool
 	tfeConfigureObs     bool
 	deployTFEOrg        string
@@ -41,8 +42,9 @@ var (
 )
 
 var deployCmd = &cobra.Command{
-	Use:   "deploy",
-	Short: "Deploy a local Terraform Enterprise 1.x (FDO) instance via Docker",
+	Use:     "create",
+	Aliases: []string{"deploy"},
+	Short:   "Create a local Terraform Enterprise 1.x (FDO) instance via Docker",
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
 		if err != nil {
@@ -53,12 +55,12 @@ var deployCmd = &cobra.Command{
 		if tfeConfigureObs {
 			if !global.IsContainerRunning(engine, "hal-tfe") {
 				fmt.Println("❌ Terraform Enterprise is not running. Deploy it first before configuring observability artifacts.")
-				fmt.Println("   💡 Run 'hal terraform deploy' and then retry with '--configure-obs' if needed.")
+				fmt.Println("   💡 Run 'hal terraform create' and then retry with '--configure-obs' if needed.")
 				return
 			}
 			if !global.IsObsReady(engine) {
 				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
-				fmt.Println("   💡 Run 'hal obs deploy' first, then retry '--configure-obs'.")
+				fmt.Println("   💡 Run 'hal obs create' first, then retry '--configure-obs'.")
 				return
 			}
 
@@ -108,8 +110,8 @@ var deployCmd = &cobra.Command{
 		homeDir, _ := os.UserHomeDir()
 		certDir := filepath.Join(homeDir, ".hal", "tfe-certs")
 
-		if tfeForce {
-			fmt.Println("♻️  Force flag detected. Purging existing TFE resources...")
+		if tfeUpdate || tfeForce {
+			fmt.Println("♻️  Update requested. Reconciling existing TFE resources...")
 			// 🎯 Included the proxy in the teardown list
 			_ = exec.Command(engine, "rm", "-f", "hal-tfe", "hal-tfe-proxy", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio").Run()
 			_ = os.Remove(filepath.Join(certDir, "cert.pem"))
@@ -339,7 +341,7 @@ http {
 		}
 		fmt.Println("⚠️  Note:        Accept the browser warning for the self-signed certificate.")
 		fmt.Println("\n💡 Next Step:")
-		fmt.Println("   Run 'hal terraform workspace -e' to bootstrap org/project/workspace wiring.")
+		fmt.Println("   Run 'hal terraform workspace enable' to bootstrap org/project/workspace wiring.")
 		fmt.Println("---------------------------------------------------------")
 	},
 }
@@ -481,7 +483,9 @@ func init() {
 	deployCmd.Flags().StringVar(&deployTFEAdminUser, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
 	deployCmd.Flags().StringVar(&deployTFEAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
 	deployCmd.Flags().StringVar(&deployTFEAdminPass, "tfe-admin-password", "hal9000FTW", "Initial TFE admin password used when bootstrapping via IACT")
+	deployCmd.Flags().BoolVarP(&tfeUpdate, "update", "u", false, "Reconcile an existing Terraform Enterprise deployment in place")
 	deployCmd.Flags().BoolVarP(&tfeForce, "force", "f", false, "Force redeploy")
 	deployCmd.Flags().BoolVar(&tfeConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Terraform Enterprise")
+	_ = deployCmd.Flags().MarkDeprecated("force", "use --update instead")
 	Cmd.AddCommand(deployCmd)
 }

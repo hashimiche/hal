@@ -39,9 +39,9 @@ Use smart status mode if needed:
 
 Then run one of these:
 
-	hal vault ldap --enable
+	hal vault ldap enable
 	hal vault ldap --force
-	hal vault ldap --disable
+	hal vault ldap disable
 
 ### Step 2: Verify Vault and directory state
 

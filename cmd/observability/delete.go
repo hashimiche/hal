@@ -18,8 +18,9 @@ var obsEcosystem = []string{
 }
 
 var destroyCmd = &cobra.Command{
-	Use:   "destroy",
-	Short: "Destroy the Observability stack and wipe configurations",
+	Use:     "delete",
+	Aliases: []string{"destroy"},
+	Short:   "Delete the Observability stack and wipe configurations",
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
 		if err != nil {

@@ -6,7 +6,7 @@
 - Default behavior: runs `hal vault status`
 
 ## Subcommands
-- `hal vault deploy`
+- `hal vault create`
   - Deploy a local Vault instance and baseline setup
   - Spec: [vault-deploy.md](vault-deploy.md)
 
@@ -14,7 +14,7 @@
   - Deep status for Vault container, API, and related integrations
   - Spec: [vault-status.md](vault-status.md)
 
-- `hal vault destroy`
+- `hal vault delete`
   - Destroy Vault and associated extension resources
   - Spec: [vault-destroy.md](vault-destroy.md)
 

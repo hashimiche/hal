@@ -57,7 +57,7 @@ var statusCmd = &cobra.Command{
 		fmt.Println("\n💡 Tips:")
 		if !someExist {
 			fmt.Println("   To deploy the full PLG stack, run:")
-			fmt.Println("   hal obs deploy")
+			fmt.Println("   hal obs create")
 		} else if allRunning {
 			fmt.Println("   All systems green. Stack is capturing telemetry.")
 			fmt.Println("   🔗 Grafana UI: http://grafana.localhost:3000")
@@ -65,7 +65,7 @@ var statusCmd = &cobra.Command{
 			fmt.Println("   🔗 Loki API:   http://loki.localhost:3100/ready")
 		} else {
 			fmt.Println("   Environment is partially degraded. To safely reset, run:")
-			fmt.Println("   hal obs deploy --force")
+			fmt.Println("   hal obs create --force")
 		}
 		fmt.Println("   Run 'hal obs status' after changes to confirm all PLG components are healthy.")
 	},

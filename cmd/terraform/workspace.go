@@ -19,6 +19,8 @@ import (
 
 var (
 	workspaceEnable          bool
+	workspaceDisable         bool
+	workspaceUpdate          bool
 	workspaceGitLabVersion   string
 	workspaceGitLabPassword  string
 	workspaceProjectPath     string
@@ -39,14 +41,32 @@ var (
 )
 
 var workspaceCmd = &cobra.Command{
-	Use:     "workspace",
+	Use:     "workspace [status|enable|disable|update]",
 	Aliases: []string{"ws"},
 	Short:   "Configure a Terraform workspace lab with shared GitLab reuse",
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := parseLifecycleAction(args, &workspaceEnable, &workspaceDisable, &workspaceUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
 			return
+		}
+
+		if workspaceDisable {
+			if workspaceEnable || workspaceUpdate {
+				fmt.Println("❌ '--disable' cannot be combined with '--enable' or '--update'.")
+				return
+			}
+			disableWorkspaceScenario(engine)
+			return
+		}
+
+		if workspaceUpdate {
+			workspaceEnable = true
 		}
 
 		if !workspaceEnable {
@@ -64,13 +84,13 @@ var workspaceCmd = &cobra.Command{
 			}
 
 			fmt.Println("\n💡 Next Step:")
-			fmt.Println("   hal terraform workspace --enable")
+			fmt.Println("   hal terraform workspace enable")
 			return
 		}
 
 		if !global.IsContainerRunning(engine, "hal-tfe") {
 			fmt.Println("❌ Terraform Enterprise is not running.")
-			fmt.Println("   💡 Run 'hal terraform deploy' first.")
+			fmt.Println("   💡 Run 'hal terraform create' first.")
 			return
 		}
 
@@ -217,6 +237,36 @@ var workspaceCmd = &cobra.Command{
 	},
 }
 
+func disableWorkspaceScenario(engine string) {
+	if global.DryRun {
+		fmt.Println("[DRY RUN] Would remove terraform-workspace consumer from shared gitlab service")
+		fmt.Println("[DRY RUN] Would stop shared GitLab if no remaining consumers")
+		return
+	}
+
+	remaining, err := global.RemoveSharedServiceConsumer(workspaceGitLabServiceID, workspaceSharedConsumer)
+	if err != nil {
+		fmt.Printf("⚠️  Could not update shared GitLab ownership metadata: %v\n", err)
+	}
+
+	if len(remaining) > 0 {
+		fmt.Printf("ℹ️  Shared GitLab remains active (still used by: %s).\n", strings.Join(remaining, ", "))
+		fmt.Println("✅ Terraform workspace scenario disabled (metadata only).")
+		return
+	}
+
+	if global.IsContainerRunning(engine, "hal-gitlab") {
+		if out, rmErr := exec.Command(engine, "rm", "-f", "hal-gitlab").CombinedOutput(); rmErr != nil {
+			fmt.Printf("⚠️  Failed to stop shared GitLab container: %s\n", strings.TrimSpace(string(out)))
+		} else {
+			fmt.Println("🧹 Stopped shared GitLab (no remaining shared-service consumers).")
+		}
+	}
+
+	_ = global.ClearSharedService(workspaceGitLabServiceID)
+	fmt.Println("✅ Terraform workspace scenario disabled.")
+}
+
 func ensureTFEWorkspace(orgName, projectID, repoIdentifier string) (string, error) {
 	getURL := fmt.Sprintf("%s/api/v2/organizations/%s/workspaces/%s", tfeBaseURL, orgName, tfeWorkspaceName)
 	body, status, getErr := integrations.TFERequest("GET", getURL, tfeAPIToken, nil)
@@ -287,7 +337,7 @@ func ensureTFEWorkspace(orgName, projectID, repoIdentifier string) (string, erro
 
 	if tfeVCSOAuthTokenID == "" {
 		fmt.Println("⚠️  Workspace created without VCS link (missing GitLab OAuth token id).")
-		fmt.Println("   💡 Re-run 'hal tf ws -e' after TFE token is available to finish VCS wiring automatically.")
+		fmt.Println("   💡 Re-run 'hal tf ws enable' after TFE token is available to finish VCS wiring automatically.")
 	}
 
 	return fmt.Sprintf("%s/app/organizations/%s/workspaces/%s", tfeBaseURL, orgName, tfeWorkspaceName), nil
@@ -711,6 +761,11 @@ terraform-validate:
 
 func init() {
 	workspaceCmd.Flags().BoolVarP(&workspaceEnable, "enable", "e", false, "Bootstrap or reuse shared GitLab and configure a Terraform demo repository")
+	workspaceCmd.Flags().BoolVarP(&workspaceDisable, "disable", "d", false, "Disable Terraform workspace automation and release shared GitLab ownership")
+	workspaceCmd.Flags().BoolVarP(&workspaceUpdate, "update", "u", false, "Reconcile existing Terraform workspace automation without full teardown")
+	_ = workspaceCmd.Flags().MarkHidden("enable")
+	_ = workspaceCmd.Flags().MarkHidden("disable")
+	_ = workspaceCmd.Flags().MarkHidden("update")
 	workspaceCmd.Flags().StringVar(&workspaceGitLabVersion, "gitlab-version", "18.10.1-ce.0", "Version of the GitLab CE image used for shared Terraform workspace setup")
 	workspaceCmd.Flags().StringVar(&workspaceGitLabPassword, "gitlab-root-password", "hal9000FTW", "Root password used to bootstrap GitLab when HAL starts it")
 	workspaceCmd.Flags().StringVar(&workspaceProjectName, "project-name", "tfe-agent-demo", "GitLab project name for the Terraform workspace demo")

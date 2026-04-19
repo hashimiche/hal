@@ -7,11 +7,11 @@ description: Deploy the local Terraform demo environment in hal. Use to provisio
 
 ## Intent
 
-Handle hal terraform deploy requests with a stable lifecycle pattern.
+Handle hal terraform create requests with a stable lifecycle pattern.
 
 ## Primary Command
 
-- hal terraform deploy
+- hal terraform create
 
 ## Validation
 
@@ -24,8 +24,8 @@ Handle hal terraform deploy requests with a stable lifecycle pattern.
 - Terraform deploy uses shared observability artifact registration.
 - TFE metrics target file is refreshed automatically when obs is active.
 - Official Terraform Enterprise dashboard is imported automatically into Grafana folder HAL.
-- If TFE is already running and obs comes later, use `hal terraform deploy --configure-obs` to backfill only monitoring artifacts.
-- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs deploy` first.
+- If TFE is already running and obs comes later, use `hal terraform create --configure-obs` to backfill only monitoring artifacts.
+- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs create` first.
 
 ## Edge Cases
 

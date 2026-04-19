@@ -91,7 +91,7 @@ var statusCmd = &cobra.Command{
 			fmt.Printf("         engine raw used: %s RAM\n", formatStatusMemory(usage.LiveMemRawMB))
 			fmt.Printf("         tracked containers: %.1f%% CPU(sum) ~= %.1f%% machine / %s RAM across %d containers\n", usage.ContainerCPUPercent, trackedMachineCPU, formatStatusMemory(usage.ContainerMemMB), usage.ContainerCount)
 		}
-		fmt.Println("💡 Tip: Run 'hal <product> deploy' to start a stack, or 'hal <product> status' for deeper health.")
+		fmt.Println("💡 Tip: Run 'hal <product> create' to start a stack, or 'hal <product> status' for deeper health.")
 	},
 }
 

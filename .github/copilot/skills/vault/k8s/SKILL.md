@@ -42,10 +42,10 @@ Use smart status mode if needed:
 
 Then use one of these:
 
-    hal vault k8s --enable
-    hal vault k8s --enable --csi
+    hal vault k8s enable
+    hal vault k8s enable --csi
     hal vault k8s --force
-    hal vault k8s --disable
+    hal vault k8s disable
 
 ### Step 2: Verify the resulting state
 

@@ -12,13 +12,15 @@ import (
 
 var (
 	consulVersion      string
+	consulUpdate       bool
 	consulForce        bool
 	consulConfigureObs bool
 )
 
 var deployCmd = &cobra.Command{
-	Use:   "deploy",
-	Short: "Deploy a standalone Consul server for learning/testing",
+	Use:     "create",
+	Aliases: []string{"deploy"},
+	Short:   "Create a standalone Consul server for learning/testing",
 	Run: func(cmd *cobra.Command, args []string) {
 
 		// 1. Detect Docker or Podman
@@ -31,12 +33,12 @@ var deployCmd = &cobra.Command{
 		if consulConfigureObs {
 			if !global.IsContainerRunning(engine, "hal-consul") {
 				fmt.Println("❌ Consul is not running. Deploy it first before configuring observability artifacts.")
-				fmt.Println("   💡 Run 'hal consul deploy' and then retry with '--configure-obs' if needed.")
+				fmt.Println("   💡 Run 'hal consul create' and then retry with '--configure-obs' if needed.")
 				return
 			}
 			if !global.IsObsReady(engine) {
 				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
-				fmt.Println("   💡 Run 'hal obs deploy' first, then retry '--configure-obs'.")
+				fmt.Println("   💡 Run 'hal obs create' first, then retry '--configure-obs'.")
 				return
 			}
 
@@ -51,9 +53,9 @@ var deployCmd = &cobra.Command{
 		// 2. Ensure the global grid exists
 		global.EnsureNetwork(engine)
 
-		if consulForce {
+		if consulUpdate || consulForce {
 			if global.Debug {
-				fmt.Println("[DEBUG] --force flag detected. Purging existing standalone Consul...")
+				fmt.Println("[DEBUG] --update/--force detected. Reconciling existing standalone Consul...")
 			}
 			_ = exec.Command(engine, "rm", "-f", "hal-consul").Run()
 		}
@@ -78,7 +80,7 @@ var deployCmd = &cobra.Command{
 		out, err := exec.Command(engine, consulArgs...).CombinedOutput()
 		if err != nil {
 			if strings.Contains(string(out), "AlreadyExists") || strings.Contains(string(out), "already in use") {
-				fmt.Println("⚠️  Consul is already deployed! Use '--force' to redeploy.")
+				fmt.Println("⚠️  Consul already exists. Use '--update' to reconcile it.")
 				return
 			}
 			fmt.Printf("❌ Failed to start Consul: %s\n", string(out))
@@ -91,14 +93,16 @@ var deployCmd = &cobra.Command{
 			fmt.Printf("⚠️  %s\n", warning)
 		}
 		fmt.Println("\n💡 Tip: Use this to test the KV store or learn the API.")
-		fmt.Println("   (For real workloads, use 'hal nomad deploy --with-consul' instead!)")
+		fmt.Println("   (For real workloads, use 'hal nomad create --with-consul' instead!)")
 	},
 }
 
 func init() {
 	deployCmd.Flags().StringVarP(&consulVersion, "version", "v", "1.15.0", "Consul version to deploy")
+	deployCmd.Flags().BoolVarP(&consulUpdate, "update", "u", false, "Reconcile an existing Consul deployment in place")
 	deployCmd.Flags().BoolVarP(&consulForce, "force", "f", false, "Force redeploy")
 	deployCmd.Flags().BoolVar(&consulConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Consul")
+	_ = deployCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	Cmd.AddCommand(deployCmd)
 }

@@ -7,11 +7,11 @@ description: Deploy local Nomad in hal. Use for starting Nomad server and client
 
 ## Intent
 
-Handle hal nomad deploy requests with a stable lifecycle pattern.
+Handle hal nomad create requests with a stable lifecycle pattern.
 
 ## Primary Command
 
-- hal nomad deploy
+- hal nomad create
 
 ## Validation
 
@@ -24,8 +24,8 @@ Handle hal nomad deploy requests with a stable lifecycle pattern.
 - Nomad deploy now calls shared observability artifact registration.
 - Prometheus target file is refreshed automatically when obs is active.
 - Official Nomad dashboard is imported automatically into Grafana folder HAL.
-- If Nomad is already running and obs comes later, use `hal nomad deploy --configure-obs` to backfill only monitoring artifacts.
-- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs deploy` first.
+- If Nomad is already running and obs comes later, use `hal nomad create --configure-obs` to backfill only monitoring artifacts.
+- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs create` first.
 
 ## Edge Cases
 

@@ -17,8 +17,9 @@ var boundaryEcosystem = []string{
 }
 
 var destroyCmd = &cobra.Command{
-	Use:   "destroy",
-	Short: "Destroy Boundary and all associated target resources",
+	Use:     "delete",
+	Aliases: []string{"destroy"},
+	Short:   "Delete Boundary and all associated target resources",
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
 		if err != nil {

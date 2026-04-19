@@ -8,7 +8,7 @@ Assistant:
 
     hal vault status
 
-Assistant: If healthy, proceed with `hal vault jwt --enable`.
+Assistant: If healthy, proceed with `hal vault jwt enable`.
 
 ## Example 2: Diagnose Drift
 
@@ -34,4 +34,4 @@ Assistant:
 
     hal vault status
 
-Assistant: I add edition guidance: if Enterprise is not active, run `hal vault deploy --edition ent` after exporting `VAULT_LICENSE`.
+Assistant: I add edition guidance: if Enterprise is not active, run `hal vault create --edition ent` after exporting `VAULT_LICENSE`.

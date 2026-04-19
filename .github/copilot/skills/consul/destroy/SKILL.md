@@ -7,11 +7,11 @@ description: Destroy local Consul resources in hal. Use for teardown and reset.
 
 ## Intent
 
-Handle hal consul destroy requests with a stable lifecycle pattern.
+Handle hal consul delete requests with a stable lifecycle pattern.
 
 ## Primary Command
 
-- hal consul destroy
+- hal consul delete
 
 ## Validation
 

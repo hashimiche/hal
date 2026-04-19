@@ -14,8 +14,9 @@ import (
 var forceDestroy bool
 
 var destroyCmd = &cobra.Command{
-	Use:   "destroy",
-	Short: "Destroy all HAL infrastructure globally",
+	Use:     "delete",
+	Aliases: []string{"destroy"},
+	Short:   "Delete all HAL infrastructure globally",
 	Long:  "Completely tears down all Docker containers, KinD clusters, and Multipass VMs created by HAL.",
 	Run: func(cmd *cobra.Command, args []string) {
 		if global.DryRun {

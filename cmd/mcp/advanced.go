@@ -375,9 +375,9 @@ func baseActionSpecs() []actionSpec {
 	return []actionSpec{
 		{
 			ID:           "vault_deploy",
-			Command:      []string{"vault", "deploy"},
+			Command:      []string{"vault", "create"},
 			Aliases:      []string{"start vault", "deploy vault"},
-			Examples:     []string{"hal vault deploy", "hal --dry-run vault deploy"},
+			Examples:     []string{"hal vault create", "hal --dry-run vault create"},
 			Parameters:   []map[string]string{{"name": "--version", "type": "string"}, {"name": "--helper-image", "type": "string"}},
 			Dependencies: []string{"docker_or_podman"},
 			Resources:    []string{"hal-vault container", "vault.localhost endpoint"},
@@ -388,9 +388,9 @@ func baseActionSpecs() []actionSpec {
 		},
 		{
 			ID:           "terraform_deploy",
-			Command:      []string{"terraform", "deploy"},
+			Command:      []string{"terraform", "create"},
 			Aliases:      []string{"start terraform", "deploy tfe"},
-			Examples:     []string{"hal terraform deploy", "hal --dry-run terraform deploy"},
+			Examples:     []string{"hal terraform create", "hal --dry-run terraform create"},
 			Parameters:   []map[string]string{{"name": "--version", "type": "string"}, {"name": "--minio-api-port", "type": "int"}, {"name": "--minio-console-port", "type": "int"}},
 			Dependencies: []string{"docker_or_podman", "TFE_LICENSE env var"},
 			Resources:    []string{"hal-tfe", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio", "hal-tfe-proxy"},
@@ -401,9 +401,9 @@ func baseActionSpecs() []actionSpec {
 		},
 		{
 			ID:           "obs_deploy",
-			Command:      []string{"obs", "deploy"},
+			Command:      []string{"obs", "create"},
 			Aliases:      []string{"start obs", "deploy observability"},
-			Examples:     []string{"hal obs deploy", "hal --dry-run obs deploy"},
+			Examples:     []string{"hal obs create", "hal --dry-run obs create"},
 			Dependencies: []string{"docker_or_podman"},
 			Resources:    []string{"hal-grafana", "hal-prometheus", "hal-loki"},
 			SideEffects:  "creates observability stack containers and dashboards",
@@ -413,9 +413,9 @@ func baseActionSpecs() []actionSpec {
 		},
 		{
 			ID:           "consul_deploy",
-			Command:      []string{"consul", "deploy"},
+			Command:      []string{"consul", "create"},
 			Aliases:      []string{"start consul", "deploy consul"},
-			Examples:     []string{"hal consul deploy", "hal --dry-run consul deploy"},
+			Examples:     []string{"hal consul create", "hal --dry-run consul create"},
 			Dependencies: []string{"docker_or_podman"},
 			Resources:    []string{"hal-consul container", "consul.localhost endpoint"},
 			SideEffects:  "creates local Consul server resources",
@@ -425,9 +425,9 @@ func baseActionSpecs() []actionSpec {
 		},
 		{
 			ID:           "nomad_deploy",
-			Command:      []string{"nomad", "deploy"},
+			Command:      []string{"nomad", "create"},
 			Aliases:      []string{"start nomad", "deploy nomad"},
-			Examples:     []string{"hal nomad deploy", "hal --dry-run nomad deploy"},
+			Examples:     []string{"hal nomad create", "hal --dry-run nomad create"},
 			Dependencies: []string{"multipass"},
 			Resources:    []string{"hal-nomad vm", "nomad api"},
 			SideEffects:  "creates local Nomad VM and cluster services",
@@ -437,9 +437,9 @@ func baseActionSpecs() []actionSpec {
 		},
 		{
 			ID:           "boundary_deploy",
-			Command:      []string{"boundary", "deploy"},
+			Command:      []string{"boundary", "create"},
 			Aliases:      []string{"start boundary", "deploy boundary"},
-			Examples:     []string{"hal boundary deploy", "hal --dry-run boundary deploy"},
+			Examples:     []string{"hal boundary create", "hal --dry-run boundary create"},
 			Dependencies: []string{"docker_or_podman"},
 			Resources:    []string{"hal-boundary controller", "boundary.localhost endpoint"},
 			SideEffects:  "creates local Boundary control plane resources",
@@ -449,9 +449,9 @@ func baseActionSpecs() []actionSpec {
 		},
 		{
 			ID:           "vault_k8s_enable",
-			Command:      []string{"vault", "k8s", "--enable"},
+			Command:      []string{"vault", "k8s", "enable"},
 			Aliases:      []string{"enable vault k8s", "start vault k8s"},
-			Examples:     []string{"hal vault k8s --enable", "hal --dry-run vault k8s --enable"},
+			Examples:     []string{"hal vault k8s enable", "hal --dry-run vault k8s enable"},
 			Dependencies: []string{"kind", "kubectl", "helm", "docker_or_podman"},
 			Resources:    []string{"kind cluster", "vault auth mounts", "vso resources"},
 			SideEffects:  "provisions KinD/VSO and configures Vault paths",
@@ -461,9 +461,9 @@ func baseActionSpecs() []actionSpec {
 		},
 		{
 			ID:           "vault_ldap_enable",
-			Command:      []string{"vault", "ldap", "--enable"},
+			Command:      []string{"vault", "ldap", "enable"},
 			Aliases:      []string{"enable vault ldap", "start vault ldap"},
-			Examples:     []string{"hal vault ldap --enable", "hal --dry-run vault ldap --enable"},
+			Examples:     []string{"hal vault ldap enable", "hal --dry-run vault ldap enable"},
 			Dependencies: []string{"docker_or_podman", "vault"},
 			Resources:    []string{"hal-openldap", "hal-phpldapadmin", "vault ldap auth", "vault ldap secrets"},
 			SideEffects:  "creates local LDAP services and configures Vault auth/secrets engines",
@@ -473,9 +473,9 @@ func baseActionSpecs() []actionSpec {
 		},
 		{
 			ID:           "vault_database_enable",
-			Command:      []string{"vault", "database", "--enable"},
+			Command:      []string{"vault", "database", "enable"},
 			Aliases:      []string{"enable vault database", "start vault database"},
-			Examples:     []string{"hal vault database --enable", "hal --dry-run vault database --enable --backend mariadb"},
+			Examples:     []string{"hal vault database enable", "hal --dry-run vault database enable --backend mariadb"},
 			Dependencies: []string{"docker_or_podman", "vault"},
 			Resources:    []string{"hal-vault-mariadb", "vault database secrets engine"},
 			SideEffects:  "creates selected database backend and configures Vault dynamic credentials",
@@ -485,9 +485,9 @@ func baseActionSpecs() []actionSpec {
 		},
 		{
 			ID:           "boundary_ssh_enable",
-			Command:      []string{"boundary", "ssh", "--enable"},
+			Command:      []string{"boundary", "ssh", "enable"},
 			Aliases:      []string{"enable boundary ssh", "start boundary ssh"},
-			Examples:     []string{"hal boundary ssh --enable", "hal --dry-run boundary ssh --enable"},
+			Examples:     []string{"hal boundary ssh enable", "hal --dry-run boundary ssh enable"},
 			Dependencies: []string{"multipass", "boundary"},
 			Resources:    []string{"hal-boundary-ssh vm", "boundary ssh target resources"},
 			SideEffects:  "creates SSH target VM and wires Boundary target resources",
@@ -497,9 +497,9 @@ func baseActionSpecs() []actionSpec {
 		},
 		{
 			ID:           "boundary_mariadb_enable",
-			Command:      []string{"boundary", "mariadb", "--enable"},
+			Command:      []string{"boundary", "mariadb", "enable"},
 			Aliases:      []string{"enable boundary mariadb", "start boundary mariadb"},
-			Examples:     []string{"hal boundary mariadb --enable", "hal --dry-run boundary mariadb --enable", "hal boundary mariadb --enable --with-vault"},
+			Examples:     []string{"hal boundary mariadb enable", "hal --dry-run boundary mariadb enable", "hal boundary mariadb enable --with-vault"},
 			Dependencies: []string{"docker_or_podman", "boundary"},
 			Resources:    []string{"hal-boundary-target-mariadb", "boundary mariadb target resources"},
 			SideEffects:  "creates MariaDB target and wires Boundary resources, optionally Vault brokering",
@@ -512,8 +512,8 @@ func baseActionSpecs() []actionSpec {
 			Command:       []string{"terraform", "token"},
 			Aliases:       []string{"tfe token"},
 			Deprecated:    true,
-			DeprecatedMsg: "Use 'hal terraform workspace --enable' instead.",
-			Examples:      []string{"hal terraform workspace --enable"},
+			DeprecatedMsg: "Use 'hal terraform workspace enable' instead.",
+			Examples:      []string{"hal terraform workspace enable"},
 			SideEffects:   "none",
 			Idempotency:   "n/a",
 			TimeoutSec:    0,
@@ -541,58 +541,58 @@ func buildPlan(intent string) (map[string]interface{}, bool) {
 		"start vault": {
 			"intent":     "start vault",
 			"prechecks":  []string{"hal status", "hal capacity"},
-			"steps":      []map[string]string{{"command": "hal vault deploy", "reason": "deploy core Vault"}},
+			"steps":      []map[string]string{{"command": "hal vault create", "reason": "deploy core Vault"}},
 			"postchecks": []string{"hal vault status", "hal status"},
-			"rollback":   []string{"hal vault destroy"},
+			"rollback":   []string{"hal vault delete"},
 		},
 		"start terraform": {
 			"intent":     "start terraform",
 			"prechecks":  []string{"hal status", "hal capacity", "echo $TFE_LICENSE"},
-			"steps":      []map[string]string{{"command": "hal terraform deploy", "reason": "deploy local TFE stack"}, {"command": "hal terraform workspace --enable", "reason": "wire GitLab workspace automation"}},
+			"steps":      []map[string]string{{"command": "hal terraform create", "reason": "deploy local TFE stack"}, {"command": "hal terraform workspace enable", "reason": "wire GitLab workspace automation"}},
 			"postchecks": []string{"hal terraform status", "hal status"},
-			"rollback":   []string{"hal terraform destroy"},
+			"rollback":   []string{"hal terraform delete"},
 		},
 		"start obs": {
 			"intent":     "start obs",
 			"prechecks":  []string{"hal status", "hal capacity"},
-			"steps":      []map[string]string{{"command": "hal obs deploy", "reason": "deploy Grafana/Prometheus/Loki"}},
+			"steps":      []map[string]string{{"command": "hal obs create", "reason": "deploy Grafana/Prometheus/Loki"}},
 			"postchecks": []string{"hal obs status", "hal status"},
-			"rollback":   []string{"hal obs destroy"},
+			"rollback":   []string{"hal obs delete"},
 		},
 		"start consul": {
 			"intent":     "start consul",
 			"prechecks":  []string{"hal status", "hal capacity"},
-			"steps":      []map[string]string{{"command": "hal consul deploy", "reason": "deploy Consul control plane"}},
+			"steps":      []map[string]string{{"command": "hal consul create", "reason": "deploy Consul control plane"}},
 			"postchecks": []string{"hal consul status", "hal status"},
-			"rollback":   []string{"hal consul destroy"},
+			"rollback":   []string{"hal consul delete"},
 		},
 		"start nomad": {
 			"intent":     "start nomad",
 			"prechecks":  []string{"hal status", "multipass version"},
-			"steps":      []map[string]string{{"command": "hal nomad deploy", "reason": "deploy Nomad VM and cluster"}},
+			"steps":      []map[string]string{{"command": "hal nomad create", "reason": "deploy Nomad VM and cluster"}},
 			"postchecks": []string{"hal nomad status", "hal status"},
-			"rollback":   []string{"hal nomad destroy"},
+			"rollback":   []string{"hal nomad delete"},
 		},
 		"start boundary": {
 			"intent":     "start boundary",
 			"prechecks":  []string{"hal status", "hal vault status"},
-			"steps":      []map[string]string{{"command": "hal boundary deploy", "reason": "deploy Boundary control plane"}},
+			"steps":      []map[string]string{{"command": "hal boundary create", "reason": "deploy Boundary control plane"}},
 			"postchecks": []string{"hal boundary status", "hal status"},
-			"rollback":   []string{"hal boundary destroy"},
+			"rollback":   []string{"hal boundary delete"},
 		},
 		"enable vault k8s": {
 			"intent":     "enable vault k8s",
 			"prechecks":  []string{"hal vault status", "kind --version", "kubectl version --client", "helm version"},
-			"steps":      []map[string]string{{"command": "hal vault k8s --enable", "reason": "provision KinD + VSO flow"}},
+			"steps":      []map[string]string{{"command": "hal vault k8s enable", "reason": "provision KinD + VSO flow"}},
 			"postchecks": []string{"hal vault k8s", "hal status"},
-			"rollback":   []string{"hal vault k8s --disable"},
+			"rollback":   []string{"hal vault k8s disable"},
 		},
 		"destroy terraform": {
 			"intent":     "destroy terraform",
 			"prechecks":  []string{"hal terraform status"},
-			"steps":      []map[string]string{{"command": "hal terraform destroy", "reason": "remove TFE stack"}},
+			"steps":      []map[string]string{{"command": "hal terraform delete", "reason": "remove TFE stack"}},
 			"postchecks": []string{"hal terraform status", "hal status"},
-			"rollback":   []string{"hal terraform deploy", "hal terraform workspace --enable"},
+			"rollback":   []string{"hal terraform create", "hal terraform workspace enable"},
 		},
 	}
 
@@ -633,8 +633,8 @@ func buildPlan(intent string) (map[string]interface{}, bool) {
 		}
 		root := spec.Command[0]
 		rollback := []string{"hal status"}
-		if root != "status" && root != "capacity" && root != "catalog" && root != "destroy" && root != "version" && root != "mcp" {
-			rollback = []string{fmt.Sprintf("hal %s status", root), fmt.Sprintf("hal %s destroy", root)}
+		if root != "status" && root != "capacity" && root != "catalog" && root != "delete" && root != "destroy" && root != "version" && root != "mcp" {
+			rollback = []string{fmt.Sprintf("hal %s status", root), fmt.Sprintf("hal %s delete", root)}
 		}
 
 		planned := map[string]interface{}{
@@ -694,7 +694,7 @@ func validateCommand(proposed string) map[string]interface{} {
 
 	if len(parts) >= 3 && parts[1] == "terraform" && parts[2] == "token" {
 		result["errors"] = []string{"deprecated command: hal terraform token"}
-		result["suggestions"] = []string{"hal terraform workspace --enable"}
+		result["suggestions"] = []string{"hal terraform workspace enable"}
 		result["normalized_command"] = normalized
 		return result
 	}
@@ -703,15 +703,16 @@ func validateCommand(proposed string) map[string]interface{} {
 		"status":    {},
 		"capacity":  {},
 		"catalog":   {},
+		"delete":    {},
 		"destroy":   {},
 		"version":   {},
-		"mcp":       {"create", "up", "status", "down"},
-		"vault":     {"deploy", "status", "destroy", "audit", "jwt", "k8s", "ldap", "database", "oidc", "db"},
-		"consul":    {"deploy", "status", "destroy"},
-		"nomad":     {"deploy", "status", "destroy", "job"},
-		"boundary":  {"deploy", "status", "destroy", "mariadb", "ssh"},
-		"terraform": {"deploy", "status", "destroy", "workspace", "cli", "agent"},
-		"obs":       {"deploy", "status", "destroy"},
+		"mcp":       {"create", "update", "up", "status", "delete", "down"},
+		"vault":     {"create", "deploy", "status", "delete", "destroy", "audit", "jwt", "k8s", "ldap", "database", "oidc", "db"},
+		"consul":    {"create", "deploy", "status", "delete", "destroy"},
+		"nomad":     {"create", "deploy", "status", "delete", "destroy", "job"},
+		"boundary":  {"create", "deploy", "status", "delete", "destroy", "mariadb", "ssh"},
+		"terraform": {"create", "deploy", "status", "delete", "destroy", "workspace", "cli", "agent"},
+		"obs":       {"create", "deploy", "status", "delete", "destroy"},
 	}
 
 	root := parts[1]

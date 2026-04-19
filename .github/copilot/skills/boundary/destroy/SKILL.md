@@ -7,11 +7,11 @@ description: Destroy the local Boundary environment in hal. Use when the user as
 
 ## Intent
 
-Handle hal boundary destroy requests with a stable lifecycle pattern.
+Handle hal boundary delete requests with a stable lifecycle pattern.
 
 ## Primary Command
 
-- hal boundary destroy
+- hal boundary delete
 
 ## Validation
 

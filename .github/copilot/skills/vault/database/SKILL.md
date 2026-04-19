@@ -32,9 +32,9 @@ Use smart status mode if needed:
 
 Then use the correct lifecycle command:
 
-    hal vault database --enable --backend mariadb
+    hal vault database enable --backend mariadb
     hal vault database --force
-    hal vault database --disable
+    hal vault database disable
 
 ### Step 2: Enrich with Vault MCP Context
 
@@ -71,7 +71,7 @@ Provide a brief confirmation that the database is running and the engine is moun
 
 ## Handling Edge Cases
 
-1. **Vault is not running:** Instruct the user to run `hal vault deploy` first.
+1. **Vault is not running:** Instruct the user to run `hal vault create` first.
 2. **Port conflicts:** If Docker fails to bind `3306` or `5432`, advise the user to stop local DB services using those ports.
 3. **Dangling leases prevent cleanup:** Explain that the code force-revokes `database/` leases during teardown.
 4. **User wants to change SQL statements or TTLs after deployment:** Provide exact `vault write database/roles/dba-role ...` commands rather than suggesting Go edits.

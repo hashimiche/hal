@@ -16,9 +16,9 @@ User: Provision Terraform lab.
 
 Assistant:
 
-    hal terraform deploy
-    hal terraform agent --enable
-    hal terraform workspace -e
+    hal terraform create
+    hal terraform agent enable
+    hal terraform workspace enable
     hal terraform status
 
 ## Example 3: Full Reset
@@ -27,9 +27,9 @@ User: Recreate Terraform lab cleanly.
 
 Assistant:
 
-    hal terraform destroy
-    hal terraform deploy
-    hal terraform workspace -e
+    hal terraform delete
+    hal terraform create
+    hal terraform workspace enable
 
 ## Example 4: Default Access Reminder
 
@@ -47,5 +47,5 @@ User: I need workspace runs on a custom TFE agent pool.
 Assistant:
 
     hal terraform status
-    hal terraform agent --enable
+    hal terraform agent enable
     hal terraform agent

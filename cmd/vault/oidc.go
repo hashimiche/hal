@@ -19,15 +19,21 @@ import (
 var (
 	oidcEnable      bool
 	oidcDisable     bool
+	oidcUpdate      bool
 	oidcForce       bool
 	keycloakVersion string
 )
 
 var vaultOidcCmd = &cobra.Command{
-	Use:   "oidc",
+	Use:   "oidc [status|enable|disable|update]",
 	Short: "Deploy Keycloak and fully configure Vault OIDC auth",
-	Args:  cobra.NoArgs,
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := parseLifecycleAction(args, &oidcEnable, &oidcDisable, &oidcUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
@@ -40,7 +46,7 @@ var vaultOidcCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !oidcEnable && !oidcDisable && !oidcForce {
+		if !oidcEnable && !oidcDisable && !oidcUpdate && !oidcForce {
 			fmt.Println("🔍 Checking Vault OIDC / Keycloak Status...")
 
 			// Check Docker
@@ -80,15 +86,15 @@ var vaultOidcCmd = &cobra.Command{
 			fmt.Println("\n💡 Next Step:")
 			if !kcExists && !authMounted {
 				fmt.Println("   To deploy Keycloak and wire up Vault OIDC, run:")
-				fmt.Println("   hal vault oidc --enable")
+				fmt.Println("   hal vault oidc enable")
 			} else if kcExists && authMounted {
 				fmt.Println("   Demo is ready! Test the integration:")
 				fmt.Println("   vault login -method=oidc")
 				fmt.Println("\n   To completely remove this demo environment, run:")
-				fmt.Println("   hal vault oidc --disable")
+				fmt.Println("   hal vault oidc disable")
 			} else {
 				fmt.Println("   Environment is partially degraded. To safely reset, run:")
-				fmt.Println("   hal vault oidc --force")
+				fmt.Println("   hal vault oidc update")
 			}
 			return
 		}
@@ -96,7 +102,7 @@ var vaultOidcCmd = &cobra.Command{
 		// ==========================================
 		// 2. TEARDOWN / RESET PATH (--disable / --force)
 		// ==========================================
-		if oidcDisable || oidcForce {
+		if oidcDisable || oidcUpdate || oidcForce {
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would execute: docker rm -f hal-keycloak")
 				fmt.Println("[DRY RUN] Would call API to clean up Vault OIDC mounts, identity groups, and policies")
@@ -153,7 +159,7 @@ var vaultOidcCmd = &cobra.Command{
 		// ==========================================
 		// 3. DEPLOY / ENABLE PATH (--enable / --force)
 		// ==========================================
-		if oidcEnable || oidcForce {
+		if oidcEnable || oidcUpdate || oidcForce {
 			if vaultErr != nil {
 				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
 				return
@@ -422,7 +428,12 @@ func init() {
 	// Standard Lifecycle Flags
 	vaultOidcCmd.Flags().BoolVarP(&oidcEnable, "enable", "e", false, "Deploy Keycloak and fully configure Vault OIDC auth")
 	vaultOidcCmd.Flags().BoolVarP(&oidcDisable, "disable", "d", false, "Remove Keycloak and strip the OIDC configuration from Vault")
+	vaultOidcCmd.Flags().BoolVarP(&oidcUpdate, "update", "u", false, "Reconcile Keycloak and Vault OIDC integration")
 	vaultOidcCmd.Flags().BoolVarP(&oidcForce, "force", "f", false, "Force a clean redeployment of the OIDC environment")
+	_ = vaultOidcCmd.Flags().MarkHidden("enable")
+	_ = vaultOidcCmd.Flags().MarkHidden("disable")
+	_ = vaultOidcCmd.Flags().MarkHidden("update")
+	_ = vaultOidcCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	// Feature-Specific Flags
 	vaultOidcCmd.Flags().StringVar(&keycloakVersion, "keycloak-version", "24.0.4", "Version of the Keycloak container image to deploy")

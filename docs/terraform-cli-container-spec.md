@@ -29,13 +29,12 @@ Short alias remains available through the existing Terraform alias:
 hal tf cli
 ```
 
-### Lifecycle flags
+### Lifecycle actions
 
 Build or refresh the helper image:
 
 ```bash
-hal tf cli --enable
-hal tf cli -e
+hal tf cli enable
 ```
 
 Boot the helper container and open an interactive shell:
@@ -48,19 +47,18 @@ hal tf cli -c
 Destroy the helper container and clean up HAL-managed scenario workspaces:
 
 ```bash
-hal tf cli --disable --force
-hal tf cli -d -f
+hal tf cli disable --force
 ```
 
 Expected behavior:
 
-- `--enable` builds or refreshes the local helper image used for CLI sessions.
+- `enable` builds or refreshes the local helper image used for CLI sessions.
 - `--console` starts `hal-tfe-cli` on `hal-net`, then opens a shell in it.
 - leaving the shell with `CTRL+D` or `exit` must not destroy the helper container
 - after leaving the shell, the user can re-enter later with `hal tf cli -c` without a rebuild/bootstrap cycle
 - If `--console` is used and the image does not exist yet, HAL should build it first.
-- `--disable` requests confirmation in interactive mode, then removes the helper container and HAL-managed scenario workspaces from TFE.
-- `--disable --force` performs the same teardown without prompting.
+- `disable` requests confirmation in interactive mode, then removes the helper container and HAL-managed scenario workspaces from TFE.
+- `disable --force` performs the same teardown without prompting.
 - The container is intentionally disposable and optimized for local demos, tests, and proof-of-concept work.
 
 ### Console UX
@@ -78,7 +76,7 @@ The banner should include:
 
 ### Build UX
 
-During `hal tf cli -e`, HAL should default to a compact progress animation rather than streaming full Docker build logs.
+During `hal tf cli enable`, HAL should default to a compact progress animation rather than streaming full Docker build logs.
 
 If detailed troubleshooting is needed, users can opt into raw build output with a verbose flag.
 
@@ -105,7 +103,7 @@ The running container must:
 
 ## Certificate Strategy
 
-HAL already generates the local TFE certificate material during `hal terraform deploy` under the HAL user state directory.
+HAL already generates the local TFE certificate material during `hal terraform create` under the HAL user state directory.
 
 The CLI container should reuse that certificate rather than generating a second trust chain.
 
@@ -177,7 +175,7 @@ This ensures Terraform CLI is already authenticated for the local TFE hostname b
 - token should be created automatically by HAL for the helper session
 - token bootstrap should authenticate with the default local admin credentials `haladmin/hal9000FTW`
 - token should be scoped for local lab usage and not reused outside this flow
-- `--force` should rotate token material by recreating auth files
+- `update` should rotate token material by recreating auth files
 - token values must never be printed in command output
 - helper token/bootstrap no longer requires creating a default TFE project name
 
@@ -185,7 +183,7 @@ This ensures Terraform CLI is already authenticated for the local TFE hostname b
 
 The intended workflow is:
 
-1. Build or refresh the helper image with `hal tf cli -e`.
+1. Build or refresh the helper image with `hal tf cli enable`.
 2. Start and enter the helper container with `hal tf cli -c`.
 3. Clone a Git repository inside the container.
 4. Run `terraform`, `terraform login`, `tfx`, or related commands from that cloned repository.
@@ -207,7 +205,7 @@ For the current dad-joke scenario set:
 - `hal tf cli -c` ensures scenario workspaces exist in TFE and are assigned across projects `Dave` and `Frank`
 - `hal tf cli -c` auto-seeds the default `/workspaces` scenario directories (with `main.tf`) when they are missing
 - by default, `hal tf cli` no longer creates a `HAL-CLI` project; `--tfe-project` is optional
-- `--disable` cleanup removes HAL-managed scenario workspaces from TFE and deletes the helper container
+- `disable` cleanup removes HAL-managed scenario workspaces from TFE and deletes the helper container
 
 Current default workspace mapping:
 
@@ -243,8 +241,8 @@ Suggested output:
 Example guidance:
 
 ```text
-Run 'hal tf cli --enable' to build the helper image.
-Run 'hal tf cli --console' to start a session.
+Run 'hal tf cli enable' to build the helper image.
+Run 'hal tf cli -c' to start a session.
 ```
 
 ## Implementation Notes
@@ -261,9 +259,9 @@ Runtime behaviors worth keeping explicit:
 
 - fail early if `hal-tfe` is not running
 - fail clearly if the TFE certificate does not exist yet
-- support `--force` to rebuild the image and recreate the helper container cleanly
-- prompt for interactive confirmation on `--disable`
-- allow `--disable --force` as a non-interactive confirmation bypass
+- support `update` (or `--force` compatibility) to rebuild the image and recreate the helper container cleanly
+- prompt for interactive confirmation on `disable`
+- allow `disable --force` as a non-interactive confirmation bypass
 - keep image build and container startup idempotent
 
 ## Decisions Captured
@@ -271,7 +269,7 @@ Runtime behaviors worth keeping explicit:
 The following decisions are now explicit for the first implementation:
 
 1. HAL builds the helper image locally, using `ghcr.io/straubt1/tfx:latest` as the base image.
-2. `hal tf cli -e` builds/refreshes the image; `hal tf cli -c` starts the container and enters the session.
+2. `hal tf cli enable` builds/refreshes the image; `hal tf cli -c` starts the container and enters the session.
 3. Cloning happens inside the container for V1 (no bind mount by default).
 4. Scope for V1 includes certificate trust plus automatic user-token bootstrap for TFX and Terraform CLI.
 5. The image and tooling policy for now is `latest` (no pinned version in V1).
@@ -288,13 +286,13 @@ Behavior:
 
 - no mount by default (ephemeral container-only filesystem)
 - when provided, the host path is mounted to `/workspaces` in the helper container
-- `--disable` removes container and managed TFE workspaces, but does not delete host files
+- `disable` removes container and managed TFE workspaces, but does not delete host files
 
 ## Acceptance Criteria
 
 The first implementation is successful if all of the following are true:
 
-1. `hal tf cli -e` builds or refreshes the local helper image.
+1. `hal tf cli enable` builds or refreshes the local helper image.
 2. `hal tf cli -c` starts `hal-tfe-cli` on `hal-net` and opens an interactive shell session.
 3. Console mode shows a short welcome banner with usage hints and exit instructions.
 4. Inside the container, `terraform version`, `tfx --help`, `git --version`, and `curl --version` work.
@@ -304,9 +302,9 @@ The first implementation is successful if all of the following are true:
 8. `terraform login https://tfe.localhost:8443` works directly in the helper environment.
 9. The flow does not require adding the self-signed certificate to the macOS host trust store.
 10. Leaving the shell with `exit` or `CTRL+D` preserves the helper container for later re-entry with `hal tf cli -c`.
-11. `hal tf cli --disable` prompts for confirmation in interactive mode before teardown.
-12. `hal tf cli --disable --force` performs non-interactive teardown.
-13. `hal tf cli --disable` teardown removes the helper container and deletes HAL-managed scenario workspaces.
+11. `hal tf cli disable` prompts for confirmation in interactive mode before teardown.
+12. `hal tf cli disable --force` performs non-interactive teardown.
+13. `hal tf cli disable` teardown removes the helper container and deletes HAL-managed scenario workspaces.
 14. `hal tf cli -c` ensures `Dave`/`Frank` projects and the default scenario workspaces exist in TFE after a fresh reset.
 
 ## Non-Goals For V1

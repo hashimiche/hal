@@ -9,8 +9,8 @@ Use this skill for forensic or troubleshooting questions after Vault audit loggi
 
 ## Lab Assumptions
 
-- Vault audit logging should already be enabled, ideally with `hal vault audit --enable --loki`
-- Observability may already be running via `hal obs deploy`
+- Vault audit logging should already be enabled, ideally with `hal vault audit enable --loki`
+- Observability may already be running via `hal obs create`
 - Prefer the `vault-audit` MCP server when available
 - Do not dump raw audit JSON unless the user explicitly asks for it
 
@@ -82,6 +82,6 @@ If the MCP tool returns `critical_events` or `high_risk_events`, highlight them 
 
 ## Common Edge Cases
 
-1. **No logs found:** Ask whether `hal vault audit --enable --loki` was run and whether observability is up.
+1. **No logs found:** Ask whether `hal vault audit enable --loki` was run and whether observability is up.
 2. **User asks to enable logging first:** Switch to the `audit` skill.
 3. **Too much raw data:** Summarize by operation, actor, path, and time window instead of pasting events.

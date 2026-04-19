@@ -1,7 +1,7 @@
 # HAL Observability Deploy Command Spec
 
 ## Command
-- `hal obs deploy`
+- `hal obs create`
 
 ## Purpose
 Deploy Prometheus, Loki, Grafana, and Promtail stack components.
@@ -13,7 +13,7 @@ Deploy Prometheus, Loki, Grafana, and Promtail stack components.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
-- Command flags from `hal obs deploy --help`:
+- Command flags from `hal obs create --help`:
 ```text
 -f, --force                     Force a clean redeployment
 --grafana-version string    Tag for the grafana/grafana image (default "main")
@@ -29,5 +29,5 @@ Deploy Prometheus, Loki, Grafana, and Promtail stack components.
 
 ## Example
 ```bash
-hal obs deploy
+hal obs create
 ```

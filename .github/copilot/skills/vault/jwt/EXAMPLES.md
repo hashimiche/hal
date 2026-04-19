@@ -6,7 +6,7 @@ User: Configure Vault JWT with GitLab.
 
 Assistant:
 
-    hal vault jwt --enable
+    hal vault jwt enable
 
 Assistant: I verify auth and role configuration:
 

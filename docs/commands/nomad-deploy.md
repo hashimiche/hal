@@ -1,7 +1,7 @@
 # HAL Nomad Deploy Command Spec
 
 ## Command
-- `hal nomad deploy`
+- `hal nomad create`
 
 ## Purpose
 Deploy local Nomad cluster resources via Multipass.
@@ -13,7 +13,7 @@ Deploy local Nomad cluster resources via Multipass.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
-- Command flags from `hal nomad deploy --help`:
+- Command flags from `hal nomad create --help`:
 ```text
 --configure-obs         Refresh Prometheus target and Grafana dashboard artifacts without redeploying Nomad
 --cpus string           Number of CPUs for the VM (default "2")
@@ -31,5 +31,5 @@ Deploy local Nomad cluster resources via Multipass.
 
 ## Example
 ```bash
-hal nomad deploy
+hal nomad create
 ```

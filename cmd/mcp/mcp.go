@@ -81,7 +81,7 @@ var createCmd = &cobra.Command{
 			"mcpServers": map[string]interface{}{
 				"hal": map[string]interface{}{
 					"command": commandName,
-					"args":    []string{"mcp", "up"},
+					"args":    []string{"mcp", "update"},
 				},
 			},
 		}
@@ -107,8 +107,9 @@ var createCmd = &cobra.Command{
 }
 
 var upCmd = &cobra.Command{
-	Use:   "up",
-	Short: "Run the HAL MCP server",
+	Use:     "update",
+	Aliases: []string{"up"},
+	Short:   "Run or reconcile the HAL MCP server",
 	Run: func(cmd *cobra.Command, args []string) {
 		transport := strings.ToLower(strings.TrimSpace(upTransport))
 		if transport == "" {
@@ -171,8 +172,9 @@ var statusCmd = &cobra.Command{
 }
 
 var downCmd = &cobra.Command{
-	Use:   "down",
-	Short: "Stop a background HAL MCP server (if present)",
+	Use:     "delete",
+	Aliases: []string{"down"},
+	Short:   "Stop a background HAL MCP server (if present)",
 	Run: func(cmd *cobra.Command, args []string) {
 		dir, err := ensureMCPDir()
 		if err != nil {

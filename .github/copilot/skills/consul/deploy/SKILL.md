@@ -7,11 +7,11 @@ description: Deploy local Consul in hal. Use for starting the Consul control pla
 
 ## Intent
 
-Handle hal consul deploy requests with a stable lifecycle pattern.
+Handle hal consul create requests with a stable lifecycle pattern.
 
 ## Primary Command
 
-- hal consul deploy
+- hal consul create
 
 ## Validation
 
@@ -22,10 +22,10 @@ Handle hal consul deploy requests with a stable lifecycle pattern.
 ## Observability Notes
 
 - Consul deploy uses shared observability artifact registration.
-- When `hal obs deploy` is up, Prometheus target updates are automatic.
+- When `hal obs create` is up, Prometheus target updates are automatic.
 - Official Consul dashboard import is automatic in Grafana folder HAL.
-- If Consul is already running and obs comes later, use `hal consul deploy --configure-obs` to backfill only monitoring artifacts.
-- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs deploy` first.
+- If Consul is already running and obs comes later, use `hal consul create --configure-obs` to backfill only monitoring artifacts.
+- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs create` first.
 
 ## Edge Cases
 

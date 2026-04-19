@@ -1,10 +1,10 @@
-# HAL MCP Up Command Spec
+# HAL MCP Update Command Spec
 
 ## Command
-- `hal mcp up`
+- `hal mcp update` (alias: `hal mcp up`)
 
 ## Purpose
-Run HAL MCP server.
+Run or reconcile HAL MCP server.
 
 ## Behavior
 - Current supported transport is stdio.
@@ -14,11 +14,11 @@ Run HAL MCP server.
 
 ## Prerequisites
 - HAL CLI is available in your local environment.
-- The relevant product base deployment should be running when this command targets an existing stack.
+
 ## Flags
-- Command flags from `hal mcp up --help`:
+- Command flags from `hal mcp update --help`:
 ```text
--h, --help               help for up
+-h, --help               help for update
 --transport string   MCP transport to use (stdio for MVP) (default "stdio")
 ```
 - Global flags: `--debug`, `--dry-run`
@@ -28,5 +28,5 @@ Run HAL MCP server.
 
 ## Example
 ```bash
-hal mcp up
+hal mcp update
 ```

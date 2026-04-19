@@ -20,7 +20,7 @@ var nomadStatusCmd = &cobra.Command{
 
 		out, err := exec.Command("multipass", "info", "hal-nomad", "--format", "csv").Output()
 		if err != nil {
-			fmt.Println("  ⚪ Nomad VM : Down (hal nomad deploy to start)")
+			fmt.Println("  ⚪ Nomad VM : Down (hal nomad create to start)")
 			return
 		}
 
@@ -54,7 +54,7 @@ var nomadStatusCmd = &cobra.Command{
 			}
 		}
 
-		fmt.Println("\n💡 Tip: Run 'hal nomad deploy' to start/recover, then 'hal nomad status' to verify.")
+		fmt.Println("\n💡 Tip: Run 'hal nomad create' to start/recover, then 'hal nomad status' to verify.")
 	},
 }
 

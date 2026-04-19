@@ -33,10 +33,10 @@ Use the smart status mode first if the user is unsure what is already configured
 
 Then run the appropriate lifecycle command:
 
-    hal vault audit --enable
-    hal vault audit --enable --loki
+    hal vault audit enable
+    hal vault audit enable --loki
     hal vault audit --force --loki
-    hal vault audit --disable
+    hal vault audit disable
 
 If the user specifically asks for Loki/Grafana integration, prefer `--loki` because the code mounts `/vault/logs/audit.log` inside the Vault container and lets Promtail read the file passively.
 
@@ -106,7 +106,7 @@ If the user also has observability deployed, mention these surfaces explicitly:
 
 ## Handling Edge Cases
 
-1. **Vault is offline:** Instruct the user to run `hal vault deploy` first.
+1. **Vault is offline:** Instruct the user to run `hal vault create` first.
 2. **Blocked Vault due to audit write failure:** Explain that Vault can block operations if it cannot write to the audit sink. Check disk space and the log file target.
 3. **Stale audit configuration:** Use `hal vault audit --force --loki` to reset the device cleanly.
 4. **User wants raw log analysis rather than configuration:** Switch to the `audit-analysis` skill.

@@ -6,7 +6,7 @@ User: Set up human SSO login for Vault.
 
 Assistant:
 
-    hal vault oidc --enable
+    hal vault oidc enable
 
 Assistant: I verify OIDC config and default role:
 

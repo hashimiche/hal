@@ -15,16 +15,21 @@ import (
 var (
 	ldapEnable           bool
 	ldapDisable          bool
+	ldapUpdate           bool
 	ldapForce            bool
 	ldapServerImageTag   string
 	phpLDAPAdminImageTag string
 )
 
 var vaultLdapCmd = &cobra.Command{
-	Use:   "ldap",
+	Use:   "ldap [status|enable|disable|update]",
 	Short: "Deploy OpenLDAP and configure Vault Auth & Secrets engines",
-	Args:  cobra.NoArgs,
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := parseLifecycleAction(args, &ldapEnable, &ldapDisable, &ldapUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
 
 		engine, err := global.DetectEngine()
 		if err != nil {
@@ -37,7 +42,7 @@ var vaultLdapCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !ldapEnable && !ldapDisable && !ldapForce {
+		if !ldapEnable && !ldapDisable && !ldapUpdate && !ldapForce {
 			fmt.Println("🔍 Checking Vault LDAP / Directory Status...")
 
 			// Check Docker
@@ -84,15 +89,15 @@ var vaultLdapCmd = &cobra.Command{
 			fmt.Println("\n💡 Next Step:")
 			if !ldapExists && !authMounted && !secretsMounted {
 				fmt.Println("   To deploy OpenLDAP and wire up Vault, run:")
-				fmt.Println("   hal vault ldap --enable")
+				fmt.Println("   hal vault ldap enable")
 			} else if ldapExists && authMounted && secretsMounted {
 				fmt.Println("   Demo is ready! Try logging in as Bob:")
 				fmt.Println("   vault login -method=ldap username=bob password=bobpass")
 				fmt.Println("\n   To completely remove this demo environment, run:")
-				fmt.Println("   hal vault ldap --disable")
+				fmt.Println("   hal vault ldap disable")
 			} else {
 				fmt.Println("   Environment is partially degraded. To safely reset, run:")
-				fmt.Println("   hal vault ldap --force")
+				fmt.Println("   hal vault ldap update")
 			}
 			return
 		}
@@ -100,7 +105,7 @@ var vaultLdapCmd = &cobra.Command{
 		// ==========================================
 		// 2. TEARDOWN / RESET PATH (--disable / --force)
 		// ==========================================
-		if ldapDisable || ldapForce {
+		if ldapDisable || ldapUpdate || ldapForce {
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would execute: docker rm -f hal-openldap hal-phpldapadmin")
 				fmt.Println("[DRY RUN] Would call API to clean up Vault LDAP mounts and policies")
@@ -145,7 +150,7 @@ var vaultLdapCmd = &cobra.Command{
 		// ==========================================
 		// 3. DEPLOY / ENABLE PATH (--enable / --force)
 		// ==========================================
-		if ldapEnable || ldapForce {
+		if ldapEnable || ldapUpdate || ldapForce {
 			if vaultErr != nil {
 				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
 				return
@@ -402,7 +407,12 @@ func init() {
 	// Standard Lifecycle Flags
 	vaultLdapCmd.Flags().BoolVarP(&ldapEnable, "enable", "e", false, "Deploy OpenLDAP and configure Vault engines")
 	vaultLdapCmd.Flags().BoolVarP(&ldapDisable, "disable", "d", false, "Remove OpenLDAP and strip configuration from Vault")
+	vaultLdapCmd.Flags().BoolVarP(&ldapUpdate, "update", "u", false, "Reconcile OpenLDAP and Vault LDAP integration")
 	vaultLdapCmd.Flags().BoolVarP(&ldapForce, "force", "f", false, "Force a clean redeployment of the entire environment")
+	_ = vaultLdapCmd.Flags().MarkHidden("enable")
+	_ = vaultLdapCmd.Flags().MarkHidden("disable")
+	_ = vaultLdapCmd.Flags().MarkHidden("update")
+	_ = vaultLdapCmd.Flags().MarkDeprecated("force", "use --update instead")
 	vaultLdapCmd.Flags().StringVar(&ldapServerImageTag, "openldap-version", "1.5.0", "OpenLDAP image tag for the LDAP demo")
 	vaultLdapCmd.Flags().StringVar(&phpLDAPAdminImageTag, "phpldapadmin-version", "0.9.0", "phpLDAPadmin image tag for the LDAP demo UI")
 

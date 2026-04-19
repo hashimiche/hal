@@ -11,8 +11,8 @@ description: Deprecated Terraform token workflow note. Use when users ask about 
 
 ## Recommended Replacement Flow
 
-- hal terraform deploy
-- hal terraform workspace -e
+- hal terraform create
+- hal terraform workspace enable
 - hal terraform status
 
 ## Validation

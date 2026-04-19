@@ -13,15 +13,21 @@ import (
 var (
 	mariadbEnable    bool
 	mariadbDisable   bool
+	mariadbUpdate    bool
 	mariadbForce     bool
 	mariadbWithVault bool
 	targetMariadbVer string
 )
 
 var mariadbCmd = &cobra.Command{
-	Use:   "mariadb",
+	Use:   "mariadb [status|enable|disable|update]",
 	Short: "Deploy a dummy MariaDB Database as a Boundary Target",
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := parseLifecycleAction(args, &mariadbEnable, &mariadbDisable, &mariadbUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
@@ -29,11 +35,11 @@ var mariadbCmd = &cobra.Command{
 		}
 
 		// 1. STATUS CHECK
-		if !mariadbEnable && !mariadbDisable && !mariadbForce {
+		if !mariadbEnable && !mariadbDisable && !mariadbUpdate && !mariadbForce {
 			out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-boundary-target-mariadb").Output()
 			status := strings.TrimSpace(string(out))
 			if err != nil {
-				fmt.Println("❌ MariaDB Target: Not deployed. Run: hal boundary mariadb --enable")
+				fmt.Println("❌ MariaDB Target: Not deployed. Run: hal boundary mariadb enable")
 			} else {
 				fmt.Printf("✅ MariaDB Target: %s\n", status)
 			}
@@ -41,7 +47,7 @@ var mariadbCmd = &cobra.Command{
 		}
 
 		// 2. TEARDOWN
-		if mariadbDisable || mariadbForce {
+		if mariadbDisable || mariadbUpdate || mariadbForce {
 			fmt.Println("🛑 Tearing down MariaDB and Boundary resources...")
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would clean Boundary MariaDB lab resources via API")
@@ -60,7 +66,7 @@ var mariadbCmd = &cobra.Command{
 		}
 
 		// 3. DEPLOY
-		if mariadbEnable || mariadbForce {
+		if mariadbEnable || mariadbUpdate || mariadbForce {
 			dbContainerName := "hal-boundary-target-mariadb"
 			if global.DryRun {
 				if mariadbWithVault {
@@ -79,7 +85,7 @@ var mariadbCmd = &cobra.Command{
 			// Boundary Guardrail
 			out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-boundary").Output()
 			if err != nil || strings.TrimSpace(string(out)) != "running" {
-				fmt.Println("❌ Error: Boundary controller is not running! Run: hal boundary deploy")
+				fmt.Println("❌ Error: Boundary controller is not running! Run: hal boundary create")
 				return
 			}
 
@@ -87,7 +93,7 @@ var mariadbCmd = &cobra.Command{
 				// Vault Guardrail
 				out, err = exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-vault").Output()
 				if err != nil || strings.TrimSpace(string(out)) != "running" {
-					fmt.Println("❌ Error: Vault is not running! Run: hal vault deploy && hal vault database -e")
+					fmt.Println("❌ Error: Vault is not running! Run: hal vault create && hal vault database enable")
 					return
 				}
 				dbContainerName = "hal-vault-mariadb"
@@ -122,9 +128,14 @@ var mariadbCmd = &cobra.Command{
 func init() {
 	mariadbCmd.Flags().BoolVarP(&mariadbEnable, "enable", "e", false, "Deploy MariaDB")
 	mariadbCmd.Flags().BoolVarP(&mariadbDisable, "disable", "d", false, "Remove MariaDB")
+	mariadbCmd.Flags().BoolVarP(&mariadbUpdate, "update", "u", false, "Reconcile MariaDB target and Boundary target configuration")
 	mariadbCmd.Flags().BoolVarP(&mariadbForce, "force", "f", false, "Force Reset")
+	_ = mariadbCmd.Flags().MarkHidden("enable")
+	_ = mariadbCmd.Flags().MarkHidden("disable")
+	_ = mariadbCmd.Flags().MarkHidden("update")
 	mariadbCmd.Flags().BoolVar(&mariadbWithVault, "with-vault", false, "Link with Vault Dynamic Creds")
 	mariadbCmd.Flags().StringVar(&targetMariadbVer, "mariadb-version", "11.4", "Version")
+	_ = mariadbCmd.Flags().MarkDeprecated("force", "use --update instead")
 	Cmd.AddCommand(mariadbCmd)
 }
 

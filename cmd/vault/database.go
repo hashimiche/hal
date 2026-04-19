@@ -15,17 +15,23 @@ import (
 var (
 	databaseEnable  bool
 	databaseDisable bool
+	databaseUpdate  bool
 	databaseForce   bool
 	databaseBackend string
 	mariadbVersion  string
 )
 
 var vaultDatabaseCmd = &cobra.Command{
-	Use:     "database",
+	Use:     "database [status|enable|disable|update]",
 	Aliases: []string{"db"},
 	Short:   "Configure Vault dynamic database credentials workflows",
-	Args:    cobra.NoArgs,
+	Args:    cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := parseLifecycleAction(args, &databaseEnable, &databaseDisable, &databaseUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
@@ -36,7 +42,7 @@ var vaultDatabaseCmd = &cobra.Command{
 		if backend != "mariadb" {
 			if backend == "postgres" || backend == "pgsql" {
 				fmt.Println("❌ Backend pgsql is not implemented yet in HAL. Use --backend mariadb for now.")
-				fmt.Println("💡 Next Step: hal vault database --enable")
+				fmt.Println("💡 Next Step: hal vault database enable")
 				return
 			}
 			fmt.Printf("❌ Unsupported backend %q. Valid value today: mariadb (pgsql planned).\n", databaseBackend)
@@ -69,7 +75,7 @@ var vaultDatabaseCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !databaseEnable && !databaseDisable && !databaseForce {
+		if !databaseEnable && !databaseDisable && !databaseUpdate && !databaseForce {
 			fmt.Println("🔍 Checking Vault Database Engine Status...")
 
 			dbExists := exec.Command(engine, "inspect", containerName).Run() == nil
@@ -98,15 +104,15 @@ var vaultDatabaseCmd = &cobra.Command{
 			fmt.Println("\n💡 Next Step:")
 			if !dbExists && !dbMounted {
 				fmt.Println("   To deploy MariaDB and wire up Vault, run:")
-				fmt.Println("   hal vault database --enable")
+				fmt.Println("   hal vault database enable")
 			} else if dbExists && dbMounted {
 				fmt.Println("   Demo is ready! Request a dynamic credential:")
 				fmt.Println("   vault read database/creds/dba-role")
 				fmt.Println("\n   To completely remove this database environment, run:")
-				fmt.Println("   hal vault database --disable")
+				fmt.Println("   hal vault database disable")
 			} else {
 				fmt.Println("   Environment is partially degraded. To safely reset, run:")
-				fmt.Println("   hal vault database --force")
+				fmt.Println("   hal vault database update")
 			}
 			return
 		}
@@ -114,7 +120,7 @@ var vaultDatabaseCmd = &cobra.Command{
 		// ==========================================
 		// 2. TEARDOWN / RESET PATH (--disable / --force)
 		// ==========================================
-		if databaseDisable || databaseForce {
+		if databaseDisable || databaseUpdate || databaseForce {
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would execute: %s rm -f %s\n", engine, containerName)
 				fmt.Println("[DRY RUN] Would call API to force-revoke leases and unmount 'database/'")
@@ -150,7 +156,7 @@ var vaultDatabaseCmd = &cobra.Command{
 		// ==========================================
 		// 3. DEPLOY / ENABLE PATH (--enable / --force)
 		// ==========================================
-		if databaseEnable || databaseForce {
+		if databaseEnable || databaseUpdate || databaseForce {
 			if vaultErr != nil {
 				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
 				return
@@ -283,7 +289,12 @@ func init() {
 	// Standard Lifecycle Flags
 	vaultDatabaseCmd.Flags().BoolVarP(&databaseEnable, "enable", "e", false, "Deploy selected database backend and configure Vault")
 	vaultDatabaseCmd.Flags().BoolVarP(&databaseDisable, "disable", "d", false, "Remove selected backend and clean up Vault database configuration")
+	vaultDatabaseCmd.Flags().BoolVarP(&databaseUpdate, "update", "u", false, "Reconcile selected backend and Vault database configuration")
 	vaultDatabaseCmd.Flags().BoolVarP(&databaseForce, "force", "f", false, "Force a clean redeployment of the selected backend")
+	_ = vaultDatabaseCmd.Flags().MarkHidden("enable")
+	_ = vaultDatabaseCmd.Flags().MarkHidden("disable")
+	_ = vaultDatabaseCmd.Flags().MarkHidden("update")
+	_ = vaultDatabaseCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	// Backend selection and version pinning
 	vaultDatabaseCmd.Flags().StringVarP(&databaseBackend, "backend", "b", "mariadb", "Database backend to use (mariadb; pgsql planned, postgres alias accepted)")

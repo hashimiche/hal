@@ -60,7 +60,7 @@ var statusCmd = &cobra.Command{
 		if workspaceReady {
 			fmt.Println("  🟢 workspace           : Ready (TFE + shared GitLab running)")
 		} else {
-			fmt.Println("  ⚪ workspace           : Not ready (run: hal terraform workspace --enable)")
+			fmt.Println("  ⚪ workspace           : Not ready (run: hal terraform workspace enable)")
 		}
 
 		// Smart assistant guidance
@@ -68,7 +68,7 @@ var statusCmd = &cobra.Command{
 		if !someExist {
 			fmt.Println("   To deploy a fresh Terraform Enterprise environment, run:")
 			fmt.Println("   export TFE_LICENSE='<your_license_string>'")
-			fmt.Println("   hal terraform deploy")
+			fmt.Println("   hal terraform create")
 		} else if allRunning {
 			fmt.Println("   All systems green. TFE is operational.")
 			fmt.Println("   🔗 UI Address: https://tfe.localhost:8443")
@@ -76,13 +76,13 @@ var statusCmd = &cobra.Command{
 				fmt.Println("   Workspace automation is enabled and ready for VCS-triggered runs.")
 			} else {
 				fmt.Println("   Enable the full VCS automation workflow with:")
-				fmt.Println("   hal terraform workspace --enable")
+				fmt.Println("   hal terraform workspace enable")
 			}
 		} else {
 			fmt.Println("   Environment is partially degraded or stopped. To safely reset, run:")
-			fmt.Println("   hal terraform deploy --force")
+			fmt.Println("   hal terraform create --force")
 			fmt.Println("\n   Or to tear everything down completely, run:")
-			fmt.Println("   hal terraform destroy")
+			fmt.Println("   hal terraform delete")
 		}
 	},
 }

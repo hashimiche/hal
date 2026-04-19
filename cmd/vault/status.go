@@ -36,7 +36,7 @@ var vaultStatusCmd = &cobra.Command{
 
 		// 🎯 FIX: If err != nil, the container just doesn't exist
 		if err != nil {
-			fmt.Println("  ⚪ hal-vault          : Down (hal vault deploy to start)")
+			fmt.Println("  ⚪ hal-vault          : Down (hal vault create to start)")
 			fmt.Println("\n💡 Tip: Deploy the core Vault instance first to see API health.")
 			return
 		} else if vaultStatus == "running" {
@@ -56,7 +56,7 @@ var vaultStatusCmd = &cobra.Command{
 
 				if strings.Contains(strings.ToLower(logStr), "license") {
 					fmt.Println("  💡 HAL Tip: Looks like a Vault Enterprise license rejection.")
-					fmt.Println("     Ensure $VAULT_LICENSE is valid, then run: hal vault deploy --edition ent --force")
+					fmt.Println("     Ensure $VAULT_LICENSE is valid, then run: hal vault create --edition ent --force")
 				}
 			}
 			return // Stop execution if Vault is crashed
@@ -95,11 +95,11 @@ var vaultStatusCmd = &cobra.Command{
 
 				switch dbStatus {
 				case "down":
-					fmt.Printf("  ⚪ %-18s : Down (hal vault database -e --backend / -b mariadb/pgsql)\n", f.Name)
+					fmt.Printf("  ⚪ %-18s : Down (hal vault database enable --backend mariadb)\n", f.Name)
 				case "running":
-					fmt.Printf("  🟢 %-18s : Up   (hal vault database -d)\n", f.Name)
+					fmt.Printf("  🟢 %-18s : Up   (hal vault database disable)\n", f.Name)
 				default:
-					fmt.Printf("  🟡 %-18s : %-4s (hal vault database -f)\n", f.Name, strings.ToUpper(dbStatus))
+					fmt.Printf("  🟡 %-18s : %-4s (hal vault database update)\n", f.Name, strings.ToUpper(dbStatus))
 				}
 				continue
 			}
@@ -110,13 +110,13 @@ var vaultStatusCmd = &cobra.Command{
 
 			if err != nil {
 				// Container is completely gone
-				fmt.Printf("  ⚪ %-18s : Down (hal vault %s -e to enable)\n", f.Name, f.Command)
+				fmt.Printf("  ⚪ %-18s : Down (hal vault %s enable)\n", f.Name, f.Command)
 			} else if status == "running" {
 				// Container is happy
-				fmt.Printf("  🟢 %-18s : Up   (hal vault %s -d to disable)\n", f.Name, f.Command)
+				fmt.Printf("  🟢 %-18s : Up   (hal vault %s disable)\n", f.Name, f.Command)
 			} else {
 				// Container exists but is "exited", "paused", "created", etc.
-				fmt.Printf("  🟡 %-18s : %-4s (hal vault %s -f to reset)\n", f.Name, strings.ToUpper(status), f.Command)
+				fmt.Printf("  🟡 %-18s : %-4s (hal vault %s update)\n", f.Name, strings.ToUpper(status), f.Command)
 			}
 		}
 

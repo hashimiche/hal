@@ -29,14 +29,14 @@ var consulStatusCmd = &cobra.Command{
 		status := strings.TrimSpace(string(out))
 
 		if err != nil {
-			fmt.Println("  ⚪ hal-consul : Down (hal consul deploy to start)")
+			fmt.Println("  ⚪ hal-consul : Down (hal consul create to start)")
 		} else if status == "running" {
 			fmt.Println("  🟢 hal-consul : Up   (http://consul.localhost:8500)")
 		} else {
 			fmt.Printf("  🟡 hal-consul : %s\n", strings.ToUpper(status))
 		}
 
-		fmt.Println("\n💡 Tip: Run 'hal consul deploy' to start/recover, then 'hal consul status' to verify.")
+		fmt.Println("\n💡 Tip: Run 'hal consul create' to start/recover, then 'hal consul status' to verify.")
 	},
 }
 

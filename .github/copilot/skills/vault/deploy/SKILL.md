@@ -7,17 +7,17 @@ description: Deploy local Vault in hal. Use when the user asks to start Vault, i
 
 ## Intent
 
-Handle hal vault deploy requests with a stable lifecycle pattern.
+Handle hal vault create requests with a stable lifecycle pattern.
 
 ## Primary Command
 
-- hal vault deploy
+- hal vault create
 
 ## Edition And Token Baseline
 
 - Default deploy is Vault CE in dev mode.
 - Dev mode root token is `root`.
-- Enterprise deploy requires `hal vault deploy --edition ent` and `VAULT_LICENSE` exported.
+- Enterprise deploy requires `hal vault create --edition ent` and `VAULT_LICENSE` exported.
 
 ## Validation
 
@@ -30,8 +30,8 @@ Handle hal vault deploy requests with a stable lifecycle pattern.
 - Deploy path now runs shared observability artifact registration.
 - Prometheus target file is written when obs is active.
 - Vault dashboard is downloaded/imported automatically into Grafana folder HAL (no manual import step needed).
-- If Vault is already running and obs comes later, use `hal vault deploy --configure-obs` to backfill only monitoring artifacts.
-- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs deploy` first.
+- If Vault is already running and obs comes later, use `hal vault create --configure-obs` to backfill only monitoring artifacts.
+- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs create` first.
 
 ## Edge Cases
 

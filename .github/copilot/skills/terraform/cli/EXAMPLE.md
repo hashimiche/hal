@@ -6,7 +6,7 @@ User: I need a Terraform shell that already trusts the local TFE cert.
 
 Assistant:
 
-    hal tf cli -e
+    hal tf cli enable
     hal tf cli -c
 
 Assistant: This builds the helper image, bootstraps auth in the container, ensures the default scenario workspaces in TFE (`Dave`/`Frank` mapping), and opens the shell without requiring host trust-store changes.
@@ -23,7 +23,7 @@ Assistant: Use the status view first. It shows whether the helper image exists, 
 
 ## Example 2b: Fresh Reset Expectations
 
-User: After `hal tf deploy`, `hal tf cli -e`, `hal tf cli -c`, what should I see in TFE?
+User: After `hal tf create`, `hal tf cli enable`, `hal tf cli -c`, what should I see in TFE?
 
 Assistant:
 
@@ -51,8 +51,8 @@ User: The helper container feels stale. Recreate it cleanly.
 
 Assistant:
 
-    hal tf cli --disable --force
-    hal tf cli -e -f
+    hal tf cli disable --force
+    hal tf cli update
     hal tf cli -c
 
 ## Example 5: Redirect From Host Terraform Login

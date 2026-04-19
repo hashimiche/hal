@@ -24,8 +24,9 @@ var tfeEcosystem = []string{
 }
 
 var destroyCmd = &cobra.Command{
-	Use:   "destroy",
-	Short: "Tear down the TFE stack and wipe all local state for a fresh restart",
+	Use:     "delete",
+	Aliases: []string{"destroy"},
+	Short:   "Tear down the TFE stack and wipe all local state for a fresh restart",
 	Run: func(cmd *cobra.Command, args []string) {
 
 		engine, err := global.DetectEngine()
@@ -114,7 +115,7 @@ var destroyCmd = &cobra.Command{
 		}
 
 		if !global.DryRun {
-			fmt.Println("\n✅ TFE environment wiped. You are ready for a clean 'hal terraform deploy'.")
+			fmt.Println("\n✅ TFE environment wiped. You are ready for a clean 'hal terraform create'.")
 		}
 	},
 }

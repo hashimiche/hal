@@ -6,7 +6,7 @@ User: Configure database secrets with Vault.
 
 Assistant:
 
-    hal vault database --enable --backend mariadb
+    hal vault database enable --backend mariadb
 
 Assistant: I verify database connection and role:
 

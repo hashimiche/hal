@@ -1,7 +1,7 @@
 # HAL Boundary Deploy Command Spec
 
 ## Command
-- `hal boundary deploy`
+- `hal boundary create`
 
 ## Purpose
 Deploy the local Boundary control plane and required services.
@@ -13,7 +13,7 @@ Deploy the local Boundary control plane and required services.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
-- Command flags from `hal boundary deploy --help`:
+- Command flags from `hal boundary create --help`:
 ```text
 --configure-obs       Refresh Prometheus target and Grafana dashboard artifacts without redeploying Boundary
 -f, --force               Force redeploy
@@ -29,5 +29,5 @@ Deploy the local Boundary control plane and required services.
 
 ## Example
 ```bash
-hal boundary deploy
+hal boundary create
 ```

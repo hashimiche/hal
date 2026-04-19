@@ -21,7 +21,6 @@ Configure a Terraform workspace lab with shared GitLab reuse and VCS workflow wi
 ## Flags
 - Command flags from `hal terraform workspace --help`:
 ```text
--e, --enable                          Bootstrap or reuse shared GitLab and configure a Terraform demo repository
 --gitlab-root-password string     Root password used to bootstrap GitLab when HAL starts it (default "hal9000FTW")
 --gitlab-token-id string          Alias of --tfe-vcs-oauth-token-id
 --gitlab-version string           Version of the GitLab CE image used for shared Terraform workspace setup (default "18.10.1-ce.0")
@@ -39,6 +38,7 @@ Configure a Terraform workspace lab with shared GitLab reuse and VCS workflow wi
 --tfe-vcs-branch string           Git branch to trigger VCS runs from (set non-main for tag-focused workflows) (default "main")
 --tfe-vcs-oauth-token-id string   Terraform Enterprise VCS OAuth token id for linking the workspace to GitLab (or set TFE_GITLAB_OAUTH_TOKEN_ID)
 --tfe-workspace string            Terraform Enterprise workspace name to bootstrap (default "tfe-agent-demo")
+-u, --update                          Reconcile existing Terraform workspace automation without full teardown
 ```
 - Global flags: `--debug`, `--dry-run`
 
@@ -47,5 +47,5 @@ Configure a Terraform workspace lab with shared GitLab reuse and VCS workflow wi
 
 ## Example
 ```bash
-hal terraform workspace
+hal terraform workspace enable
 ```

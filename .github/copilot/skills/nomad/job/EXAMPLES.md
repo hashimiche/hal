@@ -29,8 +29,8 @@ User: This workload keeps failing, reset everything.
 
 Assistant:
 
-    hal nomad destroy
-    hal nomad deploy
+    hal nomad delete
+    hal nomad create
     hal nomad job
     hal nomad status
 

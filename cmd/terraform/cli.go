@@ -30,6 +30,7 @@ var (
 	tfeCLIEnable         bool
 	tfeCLIConsole        bool
 	tfeCLIDisable        bool
+	tfeCLIUpdate         bool
 	tfeCLIForce          bool
 	tfeCLILocalDirectory string
 	tfeCLIBaseImage      string
@@ -44,9 +45,14 @@ var (
 )
 
 var cliCmd = &cobra.Command{
-	Use:   "cli",
+	Use:   "cli [status|enable|disable|update]",
 	Short: "Build and run an ephemeral Terraform/TFX helper shell for local TFE",
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := parseLifecycleAction(args, &tfeCLIEnable, &tfeCLIDisable, &tfeCLIUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
@@ -54,14 +60,19 @@ var cliCmd = &cobra.Command{
 		}
 
 		if tfeCLIDisable {
-			if tfeCLIEnable || tfeCLIConsole || tfeCLIShowBannerOnly {
-				fmt.Println("❌ '--disable' cannot be combined with '--enable', '--console', or '--banner'.")
+			if tfeCLIEnable || tfeCLIUpdate || tfeCLIConsole || tfeCLIShowBannerOnly {
+				fmt.Println("❌ '--disable' cannot be combined with '--enable', '--update', '--console', or '--banner'.")
 				return
 			}
 			if err := disableTFECLI(engine); err != nil {
 				fmt.Printf("❌ Failed to disable Terraform CLI helper: %v\n", err)
 			}
 			return
+		}
+
+		if tfeCLIUpdate {
+			tfeCLIEnable = true
+			tfeCLIForce = true
 		}
 
 		if !tfeCLIEnable && !tfeCLIConsole && !tfeCLIShowBannerOnly {
@@ -93,14 +104,14 @@ var cliCmd = &cobra.Command{
 		if tfeCLIConsole {
 			if !global.IsContainerRunning(engine, "hal-tfe") {
 				fmt.Println("❌ Terraform Enterprise is not running.")
-				fmt.Println("   💡 Run 'hal terraform deploy' first.")
+				fmt.Println("   💡 Run 'hal terraform create' first.")
 				return
 			}
 
 			certPath, err := tfeCLICertPath()
 			if err != nil {
 				fmt.Printf("❌ %v\n", err)
-				fmt.Println("   💡 Run 'hal terraform deploy' first to generate local TLS material.")
+				fmt.Println("   💡 Run 'hal terraform create' first to generate local TLS material.")
 				return
 			}
 
@@ -179,9 +190,9 @@ func showTFECLIStatus(engine string) {
 
 	fmt.Printf("  🔗 target-url         : %s\n", tfeCLIURL)
 	fmt.Println("\n💡 Next Step:")
-	fmt.Println("   hal tf cli -e")
+	fmt.Println("   hal tf cli enable")
 	fmt.Println("   hal tf cli -c")
-	fmt.Println("   hal tf cli --disable --force")
+	fmt.Println("   hal tf cli disable --force")
 }
 
 func buildTFECLIImage(engine string) error {
@@ -603,13 +614,13 @@ type tfeCLIAuthConfig struct {
 func disableTFECLI(engine string) error {
 	if !tfeCLIForce {
 		if !isInteractiveTTY() {
-			fmt.Println("⚠️  'hal tf cli --disable' is destructive.")
+			fmt.Println("⚠️  'hal tf cli disable' is destructive.")
 			fmt.Println("   It removes the helper container and deletes HAL-managed scenario workspaces tracked in TFE.")
-			fmt.Println("   Re-run with 'hal tf cli --disable --force' to confirm in non-interactive mode.")
+			fmt.Println("   Re-run with 'hal tf cli disable --force' to confirm in non-interactive mode.")
 			return nil
 		}
 
-		fmt.Println("⚠️  'hal tf cli --disable' is destructive.")
+		fmt.Println("⚠️  'hal tf cli disable' is destructive.")
 		fmt.Println("   It removes the helper container and deletes HAL-managed scenario workspaces tracked in TFE.")
 		confirmed, err := confirmTFECLIDisable()
 		if err != nil {
@@ -1233,7 +1244,12 @@ func init() {
 	cliCmd.Flags().BoolVarP(&tfeCLIEnable, "enable", "e", false, "Build or refresh the Terraform/TFX helper image")
 	cliCmd.Flags().BoolVarP(&tfeCLIConsole, "console", "c", false, "Start helper container and open an interactive shell")
 	cliCmd.Flags().BoolVarP(&tfeCLIDisable, "disable", "d", false, "Remove the helper container and delete HAL-managed scenario workspaces")
+	cliCmd.Flags().BoolVarP(&tfeCLIUpdate, "update", "u", false, "Reconcile helper image/container and refresh runtime configuration")
 	cliCmd.Flags().BoolVarP(&tfeCLIForce, "force", "f", false, "Rebuild image and recreate helper container")
+	_ = cliCmd.Flags().MarkHidden("enable")
+	_ = cliCmd.Flags().MarkHidden("disable")
+	_ = cliCmd.Flags().MarkHidden("update")
+	_ = cliCmd.Flags().MarkDeprecated("force", "use --update instead")
 	cliCmd.Flags().BoolVar(&tfeCLIShowBannerOnly, "banner", false, "Print helper welcome banner without opening a shell")
 	cliCmd.Flags().StringVar(&tfeCLILocalDirectory, "local-directory", "", "Optional host directory to mount into the helper at /workspaces")
 	cliCmd.Flags().StringVar(&tfeCLIBaseImage, "base-image", defaultTFECLIBase, "Base image used to build the helper image")

@@ -7,11 +7,11 @@ description: Destroy local Nomad resources in hal. Use for cleanup and reset.
 
 ## Intent
 
-Handle hal nomad destroy requests with a stable lifecycle pattern.
+Handle hal nomad delete requests with a stable lifecycle pattern.
 
 ## Primary Command
 
-- hal nomad destroy
+- hal nomad delete
 
 ## Validation
 

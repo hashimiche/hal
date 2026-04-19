@@ -27,7 +27,7 @@ func GetHealthyClient() (*vault.Client, error) {
 	// The LB-Style Pre-Flight Health Check
 	health, err := client.Sys().Health()
 	if err != nil {
-		return nil, fmt.Errorf("Vault is unreachable. Is it running? (Hint: run 'hal vault deploy')")
+		return nil, fmt.Errorf("Vault is unreachable. Is it running? (Hint: run 'hal vault create')")
 	}
 	if !health.Initialized || health.Sealed {
 		return nil, fmt.Errorf("Vault is running but is either sealed or uninitialized")

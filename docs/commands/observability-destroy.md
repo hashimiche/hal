@@ -1,7 +1,7 @@
 # HAL Observability Destroy Command Spec
 
 ## Command
-- `hal obs destroy`
+- `hal obs delete`
 
 ## Purpose
 Destroy the observability stack and local observability state.
@@ -13,7 +13,7 @@ Destroy the observability stack and local observability state.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
-- Command flags from `hal obs destroy --help`:
+- Command flags from `hal obs delete --help`:
 ```text
 -h, --help   help for destroy
 ```
@@ -24,5 +24,5 @@ Destroy the observability stack and local observability state.
 
 ## Example
 ```bash
-hal obs destroy
+hal obs delete
 ```

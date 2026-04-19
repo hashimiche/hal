@@ -15,12 +15,11 @@ Deploy OpenLDAP and configure Vault LDAP auth and related secrets integrations.
 ## Flags
 - Command flags from `hal vault ldap --help`:
 ```text
--d, --disable                       Remove OpenLDAP and strip configuration from Vault
--e, --enable                        Deploy OpenLDAP and configure Vault engines
 -f, --force                         Force a clean redeployment of the entire environment
 -h, --help                          help for ldap
 --openldap-version string       OpenLDAP image tag for the LDAP demo (default "1.5.0")
 --phpldapadmin-version string   phpLDAPadmin image tag for the LDAP demo UI (default "0.9.0")
+-u, --update                        Reconcile OpenLDAP and Vault LDAP integration
 ```
 - Global flags: `--debug`, `--dry-run`
 
@@ -29,5 +28,5 @@ Deploy OpenLDAP and configure Vault LDAP auth and related secrets integrations.
 
 ## Example
 ```bash
-hal vault ldap
+hal vault ldap enable
 ```

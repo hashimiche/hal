@@ -6,7 +6,7 @@ User: Create a Linux VM target for Boundary SSH.
 
 Assistant:
 
-    hal boundary ssh --enable
+    hal boundary ssh enable
 
 Assistant: I verify VM and Boundary target wiring, then provide login test steps.
 
@@ -26,4 +26,4 @@ User: Disable this SSH lab.
 
 Assistant:
 
-    hal boundary ssh --disable
+    hal boundary ssh disable

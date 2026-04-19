@@ -56,24 +56,24 @@ var statusCmd = &cobra.Command{
 		// DB Target
 		dbOut, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-boundary-target-mariadb").Output()
 		if err == nil && strings.TrimSpace(string(dbOut)) == "running" {
-			fmt.Println("  🟢 MariaDB Target   : Up (hal boundary mariadb -d to disable)")
+			fmt.Println("  🟢 MariaDB Target   : Up (hal boundary mariadb disable)")
 		} else {
-			fmt.Println("  ⚪ MariaDB Target   : Down (hal boundary mariadb -e to enable)")
+			fmt.Println("  ⚪ MariaDB Target   : Down (hal boundary mariadb enable)")
 		}
 
 		vmOut, vmErr := exec.Command("multipass", "info", "hal-boundary-ssh", "--format", "csv").Output()
 		if vmErr == nil && strings.Contains(string(vmOut), "Running") {
 			ip := extractMultipassIP(string(vmOut))
-			fmt.Printf("  🟢 Ubuntu SSH Target: Up (IP: %s) (hal boundary ssh -d to disable)\n", ip)
+			fmt.Printf("  🟢 Ubuntu SSH Target: Up (IP: %s) (hal boundary ssh disable)\n", ip)
 		} else {
-			fmt.Println("  ⚪ Ubuntu SSH Target: Down (hal boundary ssh -e to enable)")
+			fmt.Println("  ⚪ Ubuntu SSH Target: Down (hal boundary ssh enable)")
 		}
 
 		fmt.Println("\n💡 Tips:")
 		if !allCoresRunning {
-			fmt.Println("   Run 'hal boundary deploy' to bring the Control Plane online.")
+			fmt.Println("   Run 'hal boundary create' to bring the Control Plane online.")
 		} else {
-			fmt.Println("   Control Plane is ready. Manage targets with 'hal boundary <target> -e/-d'.")
+			fmt.Println("   Control Plane is ready. Manage targets with 'hal boundary <target> enable|disable|update'.")
 		}
 		fmt.Println("   Run 'hal boundary status' after changes to verify target readiness.")
 	},
