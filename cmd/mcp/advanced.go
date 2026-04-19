@@ -633,7 +633,7 @@ func buildPlan(intent string) (map[string]interface{}, bool) {
 		}
 		root := spec.Command[0]
 		rollback := []string{"hal status"}
-		if root != "status" && root != "capacity" && root != "catalog" && root != "delete" && root != "destroy" && root != "version" && root != "mcp" {
+		if root != "status" && root != "capacity" && root != "catalog" && root != "delete" && root != "version" && root != "mcp" {
 			rollback = []string{fmt.Sprintf("hal %s status", root), fmt.Sprintf("hal %s delete", root)}
 		}
 
@@ -704,15 +704,14 @@ func validateCommand(proposed string) map[string]interface{} {
 		"capacity":  {},
 		"catalog":   {},
 		"delete":    {},
-		"destroy":   {},
 		"version":   {},
-		"mcp":       {"create", "update", "up", "status", "delete", "down"},
-		"vault":     {"create", "deploy", "status", "delete", "destroy", "audit", "jwt", "k8s", "ldap", "database", "oidc", "db"},
-		"consul":    {"create", "deploy", "status", "delete", "destroy"},
-		"nomad":     {"create", "deploy", "status", "delete", "destroy", "job"},
-		"boundary":  {"create", "deploy", "status", "delete", "destroy", "mariadb", "ssh"},
-		"terraform": {"create", "deploy", "status", "delete", "destroy", "workspace", "cli", "agent"},
-		"obs":       {"create", "deploy", "status", "delete", "destroy"},
+		"mcp":       {"create", "update", "status", "delete"},
+		"vault":     {"create", "status", "delete", "audit", "jwt", "k8s", "ldap", "database", "oidc", "db"},
+		"consul":    {"create", "status", "delete"},
+		"nomad":     {"create", "status", "delete", "job"},
+		"boundary":  {"create", "status", "delete", "mariadb", "ssh"},
+		"terraform": {"create", "status", "delete", "workspace", "cli", "agent"},
+		"obs":       {"create", "status", "delete"},
 	}
 
 	root := parts[1]

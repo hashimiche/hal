@@ -1,7 +1,7 @@
 # HAL MCP Delete Command Spec
 
 ## Command
-- `hal mcp delete` (alias: `hal mcp down`)
+- `hal mcp delete`
 
 ## Purpose
 Stop background HAL MCP process if PID file is present.

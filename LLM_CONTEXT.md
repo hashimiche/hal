@@ -82,7 +82,7 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - Dashboard JSON is normalized so panel datasources resolve to local `hal-prometheus`.
     - Product create commands also support `--configure-obs` to backfill monitoring artifacts without recreating the product.
     - `--configure-obs` should require the obs stack to already be running; it is a refresh action, not a pre-staging action.
-- Global teardown logic is centralized for `hal delete` (alias `destroy`) and `hal daisy`.
+- Global teardown logic is centralized for `hal delete` and `hal daisy`.
     - KinD cleanup includes default cluster name `kind` plus `hal-*` clusters.
     - Leftover KinD containers are removed by cluster label as a fallback.
 - `hal daisy` is a cinematic tribute teardown flow with minimum-duration rendering and reverse random memory-bar decay.

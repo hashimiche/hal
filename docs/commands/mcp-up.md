@@ -1,7 +1,7 @@
 # HAL MCP Update Command Spec
 
 ## Command
-- `hal mcp update` (alias: `hal mcp up`)
+- `hal mcp update`
 
 ## Purpose
 Run or reconcile HAL MCP server.

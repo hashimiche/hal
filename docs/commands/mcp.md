@@ -10,7 +10,7 @@
   - Create MCP client config scaffold (and managed binary when applicable)
   - Spec: [mcp-create.md](mcp-create.md)
 
-- `hal mcp update` (alias: `hal mcp up`)
+- `hal mcp update`
   - Run or reconcile HAL MCP server
   - Current MVP transport: stdio
   - Spec: [mcp-up.md](mcp-up.md)
@@ -19,7 +19,7 @@
   - Show MCP readiness/config/binary state
   - Spec: [mcp-status.md](mcp-status.md)
 
-- `hal mcp delete` (alias: `hal mcp down`)
+- `hal mcp delete`
   - Stop background HAL MCP process if PID file exists
   - Spec: [mcp-down.md](mcp-down.md)
 

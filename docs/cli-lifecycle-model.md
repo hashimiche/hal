@@ -14,7 +14,7 @@ When command behavior changes, keep this file and `.github/copilot-instructions.
 
 | Namespace | Commands |
 |---|---|
-| `hal` | `boundary`, `consul`, `nomad`, `obs`, `terraform` (alias `tf`), `vault`, `mcp`, `capacity`, `catalog`, `daisy`, `delete` (alias `destroy`), `status`, `version`, `completion` |
+| `hal` | `boundary`, `consul`, `nomad`, `obs`, `terraform` (alias `tf`), `vault`, `mcp`, `capacity`, `catalog`, `daisy`, `delete`, `status`, `version`, `completion` |
 
 ### Product namespaces
 

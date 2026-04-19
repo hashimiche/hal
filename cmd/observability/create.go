@@ -23,9 +23,8 @@ var (
 )
 
 var deployCmd = &cobra.Command{
-	Use:     "create",
-	Aliases: []string{"deploy"},
-	Short:   "Create the PLG Stack (Prometheus, Loki, Grafana, Promtail)",
+	Use:   "create",
+	Short: "Create the PLG Stack (Prometheus, Loki, Grafana, Promtail)",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 

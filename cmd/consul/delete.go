@@ -10,9 +10,8 @@ import (
 )
 
 var destroyCmd = &cobra.Command{
-	Use:     "delete",
-	Aliases: []string{"destroy"},
-	Short:   "Delete the local Consul server",
+	Use:   "delete",
+	Short: "Delete the local Consul server",
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
 		if err != nil {

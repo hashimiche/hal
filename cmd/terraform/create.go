@@ -42,9 +42,8 @@ var (
 )
 
 var deployCmd = &cobra.Command{
-	Use:     "create",
-	Aliases: []string{"deploy"},
-	Short:   "Create a local Terraform Enterprise 1.x (FDO) instance via Docker",
+	Use:   "create",
+	Short: "Create a local Terraform Enterprise 1.x (FDO) instance via Docker",
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
 		if err != nil {

@@ -24,9 +24,8 @@ var (
 )
 
 var deployCmd = &cobra.Command{
-	Use:     "create",
-	Aliases: []string{"deploy"},
-	Short:   "Create a local Nomad cluster via Multipass",
+	Use:   "create",
+	Short: "Create a local Nomad cluster via Multipass",
 	Run: func(cmd *cobra.Command, args []string) {
 		if nomadConfigureObs {
 			if global.DryRun {

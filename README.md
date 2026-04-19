@@ -112,7 +112,7 @@ For the full surface and latest flags, use `hal --help` and `hal <product> --hel
 - `hal capacity` (`--active`, `--pending`)
 - `hal catalog`
 - `hal version`
-- `hal delete` (alias: `hal destroy`, global teardown)
+- `hal delete` (global teardown)
 
 ### Product command table
 

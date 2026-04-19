@@ -24,9 +24,8 @@ var (
 )
 
 var deployCmd = &cobra.Command{
-	Use:     "create",
-	Aliases: []string{"deploy"},
-	Short:   "Create a local Vault instance",
+	Use:   "create",
+	Short: "Create a local Vault instance",
 	Run: func(cmd *cobra.Command, args []string) {
 
 		engine, err := global.DetectEngine()

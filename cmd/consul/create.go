@@ -18,9 +18,8 @@ var (
 )
 
 var deployCmd = &cobra.Command{
-	Use:     "create",
-	Aliases: []string{"deploy"},
-	Short:   "Create a standalone Consul server for learning/testing",
+	Use:   "create",
+	Short: "Create a standalone Consul server for learning/testing",
 	Run: func(cmd *cobra.Command, args []string) {
 
 		// 1. Detect Docker or Podman

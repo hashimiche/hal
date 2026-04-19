@@ -24,9 +24,8 @@ var tfeEcosystem = []string{
 }
 
 var destroyCmd = &cobra.Command{
-	Use:     "delete",
-	Aliases: []string{"destroy"},
-	Short:   "Tear down the TFE stack and wipe all local state for a fresh restart",
+	Use:   "delete",
+	Short: "Tear down the TFE stack and wipe all local state for a fresh restart",
 	Run: func(cmd *cobra.Command, args []string) {
 
 		engine, err := global.DetectEngine()

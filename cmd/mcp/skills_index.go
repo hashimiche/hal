@@ -205,7 +205,7 @@ func inferActionKeyFromCommand(cmd string) (string, bool) {
 		break
 	}
 	if sub == "" {
-		if root == "status" || root == "capacity" || root == "catalog" || root == "destroy" || root == "version" {
+		if root == "status" || root == "capacity" || root == "catalog" || root == "delete" || root == "version" {
 			return root, true
 		}
 		return root + "_status", true
@@ -289,7 +289,7 @@ func parseDeprecatedCommands(content string) map[string]string {
 	}
 	if replacement == "" {
 		for _, cmd := range commands {
-			if strings.Contains(cmd, "deploy") || strings.Contains(cmd, "workspace") || strings.Contains(cmd, "status") {
+			if strings.Contains(cmd, "create") || strings.Contains(cmd, "workspace") || strings.Contains(cmd, "status") {
 				replacement = cmd
 				break
 			}
