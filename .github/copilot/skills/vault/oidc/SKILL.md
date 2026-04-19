@@ -34,9 +34,9 @@ Use smart status mode if needed:
 
 Then use the correct lifecycle command:
 
-    hal vault oidc --enable
+    hal vault oidc enable
     hal vault oidc --force
-    hal vault oidc --disable
+    hal vault oidc disable
 
 ### Step 2: Enrich with Vault MCP Context
 
@@ -76,6 +76,6 @@ Provide a brief confirmation that the OIDC auth method is enabled.
 ## Handling Edge Cases
 
 1. **Callback URL mismatch:** Ensure the allowed callback URL matches `http://localhost:8250/oidc/callback`.
-2. **Vault is offline:** Instruct the user to run `hal vault deploy` first.
+2. **Vault is offline:** Instruct the user to run `hal vault create` first.
 3. **Group claim mismatch:** Verify Keycloak group membership and `groups_claim` on `auth/oidc/role/default`.
 4. **User asks about groups or policies after deployment:** Provide exact `vault read/write` commands for `identity/group`, `identity/group-alias`, or `auth/oidc/role/default`.

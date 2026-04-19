@@ -6,7 +6,7 @@ User: Destroy all Boundary resources.
 
 Assistant:
 
-    hal boundary destroy
+    hal boundary delete
 
 Assistant: I verify control plane and targets are gone.
 
@@ -16,7 +16,7 @@ User: Boundary is broken; wipe everything.
 
 Assistant:
 
-    hal boundary destroy
+    hal boundary delete
     hal boundary status
 
 Assistant: I confirm cleanup completeness.
@@ -27,5 +27,5 @@ User: Bring it back after destroy.
 
 Assistant:
 
-    hal boundary deploy
-    hal boundary ssh --enable
+    hal boundary create
+    hal boundary ssh enable

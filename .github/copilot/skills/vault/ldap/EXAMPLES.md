@@ -6,7 +6,7 @@ User: Configure LDAP auth and secrets for Vault.
 
 Assistant:
 
-    hal vault ldap --enable
+    hal vault ldap enable
 
 Assistant: I verify LDAP auth and secrets mounts, then provide login and secrets tests.
 

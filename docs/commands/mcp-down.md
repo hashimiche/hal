@@ -1,7 +1,7 @@
-# HAL MCP Down Command Spec
+# HAL MCP Delete Command Spec
 
 ## Command
-- `hal mcp down`
+- `hal mcp delete`
 
 ## Purpose
 Stop background HAL MCP process if PID file is present.
@@ -11,11 +11,11 @@ Stop background HAL MCP process if PID file is present.
 
 ## Prerequisites
 - HAL CLI is available in your local environment.
-- The relevant product base deployment should be running when this command targets an existing stack.
+
 ## Flags
-- Command flags from `hal mcp down --help`:
+- Command flags from `hal mcp delete --help`:
 ```text
--h, --help   help for down
+-h, --help   help for delete
 ```
 - Global flags: `--debug`, `--dry-run`
 
@@ -24,5 +24,5 @@ Stop background HAL MCP process if PID file is present.
 
 ## Example
 ```bash
-hal mcp down
+hal mcp delete
 ```

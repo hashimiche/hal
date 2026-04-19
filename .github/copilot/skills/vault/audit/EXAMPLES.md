@@ -6,7 +6,7 @@ User: Turn on Vault audit logs for observability.
 
 Assistant:
 
-    hal vault audit --enable --loki
+    hal vault audit enable --loki
 
 Assistant: I verify audit device state and file sink:
 
@@ -32,4 +32,4 @@ User: Remove audit setup for now.
 
 Assistant:
 
-    hal vault audit --disable
+    hal vault audit disable

@@ -13,6 +13,7 @@ import (
 var (
 	enableFlag  bool
 	disableFlag bool
+	updateFlag  bool
 	forceFlag   bool
 	lokiStack   bool
 	auditType   string
@@ -20,9 +21,14 @@ var (
 )
 
 var vaultAuditCmd = &cobra.Command{
-	Use:   "audit",
+	Use:   "audit [status|enable|disable|update]",
 	Short: "Manage Vault audit logging (Defaults to smart status check)",
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := parseLifecycleAction(args, &enableFlag, &disableFlag, &updateFlag); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
 		client, err := GetHealthyClient()
 		if err != nil {
 			fmt.Printf("❌ %v\n", err)
@@ -38,7 +44,7 @@ var vaultAuditCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !enableFlag && !disableFlag && !forceFlag {
+		if !enableFlag && !disableFlag && !updateFlag && !forceFlag {
 			fmt.Println("🔍 Checking Vault Audit Status...")
 
 			// Check Vault for the audit mount
@@ -57,10 +63,10 @@ var vaultAuditCmd = &cobra.Command{
 			fmt.Println("\n💡 Next Step:")
 			if !fileEnabled {
 				fmt.Println("   To enable audit logging (with Loki support), run:")
-				fmt.Println("   hal vault audit --enable --loki")
+				fmt.Println("   hal vault audit enable --loki")
 			} else {
 				fmt.Println("   To remove this configuration, run:")
-				fmt.Println("   hal vault audit --disable")
+				fmt.Println("   hal vault audit disable")
 			}
 			return
 		}
@@ -68,7 +74,7 @@ var vaultAuditCmd = &cobra.Command{
 		// ==========================================
 		// 2. TEARDOWN / RESET PATH (--disable / --force)
 		// ==========================================
-		if disableFlag || forceFlag {
+		if disableFlag || updateFlag || forceFlag {
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would disable audit device: %s\n", apiPath)
 			} else {
@@ -109,7 +115,7 @@ var vaultAuditCmd = &cobra.Command{
 		// ==========================================
 		// 3. DEPLOY / ENABLE PATH (--enable / --force)
 		// ==========================================
-		if enableFlag || forceFlag {
+		if enableFlag || updateFlag || forceFlag {
 			if lokiStack {
 				auditType = "file"
 				fmt.Println("🌊 Loki flag detected! Using shared Docker volume architecture...")
@@ -164,7 +170,12 @@ func init() {
 	// Standard Lifecycle Flags
 	vaultAuditCmd.Flags().BoolVarP(&enableFlag, "enable", "e", false, "Enable the audit configuration")
 	vaultAuditCmd.Flags().BoolVarP(&disableFlag, "disable", "d", false, "Disable the audit configuration")
+	vaultAuditCmd.Flags().BoolVarP(&updateFlag, "update", "u", false, "Reconcile the audit configuration (disable then enable)")
 	vaultAuditCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force a clean reconfiguration (disable then enable)")
+	_ = vaultAuditCmd.Flags().MarkHidden("enable")
+	_ = vaultAuditCmd.Flags().MarkHidden("disable")
+	_ = vaultAuditCmd.Flags().MarkHidden("update")
+	_ = vaultAuditCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	// Feature-Specific Flags
 	vaultAuditCmd.Flags().StringVarP(&auditType, "type", "t", "file", "Type of audit device (file, socket, syslog)")

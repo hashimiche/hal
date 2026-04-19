@@ -7,11 +7,11 @@ description: Deploy the local Boundary control plane in hal. Use when the user a
 
 ## Intent
 
-Handle hal boundary deploy requests with a stable lifecycle pattern.
+Handle hal boundary create requests with a stable lifecycle pattern.
 
 ## Primary Command
 
-- hal boundary deploy
+- hal boundary create
 
 ## Validation
 

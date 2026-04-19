@@ -16,7 +16,7 @@ User: Start Consul locally.
 
 Assistant:
 
-    hal consul deploy
+    hal consul create
     hal consul status
 
 ## Example 3: Reset Consul
@@ -25,5 +25,5 @@ User: Rebuild Consul from scratch.
 
 Assistant:
 
-    hal consul destroy
-    hal consul deploy
+    hal consul delete
+    hal consul create

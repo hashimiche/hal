@@ -37,6 +37,7 @@ type tfeAgentState struct {
 var (
 	tfeAgentEnable        bool
 	tfeAgentDisable       bool
+	tfeAgentUpdate        bool
 	tfeAgentForce         bool
 	tfeAgentImage         string
 	tfeAgentPoolName      string
@@ -50,9 +51,14 @@ var (
 )
 
 var agentCmd = &cobra.Command{
-	Use:   "agent",
+	Use:   "agent [status|enable|disable|update]",
 	Short: "Deploy and manage a custom TFE agent for agent-pool-backed workspace runs",
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := parseLifecycleAction(args, &tfeAgentEnable, &tfeAgentDisable, &tfeAgentUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
@@ -60,14 +66,19 @@ var agentCmd = &cobra.Command{
 		}
 
 		if tfeAgentDisable {
-			if tfeAgentEnable {
-				fmt.Println("❌ '--disable' cannot be combined with '--enable'.")
+			if tfeAgentEnable || tfeAgentUpdate {
+				fmt.Println("❌ '--disable' cannot be combined with '--enable' or '--update'.")
 				return
 			}
 			if err := disableTFEAgent(engine); err != nil {
 				fmt.Printf("❌ Failed to disable Terraform agent flow: %v\n", err)
 			}
 			return
+		}
+
+		if tfeAgentUpdate {
+			tfeAgentEnable = true
+			tfeAgentForce = true
 		}
 
 		if !tfeAgentEnable {
@@ -120,13 +131,13 @@ func showTFEAgentStatus(engine string) {
 	}
 
 	fmt.Println("\n💡 Next Step:")
-	fmt.Println("   hal terraform agent --enable")
-	fmt.Println("   hal terraform agent --disable")
+	fmt.Println("   hal terraform agent enable")
+	fmt.Println("   hal terraform agent disable")
 }
 
 func enableTFEAgent(engine string) error {
 	if !global.IsContainerRunning(engine, "hal-tfe") {
-		return fmt.Errorf("terraform enterprise is not running; run 'hal terraform deploy' first")
+		return fmt.Errorf("terraform enterprise is not running; run 'hal terraform create' first")
 	}
 
 	global.EnsureNetwork(engine)
@@ -474,7 +485,12 @@ func removeTFEAgentState() error {
 func init() {
 	agentCmd.Flags().BoolVarP(&tfeAgentEnable, "enable", "e", false, "Create or reuse a TFE agent pool, issue token, and run an agent container")
 	agentCmd.Flags().BoolVarP(&tfeAgentDisable, "disable", "d", false, "Stop and remove the HAL-managed TFE agent container and revoke its token")
+	agentCmd.Flags().BoolVarP(&tfeAgentUpdate, "update", "u", false, "Reconcile existing agent pool/runtime settings")
 	agentCmd.Flags().BoolVarP(&tfeAgentForce, "force", "f", false, "Recreate the local agent container and rotate token")
+	_ = agentCmd.Flags().MarkHidden("enable")
+	_ = agentCmd.Flags().MarkHidden("disable")
+	_ = agentCmd.Flags().MarkHidden("update")
+	_ = agentCmd.Flags().MarkDeprecated("force", "use --update instead")
 	agentCmd.Flags().StringVar(&tfeAgentImage, "image", defaultTFEAgentImage, "Docker image used for the custom TFE agent")
 	agentCmd.Flags().StringVar(&tfeAgentPoolName, "pool-name", defaultTFEAgentPoolName, "TFE agent pool name to create or reuse")
 	agentCmd.Flags().StringVar(&tfeAgentName, "agent-name", defaultTFEAgentDisplayName, "Display name advertised by the running agent")

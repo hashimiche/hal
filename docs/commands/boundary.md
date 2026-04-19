@@ -6,7 +6,7 @@
 - Default behavior: runs `hal boundary status`
 
 ## Subcommands
-- `hal boundary deploy`
+- `hal boundary create`
   - Deploy Boundary control plane components
   - Spec: [boundary-deploy.md](boundary-deploy.md)
 
@@ -14,7 +14,7 @@
   - Show Boundary and target status
   - Spec: [boundary-status.md](boundary-status.md)
 
-- `hal boundary destroy`
+- `hal boundary delete`
   - Destroy Boundary and associated target resources
   - Spec: [boundary-destroy.md](boundary-destroy.md)
 

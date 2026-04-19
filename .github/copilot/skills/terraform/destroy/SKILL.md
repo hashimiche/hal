@@ -7,11 +7,11 @@ description: Destroy Terraform lab resources in hal. Use for teardown and clean 
 
 ## Intent
 
-Handle hal terraform destroy requests with a stable lifecycle pattern.
+Handle hal terraform delete requests with a stable lifecycle pattern.
 
 ## Primary Command
 
-- hal terraform destroy
+- hal terraform delete
 
 ## Validation
 

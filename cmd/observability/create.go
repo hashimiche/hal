@@ -14,6 +14,7 @@ import (
 )
 
 var (
+	obsUpdate   bool
 	obsForce    bool
 	lokiVer     string
 	grafanaVer  string
@@ -22,8 +23,8 @@ var (
 )
 
 var deployCmd = &cobra.Command{
-	Use:   "deploy",
-	Short: "Deploy the PLG Stack (Prometheus, Loki, Grafana, Promtail)",
+	Use:   "create",
+	Short: "Create the PLG Stack (Prometheus, Loki, Grafana, Promtail)",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 
@@ -33,8 +34,8 @@ var deployCmd = &cobra.Command{
 			return
 		}
 
-		if obsForce {
-			fmt.Println("♻️  Force cleanup detected. Purging stack...")
+		if obsUpdate || obsForce {
+			fmt.Println("♻️  Update requested. Reconciling observability stack...")
 			_ = exec.Command(engine, "rm", "-f", "hal-grafana", "hal-promtail", "hal-loki", "hal-prometheus").Run()
 			homeDir, _ := os.UserHomeDir()
 			_ = os.RemoveAll(filepath.Join(homeDir, ".hal", "obs"))
@@ -288,10 +289,12 @@ func probeHTTP(url string) bool {
 }
 
 func init() {
+	deployCmd.Flags().BoolVarP(&obsUpdate, "update", "u", false, "Reconcile an existing observability stack in place")
 	deployCmd.Flags().BoolVarP(&obsForce, "force", "f", false, "Force a clean redeployment")
 	deployCmd.Flags().StringVar(&lokiVer, "loki-version", "3.7", "Tag for the grafana/loki image")
 	deployCmd.Flags().StringVar(&grafanaVer, "grafana-version", "main", "Tag for the grafana/grafana image")
 	deployCmd.Flags().StringVar(&promVer, "prom-version", "main", "Tag for the prom/prometheus image")
 	deployCmd.Flags().StringVar(&promtailVer, "promtail-version", "3.6", "Tag for the grafana/promtail image")
+	_ = deployCmd.Flags().MarkDeprecated("force", "use --update instead")
 	Cmd.AddCommand(deployCmd)
 }

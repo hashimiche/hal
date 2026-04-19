@@ -16,9 +16,8 @@ Deploy KinD and Vault Secrets Operator scenario for Kubernetes integration labs.
 - Command flags from `hal vault k8s --help`:
 ```text
 --csi                        Use the VSO CSI Driver (Requires Vault Enterprise)
--d, --disable                    Destroy KinD and clean up Vault configurations
--e, --enable                     Deploy KinD and configure Vault Secrets Operator
 -f, --force                      Force a clean redeployment of the cluster
+-u, --update                     Reconcile cluster and VSO configuration
 -h, --help                       help for k8s
 --jwt                        Use the advanced jwt-k8s OIDC architecture (experimental)
 --kind-node-image string     KinD node image used when creating the cluster (default "kindest/node:v1.31.1")
@@ -33,5 +32,5 @@ Deploy KinD and Vault Secrets Operator scenario for Kubernetes integration labs.
 
 ## Example
 ```bash
-hal vault k8s
+hal vault k8s enable
 ```

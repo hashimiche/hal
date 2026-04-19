@@ -15,14 +15,15 @@ import (
 var (
 	boundaryVersion      string
 	pgVersion            string
+	boundaryUpdate       bool
 	boundaryForce        bool
 	boundaryJoinConsul   bool
 	boundaryConfigureObs bool
 )
 
 var deployCmd = &cobra.Command{
-	Use:   "deploy",
-	Short: "Deploy a local Boundary Control Plane (Controller + Backend DB)",
+	Use:   "create",
+	Short: "Create a local Boundary Control Plane (Controller + Backend DB)",
 	Run: func(cmd *cobra.Command, args []string) {
 
 		engine, err := global.DetectEngine()
@@ -34,12 +35,12 @@ var deployCmd = &cobra.Command{
 		if boundaryConfigureObs {
 			if !global.IsContainerRunning(engine, "hal-boundary") {
 				fmt.Println("❌ Boundary is not running. Deploy it first before configuring observability artifacts.")
-				fmt.Println("   💡 Run 'hal boundary deploy' and then retry with '--configure-obs' if needed.")
+				fmt.Println("   💡 Run 'hal boundary create' and then retry with '--configure-obs' if needed.")
 				return
 			}
 			if !global.IsObsReady(engine) {
 				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
-				fmt.Println("   💡 Run 'hal obs deploy' first, then retry '--configure-obs'.")
+				fmt.Println("   💡 Run 'hal obs create' first, then retry '--configure-obs'.")
 				return
 			}
 
@@ -53,12 +54,12 @@ var deployCmd = &cobra.Command{
 
 		if boundaryJoinConsul && !global.IsConsulRunning(engine) {
 			fmt.Println("❌ Error: --join-consul was requested, but the global Consul brain is not running.")
-			fmt.Println("   💡 Run 'hal consul deploy' first to bring the Control Plane online.")
+			fmt.Println("   💡 Run 'hal consul create' first to bring the Control Plane online.")
 			return
 		}
 
-		if boundaryForce {
-			fmt.Println("♻️  Force flag detected. Purging existing Boundary Control Plane...")
+		if boundaryUpdate || boundaryForce {
+			fmt.Println("♻️  Update requested. Reconciling existing Boundary Control Plane...")
 			_ = exec.Command(engine, "rm", "-f", "hal-boundary", "hal-boundary-backend").Run()
 		}
 
@@ -111,7 +112,7 @@ var deployCmd = &cobra.Command{
 		out, err := exec.Command(engine, boundaryArgs...).CombinedOutput()
 		if err != nil {
 			if strings.Contains(string(out), "AlreadyExists") || strings.Contains(string(out), "already in use") {
-				fmt.Println("⚠️  Boundary is already deployed! Use '--force' to redeploy.")
+				fmt.Println("⚠️  Boundary already exists. Use '--update' to reconcile it.")
 				return
 			}
 			fmt.Printf("❌ Failed to start Boundary: %s\n", string(out))
@@ -138,9 +139,9 @@ var deployCmd = &cobra.Command{
 		}
 		fmt.Println("---------------------------------------------------------")
 		fmt.Println("💡 Next Step: Deploy some targets to connect to!")
-		fmt.Println("   hal boundary mariadb -e")
-		fmt.Println("   hal boundary mariadb -e --with-vault (for dynamic credentials, Vault must be running)")
-		fmt.Println("   hal boundary ssh -e")
+		fmt.Println("   hal boundary mariadb enable")
+		fmt.Println("   hal boundary mariadb enable --with-vault (for dynamic credentials, Vault must be running)")
+		fmt.Println("   hal boundary ssh enable")
 	},
 }
 
@@ -171,15 +172,17 @@ func handleDockerFailure(container string, engine string) {
 	} else {
 		fmt.Println("(No logs found)")
 	}
-	fmt.Println("⚠️  Deployment halted. Run 'hal boundary destroy' to clean up the broken resources.")
+	fmt.Println("⚠️  Deployment halted. Run 'hal boundary delete' to clean up the broken resources.")
 }
 
 func init() {
 	deployCmd.Flags().StringVarP(&boundaryVersion, "version", "v", "0.15.2", "Boundary version to deploy")
 	deployCmd.Flags().StringVar(&pgVersion, "pg-version", "16", "PostgreSQL version for Boundary backend")
+	deployCmd.Flags().BoolVarP(&boundaryUpdate, "update", "u", false, "Reconcile an existing Boundary deployment in place")
 	deployCmd.Flags().BoolVarP(&boundaryForce, "force", "f", false, "Force redeploy")
 	deployCmd.Flags().BoolVar(&boundaryConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Boundary")
 	deployCmd.Flags().BoolVarP(&boundaryJoinConsul, "join-consul", "c", false, "Tether Boundary to the global HAL Consul instance")
+	_ = deployCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	Cmd.AddCommand(deployCmd)
 }

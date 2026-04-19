@@ -20,8 +20,8 @@ Use this skill when the user asks to:
 ## Core Commands
 
 - `hal terraform agent` for smart status
-- `hal terraform agent --enable` to create/reuse pool and run `hal-tfe-agent`
-- `hal terraform agent --disable` to stop agent and revoke HAL-managed token
+- `hal terraform agent enable` to create/reuse pool and run `hal-tfe-agent`
+- `hal terraform agent disable` to stop agent and revoke HAL-managed token
 
 ## Lab Assumptions
 
@@ -41,5 +41,5 @@ Use this skill when the user asks to:
 ## Troubleshooting Notes
 
 - If agent registration fails with TLS trust errors, keep HAL-generated cert wiring in place and avoid bypassing TLS verification.
-- If runtime is stale, use `hal terraform agent --enable --force` to rotate token and recreate the container.
+- If runtime is stale, use `hal terraform agent enable --force` to rotate token and recreate the container.
 - If pool assignment fails in UI, verify the pool has at least one registered running agent.

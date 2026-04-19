@@ -1,7 +1,7 @@
 # HAL Terraform Deploy Command Spec
 
 ## Command
-- `hal terraform deploy`
+- `hal terraform create`
 
 ## Purpose
 Deploy the local Terraform Enterprise (TFE) stack for HAL labs.
@@ -19,7 +19,7 @@ Deploy the local Terraform Enterprise (TFE) stack for HAL labs.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
-- Command flags from `hal terraform deploy --help`:
+- Command flags from `hal terraform create --help`:
 ```text
 --configure-obs                Refresh Prometheus target and Grafana dashboard artifacts without redeploying Terraform Enterprise
 -f, --force                        Force redeploy
@@ -45,5 +45,5 @@ Deploy the local Terraform Enterprise (TFE) stack for HAL labs.
 
 ## Example
 ```bash
-hal terraform deploy
+hal terraform create
 ```

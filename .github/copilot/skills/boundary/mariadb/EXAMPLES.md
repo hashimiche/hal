@@ -6,7 +6,7 @@ User: Enable Boundary access to a MariaDB target.
 
 Assistant:
 
-    hal boundary mariadb --enable
+    hal boundary mariadb enable
 
 Assistant: I verify the target is created and then guide login and connection.
 
@@ -23,7 +23,7 @@ User: Rebuild MariaDB and wire Boundary to Vault dynamic creds.
 
 Assistant:
 
-    hal boundary mariadb --enable --with-vault --force
+    hal boundary mariadb enable --with-vault --force
 
 Assistant: I confirm the target has brokered credential sources attached, then use the DB-aware connect flow.
 
@@ -54,6 +54,6 @@ User: Remove this DB target lab.
 
 Assistant:
 
-    hal boundary mariadb --disable
+    hal boundary mariadb disable
 
 Assistant: I verify container and Boundary resources are removed cleanly.

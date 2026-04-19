@@ -1,7 +1,7 @@
 # HAL Terraform Destroy Command Spec
 
 ## Command
-- `hal terraform destroy`
+- `hal terraform delete`
 
 ## Purpose
 Tear down the local Terraform Enterprise stack and related local state for a clean restart.
@@ -19,7 +19,7 @@ Tear down the local Terraform Enterprise stack and related local state for a cle
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
-- Command flags from `hal terraform destroy --help`:
+- Command flags from `hal terraform delete --help`:
 ```text
 -h, --help   help for destroy
 ```
@@ -30,5 +30,5 @@ Tear down the local Terraform Enterprise stack and related local state for a cle
 
 ## Example
 ```bash
-hal terraform destroy
+hal terraform delete
 ```

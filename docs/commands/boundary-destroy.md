@@ -1,7 +1,7 @@
 # HAL Boundary Destroy Command Spec
 
 ## Command
-- `hal boundary destroy`
+- `hal boundary delete`
 
 ## Purpose
 Destroy Boundary and associated target resources.
@@ -13,7 +13,7 @@ Destroy Boundary and associated target resources.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
-- Command flags from `hal boundary destroy --help`:
+- Command flags from `hal boundary delete --help`:
 ```text
 -h, --help   help for destroy
 ```
@@ -24,5 +24,5 @@ Destroy Boundary and associated target resources.
 
 ## Example
 ```bash
-hal boundary destroy
+hal boundary delete
 ```

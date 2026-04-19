@@ -50,9 +50,9 @@ This index maps the HAL command tree to one spec file per command area.
 - [Observability destroy](observability-destroy.md)
 - [MCP](mcp.md)
 - [MCP create](mcp-create.md)
-- [MCP up](mcp-up.md)
+- [MCP update](mcp-up.md)
 - [MCP status](mcp-status.md)
-- [MCP down](mcp-down.md)
+- [MCP delete](mcp-down.md)
 
 ## Command Defaults
 When called without a subcommand, namespaces default to status-style behavior:

@@ -1,7 +1,7 @@
 # HAL Global Destroy Command Spec
 
 ## Command
-- `hal destroy`
+- `hal delete`
 
 ## Purpose
 Destroy all HAL-managed infrastructure globally.
@@ -18,10 +18,10 @@ Destroy all HAL-managed infrastructure globally.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
-- Command flags from `hal destroy --help`:
+- Command flags from `hal delete --help`:
 ```text
 -f, --force   Force destruction without confirmation prompt
--h, --help    help for destroy
+-h, --help    help for delete
 ```
 - Global flags: `--debug`, `--dry-run`
 
@@ -30,5 +30,5 @@ Destroy all HAL-managed infrastructure globally.
 
 ## Example
 ```bash
-hal destroy
+hal delete
 ```

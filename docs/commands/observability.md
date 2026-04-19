@@ -6,7 +6,7 @@
 - Default behavior: runs `hal obs status`
 
 ## Subcommands
-- `hal obs deploy`
+- `hal obs create`
   - Deploy Prometheus, Loki, Grafana, and Promtail
   - Spec: [observability-deploy.md](observability-deploy.md)
 
@@ -14,7 +14,7 @@
   - Show observability component health/status
   - Spec: [observability-status.md](observability-status.md)
 
-- `hal obs destroy`
+- `hal obs delete`
   - Destroy observability stack and local state
   - Spec: [observability-destroy.md](observability-destroy.md)
 

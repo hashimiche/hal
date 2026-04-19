@@ -10,8 +10,8 @@ import (
 )
 
 var destroyCmd = &cobra.Command{
-	Use:   "destroy",
-	Short: "Destroy the Nomad VM",
+	Use:   "delete",
+	Short: "Delete the Nomad VM",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("⚙️  Destroying Nomad VM via Multipass...")
 		if global.DryRun {

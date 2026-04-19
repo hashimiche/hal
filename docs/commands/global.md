@@ -28,7 +28,7 @@ This file covers the root `hal` command, persistent flags, and global commands t
   - Behavior: prints command-oriented product overview
   - Spec: [global-catalog.md](global-catalog.md)
 
-- `hal destroy`
+- `hal delete`
   - Purpose: global infrastructure teardown
   - Scope: HAL-managed containers, KinD clusters, Multipass VMs, and observability local state
   - Safety: confirmation prompt by default
@@ -47,4 +47,4 @@ This file covers the root `hal` command, persistent flags, and global commands t
 
 ## Sources
 - Root wiring: `cmd/root.go`
-- Global commands: `cmd/status.go`, `cmd/capacity.go`, `cmd/catalog.go`, `cmd/destroy.go`, `cmd/version.go`, `cmd/daisy.go`
+- Global commands: `cmd/status.go`, `cmd/capacity.go`, `cmd/catalog.go`, `cmd/delete.go`, `cmd/version.go`, `cmd/daisy.go`

@@ -13,8 +13,8 @@ It helps you stand up realistic local environments for Vault, Boundary, Consul, 
 - Fast local product labs with sensible defaults.
 - Read-only first status UX (`hal <product>` defaults to status for most product commands).
 - Product + feature lifecycle patterns:
-  - Core products: `deploy`, `status`, `destroy`
-  - Feature flows: `--enable`, `--disable`, `--force`
+  - Core products: `create`, `update`, `status`, `delete`
+  - Feature flows: `enable`, `update`, `disable`
 - Built-in integration scenarios (OIDC, JWT, K8s auth/VSO, Boundary targets, TFE workspace automation).
 
 ## Installation
@@ -56,12 +56,12 @@ hal capacity --active
 hal capacity --pending
 
 # Bring up Vault core
-hal vault deploy
+hal vault create
 hal vault status
 
 # Bring up Terraform Enterprise local stack
-hal terraform deploy
-hal terraform workspace --enable
+hal terraform create
+hal terraform workspace enable
 hal terraform status
 ```
 
@@ -71,20 +71,20 @@ Use explicit image/version flags when you want deterministic labs across machine
 
 ```bash
 # Vault core with explicit version + helper image
-hal vault deploy --version 2.0 --helper-image alpine:3.22
+hal vault create --version 2.0 --helper-image alpine:3.22
 
 # Vault LDAP demo with pinned OpenLDAP + phpLDAPadmin tags
-hal vault ldap --enable --openldap-version 1.5.0 --phpldapadmin-version 0.9.0
+hal vault ldap enable --openldap-version 1.5.0 --phpldapadmin-version 0.9.0
 
 # Vault K8s demo with pinned KinD node image, VSO chart, backend/proxy images
-hal vault k8s --enable \
+hal vault k8s enable \
   --kind-node-image kindest/node:v1.31.1 \
   --vso-chart-version 0.8.1 \
   --web-backend-image httpd:2.4-alpine \
   --web-proxy-image nginx:alpine
 
 # Terraform Enterprise stack with pinned supporting images
-hal terraform deploy \
+hal terraform create \
   --version 1.2.0 \
   --pg-version 16 \
   --redis-version 7 \
@@ -94,37 +94,64 @@ hal terraform deploy \
   --proxy-nginx-version alpine
 
 # Nomad VM with pinned Ubuntu image channel
-hal nomad deploy --ubuntu-image 22.04 --version 1.11.3
+hal nomad create --ubuntu-image 22.04 --version 1.11.3
 
 # Boundary SSH target VM with pinned image and VM sizing
-hal boundary ssh --enable --ubuntu-image 22.04 --cpus 1 --mem 512M
+hal boundary ssh enable --ubuntu-image 22.04 --cpus 1 --mem 512M
 ```
 
 💡 Tip: check available flags with `hal <product> <command> --help`.
 
-## Core Command Map
+## Command and Subcommand Recap
 
-This section is intentionally a curated quick map. Keep it focused on common workflows.
-For the full, exact command surface, use `hal --help` and `hal <product> --help`.
+For the full surface and latest flags, use `hal --help` and `hal <product> --help`.
 
-### Global
+### Global commands
 
 - `hal status`
-- `hal capacity` (current usage view)
-- `hal capacity --active` or `hal capacity --deployed` (active heavy deployment detail view)
-- `hal capacity --pending` (pending heavy deployment impact view)
+- `hal capacity` (`--active`, `--pending`)
+- `hal catalog`
+- `hal version`
+- `hal delete` (global teardown)
 
-### MCP
+### Product command table
 
-- `hal mcp create` (generate MCP client config scaffold at `~/.hal/mcp/hal-mcp.json`)
-- `hal mcp up` (run HAL MCP server over stdio)
-- `hal mcp status` (show local MCP readiness)
-- `hal mcp down` (stop background daemon if a PID file exists; stdio mode is normally on-demand)
+| Namespace | Product lifecycle commands | Feature subcommands | Feature lifecycle actions |
+|---|---|---|---|
+| `hal vault` | `create`, `update` (flag on create), `status`, `delete` | `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc` | `enable`, `update`, `disable` |
+| `hal boundary` | `create`, `update` (flag on create), `status`, `delete` | `mariadb`, `ssh` | `enable`, `update`, `disable` |
+| `hal consul` | `create`, `update` (flag on create), `status`, `delete` | none | n/a |
+| `hal nomad` | `create`, `update` (flag on create), `status`, `delete` | `job` | n/a |
+| `hal obs` | `create`, `update` (flag on create), `status`, `delete` | none | n/a |
+| `hal terraform` (`hal tf`) | `create`, `update` (flag on create), `status`, `delete` | `agent`, `cli`, `twin`, `workspace` | `enable`, `update`, `disable` |
+| `hal mcp` | `create`, `update`, `status`, `delete` | `policy` | currently read-only (`policy`) |
 
-`hal mcp create` behavior:
+### Common usage examples
 
-- By default it also provisions a managed HAL binary at `~/.hal/bin/hal-mcp` and points the MCP config command to that path.
-- Use `hal mcp create --json` to generate/update only the JSON config file and skip binary provisioning.
+```bash
+# Product lifecycle
+hal vault create
+hal vault status
+hal vault create --update
+hal vault delete
+
+# Feature lifecycle
+hal vault k8s enable
+hal vault k8s update
+hal vault k8s disable
+
+# Terraform workspace lifecycle (now includes disable)
+hal terraform workspace enable
+hal terraform workspace update
+hal terraform workspace disable
+```
+
+### MCP quick notes
+
+- `hal mcp create` generates MCP config scaffold at `~/.hal/mcp/hal-mcp.json`.
+- `hal mcp update` runs/reconciles the MCP server over stdio.
+- `hal mcp status` checks MCP readiness.
+- `hal mcp delete` stops a background MCP process if a PID file exists.
 
 MCP tools exposed by HAL (read-only MVP+):
 
@@ -136,60 +163,6 @@ MCP tools exposed by HAL (read-only MVP+):
 - `hal_status_baseline` (alias for runtime baseline status routing)
 - `hal_plan_deploy` (alias for intent-driven deploy/setup planning)
 - `hal_plan_verify` (deterministic post-action verification command plan)
-
-Anti-hallucination behavior:
-
-- Tools reject unknown arguments instead of silently ignoring them.
-- Tool results include executed command and exit code in structured content so clients can cite exact CLI evidence.
-
-### Vault
-
-- `hal vault deploy`
-- `hal vault status`
-- `hal vault destroy`
-- `hal vault oidc --enable`
-- `hal vault jwt --enable`
-- `hal vault k8s --enable`
-- `hal vault k8s --enable --csi` (Vault Enterprise)
-
-### Boundary
-
-- `hal boundary deploy`
-- `hal boundary status`
-- `hal boundary destroy`
-- `hal boundary mariadb --enable`
-- `hal boundary ssh --enable`
-
-### Consul
-
-- `hal consul deploy`
-- `hal consul status`
-- `hal consul destroy`
-
-### Nomad
-
-- `hal nomad deploy`
-- `hal nomad status`
-- `hal nomad destroy`
-- `hal nomad job`
-
-### Terraform Enterprise (FDO)
-
-- `hal terraform deploy`
-- `hal terraform workspace --enable`
-- `hal terraform status`
-- `hal terraform destroy`
-
-Notes:
-
-- `hal terraform token` is removed. Workspace and token wiring are handled by the automated `workspace --enable` flow.
-- TFE local endpoint is `https://tfe.localhost:8443`.
-
-### Observability (PLG)
-
-- `hal obs deploy`
-- `hal obs status`
-- `hal obs destroy`
 
 ## Vault K8s Demo Modes
 
@@ -240,4 +213,6 @@ go test ./...
 
 Contributions are welcome.
 
-If you are changing command behavior or UX patterns, read `LLM_CONTEXT.md` and `.github/copilot-instructions.md` first so updates stay aligned with current architecture and operator guidance.
+If you are changing command behavior or UX patterns, read `LLM_CONTEXT.md`, `.github/copilot-instructions.md`, and `docs/cli-lifecycle-model.md` first so updates stay aligned with current architecture and operator guidance.
+
+For CLI lifecycle and verb consistency, treat `docs/cli-lifecycle-model.md` as the detailed source of truth and keep it in sync with `.github/copilot-instructions.md`.

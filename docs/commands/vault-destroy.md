@@ -1,7 +1,7 @@
 # HAL Vault Destroy Command Spec
 
 ## Command
-- `hal vault destroy`
+- `hal vault delete`
 
 ## Purpose
 Destroy local Vault instance and associated integration resources.
@@ -13,7 +13,7 @@ Destroy local Vault instance and associated integration resources.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
-- Command flags from `hal vault destroy --help`:
+- Command flags from `hal vault delete --help`:
 ```text
 -h, --help   help for destroy
 ```
@@ -24,5 +24,5 @@ Destroy local Vault instance and associated integration resources.
 
 ## Example
 ```bash
-hal vault destroy
+hal vault delete
 ```

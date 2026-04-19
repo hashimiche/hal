@@ -12,18 +12,23 @@ import (
 )
 
 var (
-	sshEnable  bool
-	sshDisable bool
-	sshForce   bool
+	sshEnable      bool
+	sshDisable     bool
+	sshUpdate      bool
+	sshForce       bool
 	sshUbuntuImage string
 	sshVMCPUs      string
 	sshVMMem       string
 )
 
 var sshCmd = &cobra.Command{
-	Use:   "ssh",
+	Use:   "ssh [status|enable|disable|update]",
 	Short: "Deploy a tiny Multipass Ubuntu VM as a Boundary SSH Target",
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := parseLifecycleAction(args, &sshEnable, &sshDisable, &sshUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
 
 		if err := exec.Command("multipass", "version").Run(); err != nil {
 			fmt.Println("❌ Error: Multipass is not installed or not running.")
@@ -33,7 +38,7 @@ var sshCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE
 		// ==========================================
-		if !sshEnable && !sshDisable && !sshForce {
+		if !sshEnable && !sshDisable && !sshUpdate && !sshForce {
 			fmt.Println("🔍 Checking Boundary SSH Target Status...")
 			fmt.Println()
 
@@ -41,7 +46,7 @@ var sshCmd = &cobra.Command{
 			if err != nil {
 				fmt.Println("  ❌ SSH Target : Not deployed")
 				fmt.Println("\n💡 Next Step:")
-				fmt.Println("   hal boundary ssh --enable")
+				fmt.Println("   hal boundary ssh enable")
 				return
 			}
 
@@ -49,7 +54,7 @@ var sshCmd = &cobra.Command{
 				ip := extractMultipassIP(string(out))
 				fmt.Printf("  ✅ SSH Target : Active (VM IP: %s)\n", ip)
 				fmt.Println("\n💡 Next Step:")
-				fmt.Println("   hal boundary ssh --disable")
+				fmt.Println("   hal boundary ssh disable")
 			} else {
 				fmt.Println("  ⚠️  SSH Target : OFFLINE/SUSPENDED")
 				fmt.Println("\n💡 Next Step:")
@@ -61,7 +66,7 @@ var sshCmd = &cobra.Command{
 		// ==========================================
 		// 2. TEARDOWN PATH
 		// ==========================================
-		if sshDisable || sshForce {
+		if sshDisable || sshUpdate || sshForce {
 			if sshDisable {
 				fmt.Println("🛑 Tearing down SSH Target VM and Boundary resources...")
 			} else {
@@ -89,7 +94,7 @@ var sshCmd = &cobra.Command{
 		// ==========================================
 		// 3. DEPLOY PATH
 		// ==========================================
-		if sshEnable || sshForce {
+		if sshEnable || sshUpdate || sshForce {
 			fmt.Println("🚀 Deploying Ubuntu VM SSH Target via Multipass (this takes a few seconds)...")
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would launch Multipass VM hal-boundary-ssh (%s, %s CPU, %s RAM)\n", sshUbuntuImage, sshVMCPUs, sshVMMem)
@@ -124,10 +129,15 @@ var sshCmd = &cobra.Command{
 func init() {
 	sshCmd.Flags().BoolVarP(&sshEnable, "enable", "e", false, "Deploy the SSH Target")
 	sshCmd.Flags().BoolVarP(&sshDisable, "disable", "d", false, "Remove the SSH Target")
+	sshCmd.Flags().BoolVarP(&sshUpdate, "update", "u", false, "Reconcile SSH target VM and Boundary target wiring")
 	sshCmd.Flags().BoolVarP(&sshForce, "force", "f", false, "Force a clean redeployment")
+	_ = sshCmd.Flags().MarkHidden("enable")
+	_ = sshCmd.Flags().MarkHidden("disable")
+	_ = sshCmd.Flags().MarkHidden("update")
 	sshCmd.Flags().StringVar(&sshUbuntuImage, "ubuntu-image", "22.04", "Multipass image/channel used for the SSH target VM")
 	sshCmd.Flags().StringVar(&sshVMCPUs, "cpus", "1", "Number of CPUs for the SSH target VM")
 	sshCmd.Flags().StringVar(&sshVMMem, "mem", "512M", "Amount of RAM for the SSH target VM")
+	_ = sshCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	Cmd.AddCommand(sshCmd)
 }

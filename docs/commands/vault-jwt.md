@@ -15,9 +15,8 @@ Simulate enterprise Secret Zero CI/CD pipeline auth flow with GitLab JWT.
 ## Flags
 - Command flags from `hal vault jwt --help`:
 ```text
--d, --disable                 Remove GitLab CE and strip JWT from Vault
--e, --enable                  Deploy GitLab CE and configure Vault JWT
 -f, --force                   Force a clean redeployment of the entire environment
+--u, --update                  Reconcile GitLab and Vault JWT integration settings
 --gitlab-version string   Version of the GitLab CE container image to deploy (default "18.10.1-ce.0")
 -h, --help                    help for jwt
 ```
@@ -28,5 +27,5 @@ Simulate enterprise Secret Zero CI/CD pipeline auth flow with GitLab JWT.
 
 ## Example
 ```bash
-hal vault jwt
+hal vault jwt enable
 ```

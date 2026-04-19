@@ -20,15 +20,21 @@ import (
 var (
 	jwtEnable     bool
 	jwtDisable    bool
+	jwtUpdate     bool
 	jwtForce      bool
 	gitlabVersion string
 )
 
 var vaultJwtCmd = &cobra.Command{
-	Use:   "jwt",
+	Use:   "jwt [status|enable|disable|update]",
 	Short: "Simulate an enterprise Secret Zero CI/CD pipeline with GitLab CE",
-	Args:  cobra.NoArgs,
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := parseLifecycleAction(args, &jwtEnable, &jwtDisable, &jwtUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
@@ -40,7 +46,7 @@ var vaultJwtCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !jwtEnable && !jwtDisable && !jwtForce {
+		if !jwtEnable && !jwtDisable && !jwtUpdate && !jwtForce {
 			fmt.Println("🔍 Checking Vault JWT / GitLab Status...")
 
 			// Check Docker
@@ -91,15 +97,15 @@ var vaultJwtCmd = &cobra.Command{
 			fmt.Println("\n💡 Next Step:")
 			if !gitlabExists && !jwtMounted {
 				fmt.Println("   To deploy the GitLab CI/CD environment, run:")
-				fmt.Println("   hal vault jwt --enable")
+				fmt.Println("   hal vault jwt enable")
 			} else if gitlabExists && projectExists && runnerActive && jwtMounted {
 				fmt.Println("   Demo is ready! View the pipeline at:")
 				fmt.Println("   http://gitlab.localhost:8080/root/secret-zero/-/pipelines")
 				fmt.Println("\n   To completely remove this demo environment, run:")
-				fmt.Println("   hal vault jwt --disable")
+				fmt.Println("   hal vault jwt disable")
 			} else {
 				fmt.Println("   Environment is partially degraded. To safely reset, run:")
-				fmt.Println("   hal vault jwt --force")
+				fmt.Println("   hal vault jwt update")
 			}
 			return
 		}
@@ -107,7 +113,7 @@ var vaultJwtCmd = &cobra.Command{
 		// ==========================================
 		// 2. TEARDOWN / RESET PATH (--disable / --force)
 		// ==========================================
-		if jwtDisable || jwtForce {
+		if jwtDisable || jwtUpdate || jwtForce {
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would execute: docker rm -f hal-gitlab hal-gitlab-runner")
 				fmt.Println("[DRY RUN] Would call API to disable: auth/jwt and kv-jwt")
@@ -151,7 +157,7 @@ var vaultJwtCmd = &cobra.Command{
 		// ==========================================
 		// 3. DEPLOY / ENABLE PATH (--enable / --force)
 		// ==========================================
-		if jwtEnable || jwtForce {
+		if jwtEnable || jwtUpdate || jwtForce {
 			if vaultErr != nil {
 				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
 				return
@@ -216,7 +222,7 @@ var vaultJwtCmd = &cobra.Command{
 			if err := ensureJWTGitLabRunner(engine, apiToken, projectID); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				fmt.Println("   💡 GitLab project and Vault config are ready, but pipeline execution requires at least one active runner.")
-				fmt.Println("   💡 Re-run 'hal vault jwt --enable' after fixing runner connectivity.")
+				fmt.Println("   💡 Re-run 'hal vault jwt enable' after fixing runner connectivity.")
 				return
 			}
 
@@ -636,7 +642,12 @@ func init() {
 	// 1. Standard Lifecycle Flags
 	vaultJwtCmd.Flags().BoolVarP(&jwtEnable, "enable", "e", false, "Deploy GitLab CE and configure Vault JWT")
 	vaultJwtCmd.Flags().BoolVarP(&jwtDisable, "disable", "d", false, "Remove GitLab CE and strip JWT from Vault")
+	vaultJwtCmd.Flags().BoolVarP(&jwtUpdate, "update", "u", false, "Reconcile GitLab/Vault JWT integration settings")
 	vaultJwtCmd.Flags().BoolVarP(&jwtForce, "force", "f", false, "Force a clean redeployment of the entire environment")
+	_ = vaultJwtCmd.Flags().MarkHidden("enable")
+	_ = vaultJwtCmd.Flags().MarkHidden("disable")
+	_ = vaultJwtCmd.Flags().MarkHidden("update")
+	_ = vaultJwtCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	// 2. Feature-Specific Flags
 	vaultJwtCmd.Flags().StringVar(&gitlabVersion, "gitlab-version", "18.10.1-ce.0", "Version of the GitLab CE container image to deploy")

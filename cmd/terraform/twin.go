@@ -26,6 +26,7 @@ import (
 var (
 	tfeTwinEnable              bool
 	tfeTwinDisable             bool
+	tfeTwinUpdate              bool
 	tfeTwinForce               bool
 	tfeTwinVersion             string
 	tfeTwinPassword            string
@@ -57,10 +58,15 @@ type tfeTwinLayout struct {
 }
 
 var twinCmd = &cobra.Command{
-	Use:     "twin",
+	Use:     "twin [status|enable|disable|update]",
 	Aliases: []string{"bis", "dup"},
 	Short:   "Manage a second local Terraform Enterprise instance that runs alongside the primary deployment",
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := parseLifecycleAction(args, &tfeTwinEnable, &tfeTwinDisable, &tfeTwinUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
@@ -74,8 +80,8 @@ var twinCmd = &cobra.Command{
 		}
 
 		if tfeTwinDisable {
-			if tfeTwinEnable || tfeTwinConfigureObsOnly {
-				fmt.Println("❌ '--disable' cannot be combined with '--enable' or '--configure-obs'.")
+			if tfeTwinEnable || tfeTwinUpdate || tfeTwinConfigureObsOnly {
+				fmt.Println("❌ '--disable' cannot be combined with '--enable', '--update', or '--configure-obs'.")
 				return
 			}
 			destroyTFETwin(engine, layout)
@@ -83,13 +89,13 @@ var twinCmd = &cobra.Command{
 		}
 
 		if tfeTwinConfigureObsOnly {
-			if tfeTwinEnable {
-				fmt.Println("❌ '--configure-obs' cannot be combined with '--enable'.")
+			if tfeTwinEnable || tfeTwinUpdate {
+				fmt.Println("❌ '--configure-obs' cannot be combined with '--enable' or '--update'.")
 				return
 			}
 			if !global.IsContainerRunning(engine, layout.CoreContainer) {
 				fmt.Printf("❌ Twin Terraform Enterprise instance '%s' is not running.\n", layout.CoreContainer)
-				fmt.Println("   💡 Run 'hal tf twin -e' first.")
+				fmt.Println("   💡 Run 'hal tf twin enable' first.")
 				return
 			}
 			if err := global.UpsertObsPromTargetIfRunning(engine, "terraform-bis", []string{layout.CoreContainer + ":9090"}); err != nil {
@@ -100,6 +106,11 @@ var twinCmd = &cobra.Command{
 			return
 		}
 
+		if tfeTwinUpdate {
+			tfeTwinEnable = true
+			tfeTwinForce = true
+		}
+
 		if !tfeTwinEnable {
 			showTFETwinStatus(engine, layout)
 			return
@@ -107,7 +118,7 @@ var twinCmd = &cobra.Command{
 
 		if !global.IsContainerRunning(engine, "hal-tfe") {
 			fmt.Println("❌ Primary Terraform Enterprise instance is not running (hal-tfe).")
-			fmt.Println("   💡 Run 'hal tf deploy' first, then retry 'hal tf twin -e'.")
+			fmt.Println("   💡 Run 'hal tf create' first, then retry 'hal tf twin enable'.")
 			return
 		}
 
@@ -437,11 +448,11 @@ func showTFETwinStatus(engine string, layout tfeTwinLayout) {
 
 	fmt.Println("\n💡 Tips:")
 	if !anyRunning {
-		fmt.Println("   Run 'hal tf deploy' first, then 'hal tf twin -e'.")
+		fmt.Println("   Run 'hal tf create' first, then 'hal tf twin enable'.")
 	} else {
 		fmt.Printf("   🔗 UI Address: %s\n", layout.UIURL)
 		fmt.Println("   Twin reuses hal-tfe-db, hal-tfe-redis, and hal-tfe-minio.")
-		fmt.Println("   To remove twin resources, run: hal tf twin --disable")
+		fmt.Println("   To remove twin resources, run: hal tf twin disable")
 	}
 }
 
@@ -490,7 +501,7 @@ func ensureSharedTFEEcosystemRunning(engine string) error {
 	required := []string{"hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio"}
 	for _, container := range required {
 		if !global.IsContainerRunning(engine, container) {
-			return fmt.Errorf("required shared component '%s' is not running; run 'hal tf deploy' first", container)
+			return fmt.Errorf("required shared component '%s' is not running; run 'hal tf create' first", container)
 		}
 	}
 	return nil
@@ -680,8 +691,13 @@ func waitForTwinService(url string, maxRetries int) error {
 func init() {
 	twinCmd.Flags().BoolVarP(&tfeTwinEnable, "enable", "e", false, "Deploy the twin Terraform Enterprise instance")
 	twinCmd.Flags().BoolVar(&tfeTwinDisable, "disable", false, "Destroy the twin Terraform Enterprise instance and remove its local artifacts")
+	twinCmd.Flags().BoolVarP(&tfeTwinUpdate, "update", "u", false, "Reconcile the twin Terraform Enterprise instance in place")
 	twinCmd.Flags().BoolVar(&tfeTwinConfigureObsOnly, "configure-obs", false, "Refresh only the twin Prometheus target file")
 	twinCmd.Flags().BoolVarP(&tfeTwinForce, "force", "f", false, "Force redeploy by deleting any existing twin resources first")
+	_ = twinCmd.Flags().MarkHidden("enable")
+	_ = twinCmd.Flags().MarkHidden("disable")
+	_ = twinCmd.Flags().MarkHidden("update")
+	_ = twinCmd.Flags().MarkDeprecated("force", "use --update instead")
 	twinCmd.Flags().StringVarP(&tfeTwinVersion, "version", "v", "1.2.0", "Terraform Enterprise Docker image tag for the twin instance")
 	twinCmd.Flags().StringVarP(&tfeTwinPassword, "password", "p", "hal-secret-encryption-password", "Twin TFE encryption password")
 	twinCmd.Flags().StringVar(&tfeTwinOrg, "tfe-org", "hal", "Terraform Enterprise organization name to auto-bootstrap for the twin instance")

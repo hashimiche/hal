@@ -17,14 +17,15 @@ var (
 	vaultVersion      string
 	vaultEdition      string // ce or ent
 	vaultHelperImage  string
+	vaultUpdate       bool
 	vaultForce        bool
 	vaultJoinConsul   bool
 	vaultConfigureObs bool
 )
 
 var deployCmd = &cobra.Command{
-	Use:   "deploy",
-	Short: "Deploy a local Vault instance",
+	Use:   "create",
+	Short: "Create a local Vault instance",
 	Run: func(cmd *cobra.Command, args []string) {
 
 		engine, err := global.DetectEngine()
@@ -36,12 +37,12 @@ var deployCmd = &cobra.Command{
 		if vaultConfigureObs {
 			if !global.IsContainerRunning(engine, "hal-vault") {
 				fmt.Println("❌ Vault is not running. Deploy it first before configuring observability artifacts.")
-				fmt.Println("   💡 Run 'hal vault deploy' and then retry with '--configure-obs' if needed.")
+				fmt.Println("   💡 Run 'hal vault create' and then retry with '--configure-obs' if needed.")
 				return
 			}
 			if !global.IsObsReady(engine) {
 				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
-				fmt.Println("   💡 Run 'hal obs deploy' first, then retry '--configure-obs'.")
+				fmt.Println("   💡 Run 'hal obs create' first, then retry '--configure-obs'.")
 				return
 			}
 
@@ -58,7 +59,7 @@ var deployCmd = &cobra.Command{
 		// ==========================================
 		if vaultJoinConsul && !global.IsConsulRunning(engine) {
 			fmt.Println("❌ Error: --join-consul was requested, but the global Consul brain is not running.")
-			fmt.Println("   💡 Run 'hal consul deploy' first to bring the Control Plane online.")
+			fmt.Println("   💡 Run 'hal consul create' first to bring the Control Plane online.")
 			return
 		}
 
@@ -71,9 +72,9 @@ var deployCmd = &cobra.Command{
 			}
 		}
 
-		if vaultForce {
+		if vaultUpdate || vaultForce {
 			if global.Debug {
-				fmt.Println("[DEBUG] --force flag detected. Purging existing Vault and Volumes...")
+				fmt.Println("[DEBUG] --update/--force detected. Reconciling Vault by replacing runtime artifacts...")
 			}
 			_ = exec.Command(engine, "rm", "-f", "hal-vault").Run()
 			_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-logs").Run() // Purge des anciens logs
@@ -141,7 +142,7 @@ var deployCmd = &cobra.Command{
 		out, err := exec.Command(engine, vaultArgs...).CombinedOutput()
 		if err != nil {
 			if strings.Contains(string(out), "AlreadyExists") || strings.Contains(string(out), "already in use") {
-				fmt.Println("⚠️  Vault is already deployed! Use '--force' to redeploy.")
+				fmt.Println("⚠️  Vault already exists. Use '--update' to reconcile it.")
 				return
 			}
 			fmt.Printf("❌ Failed to start Vault: %s\n", string(out))
@@ -207,15 +208,17 @@ func handleDockerFailure(container string, engine string) {
 	} else {
 		fmt.Println("(No logs found)")
 	}
-	fmt.Println("⚠️  Deployment halted. Run 'hal vault destroy' to clean up the broken resources.")
+	fmt.Println("⚠️  Deployment halted. Run 'hal vault delete' to clean up the broken resources.")
 }
 
 func init() {
 	deployCmd.Flags().StringVarP(&vaultVersion, "version", "v", "2.0", "Vault version to deploy")
 	deployCmd.Flags().StringVarP(&vaultEdition, "edition", "e", "ce", "Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise)")
 	deployCmd.Flags().StringVar(&vaultHelperImage, "helper-image", "alpine:3.22", "Helper image used for one-shot setup tasks during Vault deploy")
+	deployCmd.Flags().BoolVarP(&vaultUpdate, "update", "u", false, "Reconcile an existing Vault deployment in place")
 	deployCmd.Flags().BoolVarP(&vaultForce, "force", "f", false, "Force redeploy")
 	deployCmd.Flags().BoolVar(&vaultConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Vault")
+	_ = deployCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	// The unified global join flag
 	deployCmd.Flags().BoolVarP(&vaultJoinConsul, "join-consul", "c", false, "Tether Vault to the global HAL Consul instance")

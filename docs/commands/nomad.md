@@ -6,7 +6,7 @@
 - Default behavior: runs `hal nomad status`
 
 ## Subcommands
-- `hal nomad deploy`
+- `hal nomad create`
   - Deploy local Nomad cluster VM(s)
   - Spec: [nomad-deploy.md](nomad-deploy.md)
 
@@ -14,7 +14,7 @@
   - Show Nomad cluster health/status
   - Spec: [nomad-status.md](nomad-status.md)
 
-- `hal nomad destroy`
+- `hal nomad delete`
   - Destroy Nomad VM resources
   - Spec: [nomad-destroy.md](nomad-destroy.md)
 

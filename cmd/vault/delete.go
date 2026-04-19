@@ -26,8 +26,8 @@ var vaultVolumes = []string{
 }
 
 var vaultDestroyCmd = &cobra.Command{
-	Use:   "destroy",
-	Short: "Destroy the local Vault instance and associated extensions (like Keycloak)",
+	Use:   "delete",
+	Short: "Delete the local Vault instance and associated extensions (like Keycloak)",
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
 		if err != nil {

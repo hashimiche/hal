@@ -16,7 +16,7 @@ User: I need Boundary access to MariaDB with temporary Vault creds.
 
 Assistant:
 
-    hal boundary mariadb --enable --with-vault --force
+    hal boundary mariadb enable --with-vault --force
 
 Assistant: After deploy, I route the user to the DB-aware connect flow.
 
@@ -29,8 +29,8 @@ User: I want SSH target access but Boundary UI is down.
 
 Assistant:
 
-    hal boundary deploy
-    hal boundary ssh --enable
+    hal boundary create
+    hal boundary ssh enable
 
 ## Example 4: Clean Rebuild
 
@@ -38,8 +38,8 @@ User: Reset all Boundary resources.
 
 Assistant:
 
-    hal boundary destroy
-    hal boundary deploy
+    hal boundary delete
+    hal boundary create
 
 ## Example 5: Backfill Boundary Monitoring Without Redeploy
 
@@ -47,4 +47,4 @@ User: Boundary is already up. I only want Prometheus/Grafana wiring now.
 
 Assistant:
 
-    hal boundary deploy --configure-obs
+    hal boundary create --configure-obs

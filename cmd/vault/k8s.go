@@ -17,6 +17,7 @@ import (
 var (
 	k8sEnable       bool
 	k8sDisable      bool
+	k8sUpdate       bool
 	k8sForce        bool
 	csiMode         bool
 	jwtAuth         bool
@@ -35,10 +36,15 @@ func isVaultEnterprise(client *vault.Client) bool {
 }
 
 var vaultK8sCmd = &cobra.Command{
-	Use:   "k8s",
+	Use:   "k8s [status|enable|disable|update]",
 	Short: "Deploy KinD and Vault Secrets Operator (Native or CSI Mode)",
-	Args:  cobra.NoArgs,
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := parseLifecycleAction(args, &k8sEnable, &k8sDisable, &k8sUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
@@ -64,7 +70,7 @@ var vaultK8sCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !k8sEnable && !k8sDisable && !k8sForce {
+		if !k8sEnable && !k8sDisable && !k8sUpdate && !k8sForce {
 			fmt.Println("🔍 Checking Vault / Kubernetes Status...")
 
 			// Check KinD Cluster
@@ -142,16 +148,16 @@ var vaultK8sCmd = &cobra.Command{
 			fmt.Println("\n💡 Next Step:")
 			if !clusterRunning && !k8sMounted && !jwtMounted {
 				fmt.Println("   To deploy KinD, VSO, and wire up Vault, run:")
-				fmt.Println("   hal vault k8s --enable [--csi]")
+				fmt.Println("   hal vault k8s enable [--csi]")
 			} else if clusterRunning && vsoInstalled && (k8sMounted || jwtMounted) && proxyServiceReady {
 				fmt.Println("   Demo is ready at: http://web.localhost:8088")
 				fmt.Println("   No kubectl port-forward needed.")
 				fmt.Println("\n   To completely remove this cluster and clean Vault, run:")
-				fmt.Println("   hal vault k8s --disable")
+				fmt.Println("   hal vault k8s disable")
 			} else {
 				fmt.Println("   Environment is partially degraded. To safely reset, run:")
-				fmt.Println("   hal vault k8s --force [--csi]")
-				fmt.Println("   Then run: hal vault k8s --enable")
+				fmt.Println("   hal vault k8s update [--csi]")
+				fmt.Println("   Then run: hal vault k8s enable")
 			}
 			return
 		}
@@ -159,7 +165,7 @@ var vaultK8sCmd = &cobra.Command{
 		// ==========================================
 		// 2. TEARDOWN / RESET PATH (--disable / --force)
 		// ==========================================
-		if k8sDisable || k8sForce {
+		if k8sDisable || k8sUpdate || k8sForce {
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would execute: kind delete cluster")
 				fmt.Println("[DRY RUN] Would call API to clean up Vault entities and auth mounts")
@@ -167,7 +173,7 @@ var vaultK8sCmd = &cobra.Command{
 				if k8sDisable {
 					fmt.Println("🛑 Tearing down Kubernetes environment...")
 				} else {
-					fmt.Println("♻️  Force flag detected. Destroying KinD cluster for reset...")
+					fmt.Println("♻️  Update requested. Destroying KinD cluster for reconciliation...")
 				}
 
 				fmt.Println("⚙️  Connecting to Vault API for cleanup...")
@@ -232,7 +238,7 @@ var vaultK8sCmd = &cobra.Command{
 		// ==========================================
 		// 3. DEPLOY / ENABLE PATH (--enable / --force)
 		// ==========================================
-		if k8sEnable || k8sForce {
+		if k8sEnable || k8sUpdate || k8sForce {
 			if vaultErr != nil {
 				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
 				return
@@ -852,7 +858,12 @@ func init() {
 	// Standard Lifecycle Flags
 	vaultK8sCmd.Flags().BoolVarP(&k8sEnable, "enable", "e", false, "Deploy KinD and configure Vault Secrets Operator")
 	vaultK8sCmd.Flags().BoolVarP(&k8sDisable, "disable", "d", false, "Destroy KinD and clean up Vault configurations")
+	vaultK8sCmd.Flags().BoolVarP(&k8sUpdate, "update", "u", false, "Reconcile cluster and VSO configuration")
 	vaultK8sCmd.Flags().BoolVarP(&k8sForce, "force", "f", false, "Force a clean redeployment of the cluster")
+	_ = vaultK8sCmd.Flags().MarkHidden("enable")
+	_ = vaultK8sCmd.Flags().MarkHidden("disable")
+	_ = vaultK8sCmd.Flags().MarkHidden("update")
+	_ = vaultK8sCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	// Feature-Specific Flags
 	vaultK8sCmd.Flags().BoolVar(&csiMode, "csi", false, "Use the VSO CSI Driver (Requires Vault Enterprise)")

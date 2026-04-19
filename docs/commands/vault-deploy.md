@@ -1,7 +1,7 @@
 # HAL Vault Deploy Command Spec
 
 ## Command
-- `hal vault deploy`
+- `hal vault create`
 
 ## Purpose
 Deploy a local Vault instance and baseline configuration for HAL labs.
@@ -13,7 +13,7 @@ Deploy a local Vault instance and baseline configuration for HAL labs.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
-- Command flags from `hal vault deploy --help`:
+- Command flags from `hal vault create --help`:
 ```text
 --configure-obs         Refresh Prometheus target and Grafana dashboard artifacts without redeploying Vault
 -e, --edition string        Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise) (default "ce")
@@ -30,5 +30,5 @@ Deploy a local Vault instance and baseline configuration for HAL labs.
 
 ## Example
 ```bash
-hal vault deploy
+hal vault create
 ```

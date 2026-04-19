@@ -6,7 +6,7 @@ User: Deploy Boundary in this lab.
 
 Assistant:
 
-	hal boundary deploy
+	hal boundary create
 
 Assistant: I verify core services and provide next target commands.
 
@@ -17,7 +17,7 @@ User: Boundary is half-working.
 Assistant:
 
 	hal boundary status
-	hal boundary deploy --force
+	hal boundary create --force
 
 Assistant: I confirm clean control-plane recovery.
 
@@ -27,5 +27,5 @@ User: Bring Boundary up and add SSH target.
 
 Assistant:
 
-	hal boundary deploy
-	hal boundary ssh --enable
+	hal boundary create
+	hal boundary ssh enable

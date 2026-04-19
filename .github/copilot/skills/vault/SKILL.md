@@ -9,15 +9,15 @@ Use this router when the user says Vault but does not clearly specify the exact 
 
 ## Product Baseline
 
-- Base deploy command: `hal vault deploy`
+- Base deploy command: `hal vault create`
 - Default startup mode: Vault dev mode with root token `root`
-- Enterprise path: `hal vault deploy --edition ent` with `VAULT_LICENSE` exported
+- Enterprise path: `hal vault create --edition ent` with `VAULT_LICENSE` exported
 - Observability surfaces (when obs is deployed):
 	- Grafana: `http://grafana.localhost:3000`
 	- Prometheus: `http://prometheus.localhost:9090`
 	- Loki: `http://loki.localhost:3100/ready`
 
-If obs comes after Vault, prefer `hal vault deploy --configure-obs` to backfill metrics/dashboard artifacts.
+If obs comes after Vault, prefer `hal vault create --configure-obs` to backfill metrics/dashboard artifacts.
 
 ## Routing Rules
 
@@ -42,13 +42,13 @@ If obs comes after Vault, prefer `hal vault deploy --configure-obs` to backfill 
 ## Enterprise Feature Guardrails
 
 - Sentinel policy packs (RGP/EGP) should be framed as Enterprise-only.
-- K8s CSI projection mode (`hal vault k8s --enable --csi`) requires Enterprise in this lab.
+- K8s CSI projection mode (`hal vault k8s enable --csi`) requires Enterprise in this lab.
 - If Enterprise-only asks arrive on CE, state the limitation and provide the explicit upgrade command path.
 
 ## Quick Triage Sequence
 
 1. Run hal vault status for initial state.
-2. If Vault is down, run hal vault deploy.
+2. If Vault is down, run hal vault create.
 3. Determine if CE is sufficient or Enterprise is required for requested features.
 4. Route to the correct specialized skill based on the user intent.
 5. Verify state with MCP or vault CLI before concluding.

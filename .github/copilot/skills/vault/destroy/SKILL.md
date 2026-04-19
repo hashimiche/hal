@@ -7,11 +7,11 @@ description: Destroy local Vault lab resources in hal. Use when the user asks fo
 
 ## Intent
 
-Handle hal vault destroy requests with a stable lifecycle pattern.
+Handle hal vault delete requests with a stable lifecycle pattern.
 
 ## Primary Command
 
-- hal vault destroy
+- hal vault delete
 
 ## Validation
 

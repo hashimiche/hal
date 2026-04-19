@@ -6,13 +6,13 @@ User: Bring Vault up in my local lab.
 
 Assistant:
 
-    hal vault deploy
+    hal vault create
 
 Assistant: I verify service health and entry points, then mention observability wiring.
 
     hal vault status
 
-Assistant: I remind the user Vault is in dev mode with root token `root`. If `hal obs deploy` is already active, Vault metrics are auto-registered in Prometheus and the Vault dashboard is auto-imported into Grafana folder HAL.
+Assistant: I remind the user Vault is in dev mode with root token `root`. If `hal obs create` is already active, Vault metrics are auto-registered in Prometheus and the Vault dashboard is auto-imported into Grafana folder HAL.
 
 ## Example 2: Redeploy After Bad State
 
@@ -20,7 +20,7 @@ User: Vault became unstable after local restarts.
 
 Assistant:
 
-    hal vault deploy
+    hal vault create
     hal vault status
 
 Assistant: If instability persists, I recommend a full destroy then deploy cycle.
@@ -31,8 +31,8 @@ User: Vault is up now, but I also want metrics and dashboards ready.
 
 Assistant:
 
-    hal obs deploy
-    hal vault deploy -f
+    hal obs create
+    hal vault create -f
 
 Assistant: Vault deploy re-registers the Prometheus target and re-imports the Vault dashboard into folder HAL automatically.
 
@@ -42,7 +42,7 @@ User: I deployed Vault earlier, then added obs later. Just wire monitoring.
 
 Assistant:
 
-    hal vault deploy --configure-obs
+    hal vault create --configure-obs
 
 Assistant: This refreshes only the Prometheus target and Grafana dashboard artifacts without redeploying Vault.
 
@@ -52,8 +52,8 @@ User: Start Vault, then set up OIDC.
 
 Assistant:
 
-    hal vault deploy
-    hal vault oidc --enable
+    hal vault create
+    hal vault oidc enable
 
 ## Example 6: Deploy Vault Enterprise
 
@@ -62,5 +62,5 @@ User: I need Enterprise features for this Vault lab.
 Assistant:
 
     export VAULT_LICENSE='your_license_string'
-    hal vault deploy --edition ent --force
+    hal vault create --edition ent --force
     hal vault status

@@ -28,4 +28,4 @@ User: Run setup and then enable MariaDB target.
 Assistant:
 
     hal boundary setup
-    hal boundary mariadb --enable
+    hal boundary mariadb enable

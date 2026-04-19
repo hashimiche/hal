@@ -1,7 +1,7 @@
 # HAL Nomad Destroy Command Spec
 
 ## Command
-- `hal nomad destroy`
+- `hal nomad delete`
 
 ## Purpose
 Destroy local Nomad VM resources provisioned by HAL.
@@ -13,7 +13,7 @@ Destroy local Nomad VM resources provisioned by HAL.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
-- Command flags from `hal nomad destroy --help`:
+- Command flags from `hal nomad delete --help`:
 ```text
 -h, --help   help for destroy
 ```
@@ -24,5 +24,5 @@ Destroy local Nomad VM resources provisioned by HAL.
 
 ## Example
 ```bash
-hal nomad destroy
+hal nomad delete
 ```

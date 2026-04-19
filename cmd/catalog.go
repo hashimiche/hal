@@ -32,7 +32,7 @@ var catalogCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Println("=========================================================")
 		fmt.Println("💡 Tip: Run 'hal <product>' to view its Smart Status dashboard!")
-		fmt.Println("   Or run 'hal <product> deploy' to spin it up.")
+		fmt.Println("   Or run 'hal <product> create' to spin it up.")
 		fmt.Println("=========================================================")
 	},
 }

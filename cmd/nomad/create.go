@@ -18,13 +18,14 @@ var (
 	nomadCPUs         string
 	nomadMem          string
 	nomadJoinConsul   bool // The new unified Control Plane flag
+	nomadUpdate       bool
 	nomadForce        bool
 	nomadConfigureObs bool
 )
 
 var deployCmd = &cobra.Command{
-	Use:   "deploy",
-	Short: "Deploy a local Nomad cluster via Multipass",
+	Use:   "create",
+	Short: "Create a local Nomad cluster via Multipass",
 	Run: func(cmd *cobra.Command, args []string) {
 		if nomadConfigureObs {
 			if global.DryRun {
@@ -33,7 +34,7 @@ var deployCmd = &cobra.Command{
 			}
 			if !global.MultipassInstanceExists("hal-nomad") {
 				fmt.Println("❌ Nomad VM is not present. Deploy it first before configuring observability artifacts.")
-				fmt.Println("   💡 Run 'hal nomad deploy' and then retry with '--configure-obs' if needed.")
+				fmt.Println("   💡 Run 'hal nomad create' and then retry with '--configure-obs' if needed.")
 				return
 			}
 			engine, err := global.DetectEngine()
@@ -43,7 +44,7 @@ var deployCmd = &cobra.Command{
 			}
 			if !global.IsObsReady(engine) {
 				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
-				fmt.Println("   💡 Run 'hal obs deploy' first, then retry '--configure-obs'.")
+				fmt.Println("   💡 Run 'hal obs create' first, then retry '--configure-obs'.")
 				return
 			}
 
@@ -67,17 +68,17 @@ var deployCmd = &cobra.Command{
 			engine, err := global.DetectEngine()
 			if err != nil || !global.IsConsulRunning(engine) {
 				fmt.Println("❌ Error: --join-consul was requested, but the global Consul brain is not running.")
-				fmt.Println("   💡 Run 'hal consul deploy' first to bring the Control Plane online.")
+				fmt.Println("   💡 Run 'hal consul create' first to bring the Control Plane online.")
 				return
 			}
 		}
 
-		if nomadForce {
+		if nomadUpdate || nomadForce {
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would delete existing VM 'hal-nomad' and purge")
 			}
 			if global.Debug {
-				fmt.Println("[DEBUG] --force flag detected. Purging existing VM 'hal-nomad'...")
+				fmt.Println("[DEBUG] --update/--force detected. Purging existing VM 'hal-nomad' for reconciliation...")
 			}
 			if !global.DryRun {
 				_ = exec.Command("multipass", "delete", "hal-nomad").Run()
@@ -104,7 +105,7 @@ var deployCmd = &cobra.Command{
 		out, err := exec.Command("multipass", launchArgs...).CombinedOutput()
 		if err != nil {
 			if strings.Contains(string(out), "already exists") {
-				fmt.Println("⚠️  VM 'hal-nomad' already exists! Use '--force' to redeploy.")
+				fmt.Println("⚠️  VM 'hal-nomad' already exists. Use '--update' to reconcile it.")
 				return
 			}
 			fmt.Printf("❌ Failed to launch VM: %v\nOutput: %s\n", err, string(out))
@@ -214,7 +215,7 @@ func handleServiceFailure(service string) {
 	} else {
 		fmt.Println("(No logs found)")
 	}
-	fmt.Println("⚠️  Deployment halted. Run 'hal nomad destroy' to clean up the broken VM.")
+	fmt.Println("⚠️  Deployment halted. Run 'hal nomad delete' to clean up the broken VM.")
 }
 
 func extractMultipassIP(csvData string) string {
@@ -233,8 +234,10 @@ func init() {
 	deployCmd.Flags().StringVar(&nomadUbuntuImage, "ubuntu-image", "22.04", "Multipass image/channel used for the Nomad VM")
 	deployCmd.Flags().StringVar(&nomadCPUs, "cpus", "2", "Number of CPUs for the VM")
 	deployCmd.Flags().StringVar(&nomadMem, "mem", "2G", "Amount of RAM for the VM")
+	deployCmd.Flags().BoolVarP(&nomadUpdate, "update", "u", false, "Reconcile an existing Nomad deployment in place")
 	deployCmd.Flags().BoolVarP(&nomadForce, "force", "f", false, "Force redeploy")
 	deployCmd.Flags().BoolVar(&nomadConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Nomad")
+	_ = deployCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	// The unified global join flag
 	deployCmd.Flags().BoolVarP(&nomadJoinConsul, "join-consul", "c", false, "Tether Nomad to the global HAL Consul instance")

@@ -6,17 +6,18 @@
 ## Purpose
 Build and run the ephemeral Terraform/TFX helper shell for local TFE workflows.
 
-## Core Lifecycle Flags
-- `--enable`, `-e`: build or refresh helper image
+## Core Lifecycle Actions
+- `enable`: build or refresh helper image
 - `--console`, `-c`: start helper container and open shell
-- `--disable`, `-d`: remove helper container and HAL-managed scenario workspaces
-- `--force`, `-f`: force recreation or skip confirmation where applicable
+- `disable`: remove helper container and HAL-managed scenario workspaces
+- `update`: reconcile helper image/container state
+- `--force`, `-f`: preserve compatibility for forceful recreation/confirmation bypass
 
 ## Behavior
 - Ensures helper image/container lifecycle for local TFE usage.
 - Bootstraps helper auth context for Terraform and TFX.
 - Ensures default scenario projects/workspaces in TFE (`Dave`, `Frank`, and the `hal-*` workspace set) during console bootstrap.
-- Supports status view when run with no lifecycle flag.
+- Supports status view when run with no lifecycle action.
 
 ## Detailed Reference
 - [../terraform-cli-container-spec.md](../terraform-cli-container-spec.md)
@@ -34,8 +35,6 @@ Build and run the ephemeral Terraform/TFX helper shell for local TFE workflows.
 --banner                      Print helper welcome banner without opening a shell
 --base-image string           Base image used to build the helper image (default "ghcr.io/straubt1/tfx:latest")
 -c, --console                     Start helper container and open an interactive shell
--d, --disable                     Remove the helper container and delete HAL-managed scenario workspaces
--e, --enable                      Build or refresh the Terraform/TFX helper image
 -f, --force                       Rebuild image and recreate helper container
 -h, --help                        help for cli
 --local-directory string      Optional host directory to mount into the helper at /workspaces
@@ -45,6 +44,7 @@ Build and run the ephemeral Terraform/TFX helper shell for local TFE workflows.
 --tfe-org string              Default Terraform Enterprise organization written to ~/.tfx.hcl (default "hal")
 --tfe-project string          Optional Terraform Enterprise project to ensure during helper token bootstrap
 --tfe-url string              Terraform Enterprise URL used for helper auth bootstrap (default "https://tfe.localhost:8443")
+-u, --update                      Reconcile helper image/container and refresh runtime configuration
 --verbose                     Show raw Docker build logs instead of HAL build animation
 ```
 - Global flags: `--debug`, `--dry-run`

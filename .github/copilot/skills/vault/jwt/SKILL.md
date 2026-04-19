@@ -36,9 +36,9 @@ Use smart status mode if needed:
 
 Then use the correct lifecycle command:
 
-    hal vault jwt --enable
+    hal vault jwt enable
     hal vault jwt --force
-    hal vault jwt --disable
+    hal vault jwt disable
 
 ### Step 2: Verify the resulting Vault config
 
@@ -86,7 +86,7 @@ Provide a brief confirmation that the JWT auth method is enabled and configured.
 
 ## Handling Edge Cases
 
-1. **Vault is not running:** Instruct the user to run `hal vault deploy` first.
+1. **Vault is not running:** Instruct the user to run `hal vault create` first.
 2. **GitLab is not ready yet:** Tell the user the GitLab boot sequence can take several minutes.
 3. **Missing or mismatched claims:** Point the user to `vault read auth/jwt/role/cicd-role` and compare `bound_claims`, `bound_claims_type`, and `bound_audiences`.
 4. **Tag/branch mismatch in CI:** Explain that the default lab policy is tag-focused (`ref=v*`) and suggest explicit role updates if branch-based auth is desired.

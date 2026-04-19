@@ -16,11 +16,10 @@ Deploy a Multipass Ubuntu VM as a Boundary SSH target.
 - Command flags from `hal boundary ssh --help`:
 ```text
 --cpus string           Number of CPUs for the SSH target VM (default "1")
--d, --disable               Remove the SSH Target
--e, --enable                Deploy the SSH Target
 -f, --force                 Force a clean redeployment
 -h, --help                  help for ssh
 --mem string            Amount of RAM for the SSH target VM (default "512M")
+-u, --update                Reconcile SSH target VM and Boundary target wiring
 --ubuntu-image string   Multipass image/channel used for the SSH target VM (default "22.04")
 ```
 - Global flags: `--debug`, `--dry-run`
@@ -30,5 +29,5 @@ Deploy a Multipass Ubuntu VM as a Boundary SSH target.
 
 ## Example
 ```bash
-hal boundary ssh
+hal boundary ssh enable
 ```

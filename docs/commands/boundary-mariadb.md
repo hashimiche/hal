@@ -15,11 +15,10 @@ Deploy a MariaDB database target for Boundary labs.
 ## Flags
 - Command flags from `hal boundary mariadb --help`:
 ```text
--d, --disable                  Remove MariaDB
--e, --enable                   Deploy MariaDB
 -f, --force                    Force Reset
 -h, --help                     help for mariadb
 --mariadb-version string   Version (default "11.4")
+-u, --update                   Reconcile MariaDB target and Boundary target configuration
 --with-vault               Link with Vault Dynamic Creds
 ```
 - Global flags: `--debug`, `--dry-run`
@@ -29,5 +28,5 @@ Deploy a MariaDB database target for Boundary labs.
 
 ## Example
 ```bash
-hal boundary mariadb
+hal boundary mariadb enable
 ```

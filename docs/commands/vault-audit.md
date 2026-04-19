@@ -15,13 +15,12 @@ Manage and inspect Vault audit logging state in local lab environments.
 ## Flags
 - Command flags from `hal vault audit --help`:
 ```text
--d, --disable       Disable the audit configuration
--e, --enable        Enable the audit configuration
 -f, --force         Force a clean reconfiguration (disable then enable)
 -h, --help          help for audit
 --loki          Auto-configure the shared volume integration for Promtail/Loki
 -p, --path string   Path to mount the audit device (e.g., file/) (default "file")
 -t, --type string   Type of audit device (file, socket, syslog) (default "file")
+-u, --update        Reconcile the audit configuration (disable then enable)
 ```
 - Global flags: `--debug`, `--dry-run`
 
@@ -30,5 +29,5 @@ Manage and inspect Vault audit logging state in local lab environments.
 
 ## Example
 ```bash
-hal vault audit
+hal vault audit enable --loki
 ```
