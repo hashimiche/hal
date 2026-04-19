@@ -29,4 +29,4 @@ User: Reset the Vault database secrets lab.
 
 Assistant:
 
-    hal vault database --force
+    hal vault database --update

@@ -18,7 +18,6 @@ var (
 	k8sEnable       bool
 	k8sDisable      bool
 	k8sUpdate       bool
-	k8sForce        bool
 	csiMode         bool
 	jwtAuth         bool
 	kindNodeImage   string
@@ -70,7 +69,7 @@ var vaultK8sCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !k8sEnable && !k8sDisable && !k8sUpdate && !k8sForce {
+		if !k8sEnable && !k8sDisable && !k8sUpdate {
 			fmt.Println("🔍 Checking Vault / Kubernetes Status...")
 
 			// Check KinD Cluster
@@ -163,9 +162,9 @@ var vaultK8sCmd = &cobra.Command{
 		}
 
 		// ==========================================
-		// 2. TEARDOWN / RESET PATH (--disable / --force)
+		// 2. TEARDOWN / RESET PATH (--disable / --update)
 		// ==========================================
-		if k8sDisable || k8sUpdate || k8sForce {
+		if k8sDisable || k8sUpdate {
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would execute: kind delete cluster")
 				fmt.Println("[DRY RUN] Would call API to clean up Vault entities and auth mounts")
@@ -236,9 +235,9 @@ var vaultK8sCmd = &cobra.Command{
 		}
 
 		// ==========================================
-		// 3. DEPLOY / ENABLE PATH (--enable / --force)
+		// 3. DEPLOY / ENABLE PATH (--enable / --update)
 		// ==========================================
-		if k8sEnable || k8sUpdate || k8sForce {
+		if k8sEnable || k8sUpdate {
 			if vaultErr != nil {
 				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
 				return
@@ -266,7 +265,7 @@ var vaultK8sCmd = &cobra.Command{
 			clusterCheck, _ := exec.Command("kind", "get", "clusters").Output()
 			if strings.Contains(string(clusterCheck), "kind") {
 				fmt.Println("⚡ KinD cluster already running, skipping boot sequence...")
-				fmt.Println("   ℹ️  Existing clusters may not expose host port 8088. Use --force once to recreate with HAL ingress mapping.")
+				fmt.Println("   ℹ️  Existing clusters may not expose host port 8088. Use --update once to recreate with HAL ingress mapping.")
 			} else {
 				fmt.Println("🚀 Booting KinD Cluster (attached directly to hal-net)...")
 				kindConfigPath, cfgErr := writeKindConfigWithIngress()
@@ -859,11 +858,9 @@ func init() {
 	vaultK8sCmd.Flags().BoolVarP(&k8sEnable, "enable", "e", false, "Deploy KinD and configure Vault Secrets Operator")
 	vaultK8sCmd.Flags().BoolVarP(&k8sDisable, "disable", "d", false, "Destroy KinD and clean up Vault configurations")
 	vaultK8sCmd.Flags().BoolVarP(&k8sUpdate, "update", "u", false, "Reconcile cluster and VSO configuration")
-	vaultK8sCmd.Flags().BoolVarP(&k8sForce, "force", "f", false, "Force a clean redeployment of the cluster")
 	_ = vaultK8sCmd.Flags().MarkHidden("enable")
 	_ = vaultK8sCmd.Flags().MarkHidden("disable")
 	_ = vaultK8sCmd.Flags().MarkHidden("update")
-	_ = vaultK8sCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	// Feature-Specific Flags
 	vaultK8sCmd.Flags().BoolVar(&csiMode, "csi", false, "Use the VSO CSI Driver (Requires Vault Enterprise)")

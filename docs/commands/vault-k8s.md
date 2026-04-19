@@ -13,10 +13,10 @@ Deploy KinD and Vault Secrets Operator scenario for Kubernetes integration labs.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
+- Deprecated: older HAL docs may reference `hal vault k8s --force`. That flag has been removed from the CLI. Use `hal vault k8s update`.
 - Command flags from `hal vault k8s --help`:
 ```text
 --csi                        Use the VSO CSI Driver (Requires Vault Enterprise)
--f, --force                      Force a clean redeployment of the cluster
 -u, --update                     Reconcile cluster and VSO configuration
 -h, --help                       help for k8s
 --jwt                        Use the advanced jwt-k8s OIDC architecture (experimental)

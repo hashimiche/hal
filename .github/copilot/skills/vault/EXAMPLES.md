@@ -36,7 +36,7 @@ User: I want CSI projection for VSO and Sentinel policy examples.
 Assistant: Those are Enterprise-only in this lab, so I switch Vault to Enterprise first.
 
     export VAULT_LICENSE='your_license_string'
-    hal vault create --edition ent --force
+    hal vault create --edition ent --update
     hal vault k8s enable --csi
 
 ## Example 5: Observability Backfill

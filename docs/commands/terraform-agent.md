@@ -26,10 +26,10 @@ Manage custom TFE agent-pool runtime for local workspace runs.
 - TFE organization exists or can be bootstrapped by HAL.
 
 ## Flags
+- Deprecated: older HAL docs may reference `hal terraform agent enable --force`. That flag has been removed from the CLI. Use `hal terraform agent update`.
 - Command flags from `hal terraform agent --help`:
 ```text
 --agent-name string           Display name advertised by the running agent (default "hal-tfc-agent")
--f, --force                       Recreate the local agent container and rotate token
 -h, --help                        help for agent
 --image string                Docker image used for the custom TFE agent (default "hashicorp/tfc-agent:1.28")
 --pool-name string            TFE agent pool name to create or reuse (default "hal-agent-pool")

@@ -20,7 +20,6 @@ var (
 	oidcEnable      bool
 	oidcDisable     bool
 	oidcUpdate      bool
-	oidcForce       bool
 	keycloakVersion string
 )
 
@@ -46,7 +45,7 @@ var vaultOidcCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !oidcEnable && !oidcDisable && !oidcUpdate && !oidcForce {
+		if !oidcEnable && !oidcDisable && !oidcUpdate {
 			fmt.Println("🔍 Checking Vault OIDC / Keycloak Status...")
 
 			// Check Docker
@@ -100,9 +99,9 @@ var vaultOidcCmd = &cobra.Command{
 		}
 
 		// ==========================================
-		// 2. TEARDOWN / RESET PATH (--disable / --force)
+		// 2. TEARDOWN / RESET PATH (--disable / --update)
 		// ==========================================
-		if oidcDisable || oidcUpdate || oidcForce {
+		if oidcDisable || oidcUpdate {
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would execute: docker rm -f hal-keycloak")
 				fmt.Println("[DRY RUN] Would call API to clean up Vault OIDC mounts, identity groups, and policies")
@@ -110,7 +109,7 @@ var vaultOidcCmd = &cobra.Command{
 				if oidcDisable {
 					fmt.Println("🛑 Tearing down OIDC environment...")
 				} else {
-					fmt.Println("♻️  Force flag detected. Destroying OIDC environment for reset...")
+					fmt.Println("♻️  Update requested. Destroying OIDC environment for reset...")
 				}
 
 				if vaultErr == nil && client != nil {
@@ -129,22 +128,9 @@ var vaultOidcCmd = &cobra.Command{
 					fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
 				}
 
-				if oidcForce {
-					fmt.Println("⚙️  Removing Keycloak container...")
-					_ = exec.Command(engine, "rm", "-f", "hal-keycloak").Run()
-					_ = global.ClearSharedService("keycloak")
-				} else {
-					remaining, err := global.RemoveSharedServiceConsumer("keycloak", "vault-oidc")
-					if err != nil {
-						fmt.Printf("⚠️  Could not update shared service ownership metadata: %v\n", err)
-					}
-					if len(remaining) == 0 {
-						fmt.Println("⚙️  Removing Keycloak container...")
-						_ = exec.Command(engine, "rm", "-f", "hal-keycloak").Run()
-					} else {
-						fmt.Printf("ℹ️  Keeping Keycloak running for other consumers: %s\n", strings.Join(remaining, ", "))
-					}
-				}
+				fmt.Println("⚙️  Removing Keycloak container...")
+				_ = exec.Command(engine, "rm", "-f", "hal-keycloak").Run()
+				_ = global.ClearSharedService("keycloak")
 
 				if oidcDisable {
 					fmt.Println("✅ OIDC integration, KV engine, and identity data successfully removed!")
@@ -157,9 +143,9 @@ var vaultOidcCmd = &cobra.Command{
 		}
 
 		// ==========================================
-		// 3. DEPLOY / ENABLE PATH (--enable / --force)
+		// 3. DEPLOY / ENABLE PATH (--enable / --update)
 		// ==========================================
-		if oidcEnable || oidcUpdate || oidcForce {
+		if oidcEnable || oidcUpdate {
 			if vaultErr != nil {
 				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
 				return
@@ -429,11 +415,9 @@ func init() {
 	vaultOidcCmd.Flags().BoolVarP(&oidcEnable, "enable", "e", false, "Deploy Keycloak and fully configure Vault OIDC auth")
 	vaultOidcCmd.Flags().BoolVarP(&oidcDisable, "disable", "d", false, "Remove Keycloak and strip the OIDC configuration from Vault")
 	vaultOidcCmd.Flags().BoolVarP(&oidcUpdate, "update", "u", false, "Reconcile Keycloak and Vault OIDC integration")
-	vaultOidcCmd.Flags().BoolVarP(&oidcForce, "force", "f", false, "Force a clean redeployment of the OIDC environment")
 	_ = vaultOidcCmd.Flags().MarkHidden("enable")
 	_ = vaultOidcCmd.Flags().MarkHidden("disable")
 	_ = vaultOidcCmd.Flags().MarkHidden("update")
-	_ = vaultOidcCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	// Feature-Specific Flags
 	vaultOidcCmd.Flags().StringVar(&keycloakVersion, "keycloak-version", "24.0.4", "Version of the Keycloak container image to deploy")

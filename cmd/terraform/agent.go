@@ -38,7 +38,6 @@ var (
 	tfeAgentEnable        bool
 	tfeAgentDisable       bool
 	tfeAgentUpdate        bool
-	tfeAgentForce         bool
 	tfeAgentImage         string
 	tfeAgentPoolName      string
 	tfeAgentName          string
@@ -78,7 +77,6 @@ var agentCmd = &cobra.Command{
 
 		if tfeAgentUpdate {
 			tfeAgentEnable = true
-			tfeAgentForce = true
 		}
 
 		if !tfeAgentEnable {
@@ -167,12 +165,12 @@ func enableTFEAgent(engine string) error {
 		return fmt.Errorf("agent image cannot be empty")
 	}
 
-	if tfeAgentForce {
+	if tfeAgentUpdate {
 		_ = exec.Command(engine, "rm", "-f", tfeAgentContainerName).Run()
 	}
 
 	state, _ := loadTFEAgentState()
-	if global.IsContainerRunning(engine, tfeAgentContainerName) && !tfeAgentForce {
+	if global.IsContainerRunning(engine, tfeAgentContainerName) && !tfeAgentUpdate {
 		fmt.Println("ℹ️  Agent container is already running. Reusing existing runtime.")
 		if state != nil {
 			fmt.Printf("ℹ️  Existing pool: %s (%s)\n", state.PoolName, state.PoolID)
@@ -486,11 +484,9 @@ func init() {
 	agentCmd.Flags().BoolVarP(&tfeAgentEnable, "enable", "e", false, "Create or reuse a TFE agent pool, issue token, and run an agent container")
 	agentCmd.Flags().BoolVarP(&tfeAgentDisable, "disable", "d", false, "Stop and remove the HAL-managed TFE agent container and revoke its token")
 	agentCmd.Flags().BoolVarP(&tfeAgentUpdate, "update", "u", false, "Reconcile existing agent pool/runtime settings")
-	agentCmd.Flags().BoolVarP(&tfeAgentForce, "force", "f", false, "Recreate the local agent container and rotate token")
 	_ = agentCmd.Flags().MarkHidden("enable")
 	_ = agentCmd.Flags().MarkHidden("disable")
 	_ = agentCmd.Flags().MarkHidden("update")
-	_ = agentCmd.Flags().MarkDeprecated("force", "use --update instead")
 	agentCmd.Flags().StringVar(&tfeAgentImage, "image", defaultTFEAgentImage, "Docker image used for the custom TFE agent")
 	agentCmd.Flags().StringVar(&tfeAgentPoolName, "pool-name", defaultTFEAgentPoolName, "TFE agent pool name to create or reuse")
 	agentCmd.Flags().StringVar(&tfeAgentName, "agent-name", defaultTFEAgentDisplayName, "Display name advertised by the running agent")

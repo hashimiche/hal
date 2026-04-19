@@ -27,4 +27,4 @@ User: Rebuild OIDC integration completely.
 
 Assistant:
 
-    hal vault oidc --force
+    hal vault oidc --update

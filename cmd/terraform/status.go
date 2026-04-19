@@ -80,7 +80,7 @@ var statusCmd = &cobra.Command{
 			}
 		} else {
 			fmt.Println("   Environment is partially degraded or stopped. To safely reset, run:")
-			fmt.Println("   hal terraform create --force")
+			fmt.Println("   hal terraform create --update")
 			fmt.Println("\n   Or to tear everything down completely, run:")
 			fmt.Println("   hal terraform delete")
 		}

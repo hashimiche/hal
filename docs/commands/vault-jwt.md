@@ -13,10 +13,10 @@ Simulate enterprise Secret Zero CI/CD pipeline auth flow with GitLab JWT.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
+- Deprecated: older HAL docs may reference `hal vault jwt --force`. That flag has been removed from the CLI. Use `hal vault jwt update`.
 - Command flags from `hal vault jwt --help`:
 ```text
--f, --force                   Force a clean redeployment of the entire environment
---u, --update                  Reconcile GitLab and Vault JWT integration settings
+-u, --update                  Reconcile GitLab and Vault JWT integration settings
 --gitlab-version string   Version of the GitLab CE container image to deploy (default "18.10.1-ce.0")
 -h, --help                    help for jwt
 ```

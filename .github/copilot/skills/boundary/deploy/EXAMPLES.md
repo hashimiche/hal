@@ -17,7 +17,7 @@ User: Boundary is half-working.
 Assistant:
 
 	hal boundary status
-	hal boundary create --force
+	hal boundary create --update
 
 Assistant: I confirm clean control-plane recovery.
 

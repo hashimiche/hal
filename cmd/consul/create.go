@@ -13,7 +13,6 @@ import (
 var (
 	consulVersion      string
 	consulUpdate       bool
-	consulForce        bool
 	consulConfigureObs bool
 )
 
@@ -52,9 +51,9 @@ var deployCmd = &cobra.Command{
 		// 2. Ensure the global grid exists
 		global.EnsureNetwork(engine)
 
-		if consulUpdate || consulForce {
+		if consulUpdate {
 			if global.Debug {
-				fmt.Println("[DEBUG] --update/--force detected. Reconciling existing standalone Consul...")
+				fmt.Println("[DEBUG] --update detected. Reconciling existing standalone Consul...")
 			}
 			_ = exec.Command(engine, "rm", "-f", "hal-consul").Run()
 		}
@@ -96,12 +95,27 @@ var deployCmd = &cobra.Command{
 	},
 }
 
-func init() {
-	deployCmd.Flags().StringVarP(&consulVersion, "version", "v", "1.15.0", "Consul version to deploy")
-	deployCmd.Flags().BoolVarP(&consulUpdate, "update", "u", false, "Reconcile an existing Consul deployment in place")
-	deployCmd.Flags().BoolVarP(&consulForce, "force", "f", false, "Force redeploy")
-	deployCmd.Flags().BoolVar(&consulConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Consul")
-	_ = deployCmd.Flags().MarkDeprecated("force", "use --update instead")
+var updateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Reconcile an existing Consul server",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		consulUpdate = true
+		deployCmd.Run(cmd, args)
+	},
+}
 
+func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
+	cmd.Flags().StringVarP(&consulVersion, "version", "v", "1.15.0", "Consul version to deploy")
+	if includeUpdate {
+		cmd.Flags().BoolVarP(&consulUpdate, "update", "u", false, "Reconcile an existing Consul deployment in place")
+	}
+	cmd.Flags().BoolVar(&consulConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Consul")
+}
+
+func init() {
+	bindLifecycleFlags(deployCmd, true)
+	bindLifecycleFlags(updateCmd, false)
 	Cmd.AddCommand(deployCmd)
+	Cmd.AddCommand(updateCmd)
 }

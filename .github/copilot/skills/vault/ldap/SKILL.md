@@ -40,7 +40,7 @@ Use smart status mode if needed:
 Then run one of these:
 
 	hal vault ldap enable
-	hal vault ldap --force
+	hal vault ldap --update
 	hal vault ldap disable
 
 ### Step 2: Verify Vault and directory state
@@ -91,5 +91,5 @@ Confirm LDAP auth and LDAP secrets are both configured.
 ## Edge Cases
 
 - If Vault is offline, instruct the user to deploy Vault first.
-- If LDAP teardown is blocked, use `hal vault ldap --force` so Vault lease and mount cleanup runs before container removal.
+- If LDAP teardown is blocked, use `hal vault ldap --update` so Vault lease and mount cleanup runs before container removal.
 - If user expects phpLDAPadmin admin password to remain static, explain root credentials are intentionally rotated once the LDAP secrets engine is configured.

@@ -264,9 +264,8 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"mode":  map[string]interface{}{"type": "string", "enum": []string{"dry_run", "apply"}},
-					"csi":   map[string]interface{}{"type": "boolean"},
-					"force": map[string]interface{}{"type": "boolean"},
+					"mode": map[string]interface{}{"type": "string", "enum": []string{"dry_run", "apply"}},
+					"csi":  map[string]interface{}{"type": "boolean"},
 				},
 			},
 		},
@@ -307,7 +306,6 @@ func mcpOpsTools() []map[string]interface{} {
 				"type": "object",
 				"properties": map[string]interface{}{
 					"mode":       map[string]interface{}{"type": "string", "enum": []string{"dry_run", "apply"}},
-					"force":      map[string]interface{}{"type": "boolean"},
 					"with_vault": map[string]interface{}{"type": "boolean"},
 				},
 			},
@@ -349,8 +347,7 @@ func modeSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"mode":  map[string]interface{}{"type": "string", "enum": []string{"dry_run", "apply"}},
-			"force": map[string]interface{}{"type": "boolean"},
+			"mode": map[string]interface{}{"type": "string", "enum": []string{"dry_run", "apply"}},
 		},
 	}
 }
@@ -1272,7 +1269,7 @@ func componentContext(component string) (map[string]interface{}, []string, error
 			"component": "vault_k8s",
 			"platform":  "kind + helm + kubectl",
 			"modes":     []string{"native", "csi", "jwt"},
-			"flags":     []string{"--force", "--csi", "--jwt-auth"},
+			"flags":     []string{"--update", "--csi", "--jwt-auth"},
 			"endpoint":  "http://web.localhost:8088",
 		}, []string{"hal vault k8s", "hal vault k8s enable", "hal vault k8s enable --csi", "hal vault k8s disable"}, nil
 	case "vault_vso":
@@ -1359,7 +1356,7 @@ func componentContext(component string) (map[string]interface{}, []string, error
 			"component": "boundary_ssh",
 			"platform":  "multipass",
 			"vm":        "hal-boundary-ssh",
-			"flags":     []string{"--force"},
+			"flags":     []string{"--update"},
 		}, []string{"hal boundary ssh", "hal boundary ssh enable", "hal boundary ssh disable"}, nil
 	case "boundary_mariadb":
 		return map[string]interface{}{
@@ -1544,7 +1541,7 @@ func runVaultAuthList(engine string) string {
 }
 
 func handleEnableAuthMode(mode string, args map[string]interface{}) mcpToolCallResult {
-	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "force": true}); err != nil {
+	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "update": true}); err != nil {
 		return opError(codeParseError, err.Error(), nil, []string{"hal vault " + mode + " enable"}, nil)
 	}
 	runMode := "dry_run"
@@ -1558,18 +1555,17 @@ func handleEnableAuthMode(mode string, args map[string]interface{}) mcpToolCallR
 	if runMode != "dry_run" && runMode != "apply" {
 		return opError(codeParseError, "mode must be dry_run or apply", nil, []string{"hal vault " + mode + " enable"}, nil)
 	}
-	force := false
-	if raw, ok := args["force"]; ok {
+	update := false
+	if raw, ok := args["update"]; ok {
 		parsed, ok := raw.(bool)
 		if !ok {
-			return opError(codeParseError, "force must be boolean", nil, []string{"hal vault " + mode + " enable"}, nil)
+			return opError(codeParseError, "update must be boolean", nil, []string{"hal vault " + mode + " enable"}, nil)
 		}
-		force = parsed
+		update = parsed
 	}
-
 	baseCmd := []string{"vault", mode, "enable"}
-	if force {
-		baseCmd = append(baseCmd, "--force")
+	if update {
+		baseCmd = append(baseCmd, "--update")
 	}
 	base := "hal " + strings.Join(baseCmd, " ")
 	recommended := []string{base, "hal vault status", "hal vault audit"}
@@ -1609,7 +1605,7 @@ func handleEnableAuthMode(mode string, args map[string]interface{}) mcpToolCallR
 }
 
 func handleEnableScenarioMode(toolName string, baseCmd []string, postChecks []string, args map[string]interface{}) mcpToolCallResult {
-	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "force": true}); err != nil {
+	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "update": true}); err != nil {
 		return opErrorForTool(toolName, codeParseError, err.Error(), nil, []string{"hal " + strings.Join(baseCmd, " ")}, nil, nil, nil)
 	}
 	runMode := "dry_run"
@@ -1623,17 +1619,17 @@ func handleEnableScenarioMode(toolName string, baseCmd []string, postChecks []st
 	if runMode != "dry_run" && runMode != "apply" {
 		return opErrorForTool(toolName, codeParseError, "mode must be dry_run or apply", nil, []string{"hal " + strings.Join(baseCmd, " ")}, nil, nil, nil)
 	}
-	force := false
-	if raw, ok := args["force"]; ok {
+	update := false
+	if raw, ok := args["update"]; ok {
 		parsed, ok := raw.(bool)
 		if !ok {
-			return opErrorForTool(toolName, codeParseError, "force must be boolean", nil, []string{"hal " + strings.Join(baseCmd, " ")}, nil, nil, nil)
+			return opErrorForTool(toolName, codeParseError, "update must be boolean", nil, []string{"hal " + strings.Join(baseCmd, " ")}, nil, nil, nil)
 		}
-		force = parsed
+		update = parsed
 	}
 	finalCmd := append([]string{}, baseCmd...)
-	if force {
-		finalCmd = append(finalCmd, "--force")
+	if update {
+		finalCmd = append(finalCmd, "--update")
 	}
 	full := "hal " + strings.Join(finalCmd, " ")
 	recommended := append([]string{full}, postChecks...)
@@ -1653,7 +1649,7 @@ func handleEnableScenarioMode(toolName string, baseCmd []string, postChecks []st
 }
 
 func handleEnableVaultK8sIntegration(args map[string]interface{}) mcpToolCallResult {
-	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "force": true, "csi": true}); err != nil {
+	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "update": true, "csi": true}); err != nil {
 		return opErrorForTool("enable_vault_k8s_integration", codeParseError, err.Error(), nil, []string{"hal vault k8s enable"}, nil, nil, nil)
 	}
 	baseCmd := []string{"vault", "k8s", "enable"}
@@ -1810,7 +1806,7 @@ func handleTFECLIStatus() mcpToolCallResult {
 }
 
 func handleEnableBoundaryMariaDB(args map[string]interface{}) mcpToolCallResult {
-	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "force": true, "with_vault": true}); err != nil {
+	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "update": true, "with_vault": true}); err != nil {
 		return opErrorForTool("enable_boundary_mariadb", codeParseError, err.Error(), nil, []string{"hal boundary mariadb enable"}, nil, nil, nil)
 	}
 	baseCmd := []string{"boundary", "mariadb", "enable"}

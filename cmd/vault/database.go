@@ -16,7 +16,6 @@ var (
 	databaseEnable  bool
 	databaseDisable bool
 	databaseUpdate  bool
-	databaseForce   bool
 	databaseBackend string
 	mariadbVersion  string
 )
@@ -75,7 +74,7 @@ var vaultDatabaseCmd = &cobra.Command{
 		// ==========================================
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
-		if !databaseEnable && !databaseDisable && !databaseUpdate && !databaseForce {
+		if !databaseEnable && !databaseDisable && !databaseUpdate {
 			fmt.Println("🔍 Checking Vault Database Engine Status...")
 
 			dbExists := exec.Command(engine, "inspect", containerName).Run() == nil
@@ -118,9 +117,9 @@ var vaultDatabaseCmd = &cobra.Command{
 		}
 
 		// ==========================================
-		// 2. TEARDOWN / RESET PATH (--disable / --force)
+		// 2. TEARDOWN / RESET PATH (--disable / --update)
 		// ==========================================
-		if databaseDisable || databaseUpdate || databaseForce {
+		if databaseDisable || databaseUpdate {
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would execute: %s rm -f %s\n", engine, containerName)
 				fmt.Println("[DRY RUN] Would call API to force-revoke leases and unmount 'database/'")
@@ -128,7 +127,7 @@ var vaultDatabaseCmd = &cobra.Command{
 				if databaseDisable {
 					fmt.Printf("🛑 Tearing down %s environment...\n", backend)
 				} else {
-					fmt.Println("♻️  Force flag detected. Destroying database environment for reset...")
+					fmt.Println("♻️  Update requested. Destroying database environment for reset...")
 				}
 
 				if vaultErr == nil && client != nil {
@@ -154,9 +153,9 @@ var vaultDatabaseCmd = &cobra.Command{
 		}
 
 		// ==========================================
-		// 3. DEPLOY / ENABLE PATH (--enable / --force)
+		// 3. DEPLOY / ENABLE PATH (--enable / --update)
 		// ==========================================
-		if databaseEnable || databaseUpdate || databaseForce {
+		if databaseEnable || databaseUpdate {
 			if vaultErr != nil {
 				fmt.Printf("❌ Cannot deploy: Vault must be running and healthy. %v\n", vaultErr)
 				return
@@ -290,11 +289,9 @@ func init() {
 	vaultDatabaseCmd.Flags().BoolVarP(&databaseEnable, "enable", "e", false, "Deploy selected database backend and configure Vault")
 	vaultDatabaseCmd.Flags().BoolVarP(&databaseDisable, "disable", "d", false, "Remove selected backend and clean up Vault database configuration")
 	vaultDatabaseCmd.Flags().BoolVarP(&databaseUpdate, "update", "u", false, "Reconcile selected backend and Vault database configuration")
-	vaultDatabaseCmd.Flags().BoolVarP(&databaseForce, "force", "f", false, "Force a clean redeployment of the selected backend")
 	_ = vaultDatabaseCmd.Flags().MarkHidden("enable")
 	_ = vaultDatabaseCmd.Flags().MarkHidden("disable")
 	_ = vaultDatabaseCmd.Flags().MarkHidden("update")
-	_ = vaultDatabaseCmd.Flags().MarkDeprecated("force", "use --update instead")
 
 	// Backend selection and version pinning
 	vaultDatabaseCmd.Flags().StringVarP(&databaseBackend, "backend", "b", "mariadb", "Database backend to use (mariadb; pgsql planned, postgres alias accepted)")

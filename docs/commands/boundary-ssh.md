@@ -13,10 +13,10 @@ Deploy a Multipass Ubuntu VM as a Boundary SSH target.
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
 ## Flags
+- Deprecated: older HAL docs may reference `hal boundary ssh --force`. That flag has been removed from the CLI. Use `hal boundary ssh update`.
 - Command flags from `hal boundary ssh --help`:
 ```text
 --cpus string           Number of CPUs for the SSH target VM (default "1")
--f, --force                 Force a clean redeployment
 -h, --help                  help for ssh
 --mem string            Amount of RAM for the SSH target VM (default "512M")
 -u, --update                Reconcile SSH target VM and Boundary target wiring

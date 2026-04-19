@@ -19,7 +19,6 @@ var (
 	nomadMem          string
 	nomadJoinConsul   bool // The new unified Control Plane flag
 	nomadUpdate       bool
-	nomadForce        bool
 	nomadConfigureObs bool
 )
 
@@ -73,12 +72,12 @@ var deployCmd = &cobra.Command{
 			}
 		}
 
-		if nomadUpdate || nomadForce {
+		if nomadUpdate {
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would delete existing VM 'hal-nomad' and purge")
 			}
 			if global.Debug {
-				fmt.Println("[DEBUG] --update/--force detected. Purging existing VM 'hal-nomad' for reconciliation...")
+				fmt.Println("[DEBUG] --update detected. Purging existing VM 'hal-nomad' for reconciliation...")
 			}
 			if !global.DryRun {
 				_ = exec.Command("multipass", "delete", "hal-nomad").Run()
@@ -229,18 +228,31 @@ func extractMultipassIP(csvData string) string {
 	return "127.0.0.1"
 }
 
+var updateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Reconcile an existing Nomad cluster",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		nomadUpdate = true
+		deployCmd.Run(cmd, args)
+	},
+}
+
+func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
+	cmd.Flags().StringVarP(&nomadVersion, "version", "v", "1.11.3", "Nomad version to install")
+	cmd.Flags().StringVar(&nomadUbuntuImage, "ubuntu-image", "22.04", "Multipass image/channel used for the Nomad VM")
+	cmd.Flags().StringVar(&nomadCPUs, "cpus", "2", "Number of CPUs for the VM")
+	cmd.Flags().StringVar(&nomadMem, "mem", "2G", "Amount of RAM for the VM")
+	if includeUpdate {
+		cmd.Flags().BoolVarP(&nomadUpdate, "update", "u", false, "Reconcile an existing Nomad deployment in place")
+	}
+	cmd.Flags().BoolVar(&nomadConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Nomad")
+	cmd.Flags().BoolVarP(&nomadJoinConsul, "join-consul", "c", false, "Tether Nomad to the global HAL Consul instance")
+}
+
 func init() {
-	deployCmd.Flags().StringVarP(&nomadVersion, "version", "v", "1.11.3", "Nomad version to install")
-	deployCmd.Flags().StringVar(&nomadUbuntuImage, "ubuntu-image", "22.04", "Multipass image/channel used for the Nomad VM")
-	deployCmd.Flags().StringVar(&nomadCPUs, "cpus", "2", "Number of CPUs for the VM")
-	deployCmd.Flags().StringVar(&nomadMem, "mem", "2G", "Amount of RAM for the VM")
-	deployCmd.Flags().BoolVarP(&nomadUpdate, "update", "u", false, "Reconcile an existing Nomad deployment in place")
-	deployCmd.Flags().BoolVarP(&nomadForce, "force", "f", false, "Force redeploy")
-	deployCmd.Flags().BoolVar(&nomadConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Nomad")
-	_ = deployCmd.Flags().MarkDeprecated("force", "use --update instead")
-
-	// The unified global join flag
-	deployCmd.Flags().BoolVarP(&nomadJoinConsul, "join-consul", "c", false, "Tether Nomad to the global HAL Consul instance")
-
+	bindLifecycleFlags(deployCmd, true)
+	bindLifecycleFlags(updateCmd, false)
 	Cmd.AddCommand(deployCmd)
+	Cmd.AddCommand(updateCmd)
 }

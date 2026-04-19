@@ -31,4 +31,4 @@ User: Rebuild LDAP from scratch.
 
 Assistant:
 
-    hal vault ldap --force
+    hal vault ldap --update

@@ -35,7 +35,7 @@ Use smart status mode if needed:
 Then use the correct lifecycle command:
 
     hal vault oidc enable
-    hal vault oidc --force
+    hal vault oidc --update
     hal vault oidc disable
 
 ### Step 2: Enrich with Vault MCP Context

@@ -65,7 +65,7 @@ var statusCmd = &cobra.Command{
 			fmt.Println("   🔗 Loki API:   http://loki.localhost:3100/ready")
 		} else {
 			fmt.Println("   Environment is partially degraded. To safely reset, run:")
-			fmt.Println("   hal obs create --force")
+			fmt.Println("   hal obs create --update")
 		}
 		fmt.Println("   Run 'hal obs status' after changes to confirm all PLG components are healthy.")
 	},

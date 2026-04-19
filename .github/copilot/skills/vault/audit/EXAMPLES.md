@@ -24,7 +24,7 @@ User: Vault requests started failing after audit updates.
 
 Assistant: I reset safely with a clean force cycle:
 
-    hal vault audit --force --loki
+    hal vault audit --update --loki
 
 ## Example 3: Disable Audit Device
 

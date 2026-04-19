@@ -11,7 +11,11 @@ Build and run the ephemeral Terraform/TFX helper shell for local TFE workflows.
 - `--console`, `-c`: start helper container and open shell
 - `disable`: remove helper container and HAL-managed scenario workspaces
 - `update`: reconcile helper image/container state
-- `--force`, `-f`: preserve compatibility for forceful recreation/confirmation bypass
+
+## Deprecated
+- Older HAL docs may reference `hal tf cli disable --force` or other `--force` helper flows. The force flag has been removed from the CLI.
+- Use `hal tf cli update` for rebuild/recreate flows.
+- Use `hal tf cli disable --update` for the non-interactive destructive confirmation path.
 
 ## Behavior
 - Ensures helper image/container lifecycle for local TFE usage.
@@ -35,7 +39,6 @@ Build and run the ephemeral Terraform/TFX helper shell for local TFE workflows.
 --banner                      Print helper welcome banner without opening a shell
 --base-image string           Base image used to build the helper image (default "ghcr.io/straubt1/tfx:latest")
 -c, --console                     Start helper container and open an interactive shell
--f, --force                       Rebuild image and recreate helper container
 -h, --help                        help for cli
 --local-directory string      Optional host directory to mount into the helper at /workspaces
 --tfe-admin-email string      Terraform Enterprise admin email used for helper token bootstrap (default "haladmin@localhost")

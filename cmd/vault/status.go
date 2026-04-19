@@ -56,7 +56,7 @@ var vaultStatusCmd = &cobra.Command{
 
 				if strings.Contains(strings.ToLower(logStr), "license") {
 					fmt.Println("  💡 HAL Tip: Looks like a Vault Enterprise license rejection.")
-					fmt.Println("     Ensure $VAULT_LICENSE is valid, then run: hal vault create --edition ent --force")
+					fmt.Println("     Ensure $VAULT_LICENSE is valid, then run: hal vault create --edition ent --update")
 				}
 			}
 			return // Stop execution if Vault is crashed

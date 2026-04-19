@@ -32,9 +32,12 @@ This file covers the root `hal` command, persistent flags, and global commands t
   - Purpose: global infrastructure teardown
   - Scope: HAL-managed containers, KinD clusters, Multipass VMs, and observability local state
   - Safety: confirmation prompt by default
-  - Override: `--force` skips prompt
+  - Override: `--yes` skips prompt
   - Supports: `--dry-run`
   - Spec: [global-destroy.md](global-destroy.md)
+
+## Deprecated
+- Older HAL docs may reference `hal delete --force`. That flag has been removed from the CLI. Use `hal delete --yes` instead.
 
 - `hal version`
   - Purpose: print HAL version

@@ -118,12 +118,12 @@ For the full surface and latest flags, use `hal --help` and `hal <product> --hel
 
 | Namespace | Product lifecycle commands | Feature subcommands | Feature lifecycle actions |
 |---|---|---|---|
-| `hal vault` | `create`, `update` (flag on create), `status`, `delete` | `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc` | `enable`, `update`, `disable` |
-| `hal boundary` | `create`, `update` (flag on create), `status`, `delete` | `mariadb`, `ssh` | `enable`, `update`, `disable` |
-| `hal consul` | `create`, `update` (flag on create), `status`, `delete` | none | n/a |
-| `hal nomad` | `create`, `update` (flag on create), `status`, `delete` | `job` | n/a |
-| `hal obs` | `create`, `update` (flag on create), `status`, `delete` | none | n/a |
-| `hal terraform` (`hal tf`) | `create`, `update` (flag on create), `status`, `delete` | `agent`, `cli`, `twin`, `workspace` | `enable`, `update`, `disable` |
+| `hal vault` | `create`, `update`, `status`, `delete` | `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc` | `enable`, `update`, `disable` |
+| `hal boundary` | `create`, `update`, `status`, `delete` | `mariadb`, `ssh` | `enable`, `update`, `disable` |
+| `hal consul` | `create`, `update`, `status`, `delete` | none | n/a |
+| `hal nomad` | `create`, `update`, `status`, `delete` | `job` | n/a |
+| `hal obs` | `create`, `update`, `status`, `delete` | none | n/a |
+| `hal terraform` (`hal tf`) | `create`, `update`, `status`, `delete` | `agent`, `cli`, `twin`, `workspace` | `enable`, `update`, `disable` |
 | `hal mcp` | `create`, `update`, `status`, `delete` | `policy` | currently read-only (`policy`) |
 
 ### Common usage examples
@@ -131,8 +131,8 @@ For the full surface and latest flags, use `hal --help` and `hal <product> --hel
 ```bash
 # Product lifecycle
 hal vault create
+hal vault update
 hal vault status
-hal vault create --update
 hal vault delete
 
 # Feature lifecycle

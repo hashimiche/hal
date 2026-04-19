@@ -47,7 +47,7 @@ hal tf cli -c
 Destroy the helper container and clean up HAL-managed scenario workspaces:
 
 ```bash
-hal tf cli disable --force
+hal tf cli disable --update
 ```
 
 Expected behavior:
@@ -58,7 +58,7 @@ Expected behavior:
 - after leaving the shell, the user can re-enter later with `hal tf cli -c` without a rebuild/bootstrap cycle
 - If `--console` is used and the image does not exist yet, HAL should build it first.
 - `disable` requests confirmation in interactive mode, then removes the helper container and HAL-managed scenario workspaces from TFE.
-- `disable --force` performs the same teardown without prompting.
+- `disable --update` performs the same teardown without prompting.
 - The container is intentionally disposable and optimized for local demos, tests, and proof-of-concept work.
 
 ### Console UX
@@ -259,9 +259,9 @@ Runtime behaviors worth keeping explicit:
 
 - fail early if `hal-tfe` is not running
 - fail clearly if the TFE certificate does not exist yet
-- support `update` (or `--force` compatibility) to rebuild the image and recreate the helper container cleanly
+- support `update` (or `--update` compatibility) to rebuild the image and recreate the helper container cleanly
 - prompt for interactive confirmation on `disable`
-- allow `disable --force` as a non-interactive confirmation bypass
+- allow `disable --update` as a non-interactive confirmation bypass
 - keep image build and container startup idempotent
 
 ## Decisions Captured
@@ -303,7 +303,7 @@ The first implementation is successful if all of the following are true:
 9. The flow does not require adding the self-signed certificate to the macOS host trust store.
 10. Leaving the shell with `exit` or `CTRL+D` preserves the helper container for later re-entry with `hal tf cli -c`.
 11. `hal tf cli disable` prompts for confirmation in interactive mode before teardown.
-12. `hal tf cli disable --force` performs non-interactive teardown.
+12. `hal tf cli disable --update` performs non-interactive teardown.
 13. `hal tf cli disable` teardown removes the helper container and deletes HAL-managed scenario workspaces.
 14. `hal tf cli -c` ensures `Dave`/`Frank` projects and the default scenario workspaces exist in TFE after a fresh reset.
 
