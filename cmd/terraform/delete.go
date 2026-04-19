@@ -12,21 +12,31 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// The "Known Universe" of Terraform Enterprise infrastructure
-var tfeEcosystem = []string{
+// Primary-only Terraform Enterprise containers and helpers.
+var tfePrimaryContainers = []string{
 	"hal-tfe",
 	"hal-tfe-proxy",
+	tfeAPIPrimaryContainer,
+	legacyTFECLIContainerName,
+	"hal-tfe-agent",
+}
+
+// Shared backend components used by primary and twin TFE instances.
+var tfeSharedBackendContainers = []string{
 	"hal-tfe-db",
 	"hal-tfe-redis",
 	"hal-tfe-minio",
-	"hal-tfe-cli",
-	"hal-tfe-agent",
 }
 
 var destroyCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "Tear down the TFE stack and wipe all local state for a fresh restart",
 	Run: func(cmd *cobra.Command, args []string) {
+		target, err := normalizeTFETarget(tfeLifecycleTarget)
+		if err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
 
 		engine, err := global.DetectEngine()
 		if err != nil {
@@ -34,10 +44,42 @@ var destroyCmd = &cobra.Command{
 			return
 		}
 
+		if target == tfeTargetTwin || target == tfeTargetBoth {
+			layout, layoutErr := buildTFETwinLayout()
+			if layoutErr != nil {
+				fmt.Printf("❌ Invalid twin configuration: %v\n", layoutErr)
+				return
+			}
+			destroyTFETwin(engine, layout)
+			if target == tfeTargetTwin {
+				return
+			}
+		}
+
+		preserveSharedBackend := false
+		if target == tfeTargetPrimary {
+			layout, layoutErr := buildTFETwinLayout()
+			if layoutErr != nil {
+				fmt.Printf("❌ Invalid twin configuration: %v\n", layoutErr)
+				return
+			}
+			if global.IsContainerRunning(engine, layout.CoreContainer) {
+				preserveSharedBackend = true
+			}
+		}
+
 		fmt.Printf("⚙️  Destroying Terraform Enterprise ecosystem via %s...\n", engine)
+		if preserveSharedBackend {
+			fmt.Println("ℹ️  Twin instance is running; preserving shared backend containers (hal-tfe-db, hal-tfe-redis, hal-tfe-minio).")
+		}
 
 		// 1. Destroy all associated containers
-		for _, container := range tfeEcosystem {
+		containersToDestroy := append([]string{}, tfePrimaryContainers...)
+		if !preserveSharedBackend {
+			containersToDestroy = append(containersToDestroy, tfeSharedBackendContainers...)
+		}
+
+		for _, container := range containersToDestroy {
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would execute: %s rm -f %s\n", engine, container)
 				continue
@@ -69,16 +111,19 @@ var destroyCmd = &cobra.Command{
 			}
 		}
 
-		if global.DryRun {
-			fmt.Printf("[DRY RUN] Would execute: %s image rm -f %s\n", engine, tfeCLIImageName)
-		} else {
-			if out, err := exec.Command(engine, "image", "rm", "-f", tfeCLIImageName).CombinedOutput(); err != nil {
+		helperImages := []string{legacyTFECLIImageName, tfeAPIPrimaryImage, tfeAPITwinImage}
+		for _, helperImage := range helperImages {
+			if global.DryRun {
+				fmt.Printf("[DRY RUN] Would execute: %s image rm -f %s\n", engine, helperImage)
+				continue
+			}
+			if out, err := exec.Command(engine, "image", "rm", "-f", helperImage).CombinedOutput(); err != nil {
 				outputStr := strings.ToLower(strings.TrimSpace(string(out)))
 				if !strings.Contains(outputStr, "no such image") && !strings.Contains(outputStr, "image not known") {
-					fmt.Printf("⚠️  Failed to remove helper image '%s': %s\n", tfeCLIImageName, strings.TrimSpace(string(out)))
+					fmt.Printf("⚠️  Failed to remove helper image '%s': %s\n", helperImage, strings.TrimSpace(string(out)))
 				}
 			} else {
-				fmt.Printf("  ✅ Removed helper image: %s\n", tfeCLIImageName)
+				fmt.Printf("  ✅ Removed helper image: %s\n", helperImage)
 			}
 		}
 
@@ -113,6 +158,10 @@ var destroyCmd = &cobra.Command{
 			fmt.Println("  🧹 Removed cached TFE agent state.")
 		}
 
+		if preserveSharedBackend {
+			fmt.Println("  ℹ️  Shared backend state retained for running twin instance.")
+		}
+
 		if !global.DryRun {
 			fmt.Println("\n✅ TFE environment wiped. You are ready for a clean 'hal terraform create'.")
 		}
@@ -120,5 +169,7 @@ var destroyCmd = &cobra.Command{
 }
 
 func init() {
+	bindTFETargetFlag(destroyCmd)
+	bindTwinFlags(destroyCmd)
 	Cmd.AddCommand(destroyCmd)
 }

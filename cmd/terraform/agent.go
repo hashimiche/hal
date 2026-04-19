@@ -206,7 +206,7 @@ func enableTFEAgent(engine string) error {
 		return err
 	}
 
-	certPath, err := tfeCLICertPath()
+	certPath, err := tfeCLICertPath(tfeTargetPrimary)
 	if err != nil {
 		return fmt.Errorf("missing local TFE certificate: %w", err)
 	}

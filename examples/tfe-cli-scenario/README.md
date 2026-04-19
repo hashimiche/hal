@@ -17,18 +17,18 @@ The spread is intentionally split across the Terraform Enterprise projects `Dave
 ## Run From Host
 
 1. Ensure the helper is ready:
-   go run main.go tf cli update
-   go run main.go tf cli -c --banner
+   go run main.go tf api update
+   go run main.go tf api enable --banner
 
 2. Copy and execute bootstrap script inside helper:
-   docker cp examples/tfe-cli-scenario/bootstrap.sh hal-tfe-cli:/tmp/bootstrap.sh
-   docker exec hal-tfe-cli sh -lc 'chmod +x /tmp/bootstrap.sh && /tmp/bootstrap.sh'
+   docker cp examples/tfe-cli-scenario/bootstrap.sh hal-tfe-api:/tmp/bootstrap.sh
+   docker exec hal-tfe-api sh -lc 'chmod +x /tmp/bootstrap.sh && /tmp/bootstrap.sh'
 
 ## Explore Inside Helper
 
 Open a shell:
 
-go run main.go tf cli -c
+go run main.go tf api enable
 
 Then:
 
@@ -43,17 +43,17 @@ Repeat for other repos to generate additional runs.
 To remove the helper container and delete HAL-managed scenario workspaces tracked by HAL:
 
 ```bash
-go run main.go tf cli --disable
+go run main.go tf api --disable
 ```
 
-Deprecated migration note: older examples may reference `--force` here. That flag has been removed from the CLI. Use `--update` to skip the interactive confirmation prompt:
+Deprecated migration note: older examples may reference `--force` here. That flag has been removed from the CLI. Use `--auto-approve` to skip the interactive confirmation prompt:
 
 ```bash
-go run main.go tf cli --disable --update
+go run main.go tf api --disable --auto-approve
 ```
 
 Leaving the shell with `exit` or `CTRL+D` does not destroy the helper container. Re-enter with:
 
 ```bash
-go run main.go tf cli -c
+go run main.go tf api enable
 ```

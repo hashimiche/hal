@@ -2,14 +2,18 @@
 
 ## Command
 - `hal terraform delete`
+- `hal terraform delete --target twin`
+- `hal terraform delete --target both`
 
 ## Purpose
 Tear down the local Terraform Enterprise stack and related local state for a clean restart.
 
 ## Behavior
 - Stops/removes TFE stack resources managed by HAL.
-- Removes the Terraform CLI helper container (`hal-tfe-cli`) as part of stack teardown.
+- Removes Terraform API helper containers/images (including legacy CLI helper artifacts) as part of stack teardown.
 - Resets local deployment state used by the Terraform namespace.
+- Uses `--target` to remove primary, twin, or both scopes (`primary` by default).
+- Smart guard: `--target primary` preserves shared backend containers when the twin TFE core is still running.
 
 ## Related
 - Parent namespace: [terraform.md](terraform.md)
@@ -21,7 +25,8 @@ Tear down the local Terraform Enterprise stack and related local state for a cle
 ## Flags
 - Command flags from `hal terraform delete --help`:
 ```text
--h, --help   help for destroy
+-h, --help          help for delete
+-t, --target string Terraform scope to act on: primary, twin, or both (default "primary")
 ```
 - Global flags: `--debug`, `--dry-run`
 
@@ -31,4 +36,6 @@ Tear down the local Terraform Enterprise stack and related local state for a cle
 ## Example
 ```bash
 hal terraform delete
+hal terraform delete --target twin
+hal terraform delete --target both
 ```

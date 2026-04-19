@@ -6,8 +6,7 @@ User: I need a Terraform shell that already trusts the local TFE cert.
 
 Assistant:
 
-    hal tf cli enable
-    hal tf cli -c
+    hal tf api-workflow enable
 
 Assistant: This builds the helper image, bootstraps auth in the container, ensures the default scenario workspaces in TFE (`Dave`/`Frank` mapping), and opens the shell without requiring host trust-store changes.
 
@@ -17,13 +16,13 @@ User: Is the Terraform helper already running?
 
 Assistant:
 
-    hal terraform cli
+    hal terraform api-workflow
 
-Assistant: Use the status view first. It shows whether the helper image exists, whether `hal-tfe-cli` is running, and whether `hal-tfe` is up.
+Assistant: Use the status view first. It shows whether the helper image exists, whether the target helper container is running, and whether the target TFE core is up.
 
 ## Example 2b: Fresh Reset Expectations
 
-User: After `hal tf create`, `hal tf cli enable`, `hal tf cli -c`, what should I see in TFE?
+User: After `hal tf create`, `hal tf api-workflow enable`, what should I see in TFE?
 
 Assistant:
 
@@ -51,9 +50,8 @@ User: The helper container feels stale. Recreate it cleanly.
 
 Assistant:
 
-    hal tf cli disable --update
-    hal tf cli update
-    hal tf cli -c
+    hal tf api-workflow disable --auto-approve
+    hal tf api-workflow update
 
 ## Example 5: Redirect From Host Terraform Login
 
@@ -61,6 +59,6 @@ User: `terraform login` on my Mac fails because of the self-signed cert. What sh
 
 Assistant:
 
-    hal tf cli -c
+    hal tf api-workflow enable
 
 Assistant: Use the HAL helper shell instead of changing host trust. The helper already trusts local TFE and has Terraform and TFX auth preconfigured.

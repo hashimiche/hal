@@ -14,10 +14,25 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Display the health and status of the local Terraform Enterprise environment",
 	Run: func(cmd *cobra.Command, args []string) {
+		target, err := normalizeTFETarget(tfeLifecycleTarget)
+		if err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
 
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("⚪ Error: %v\n", err)
+			return
+		}
+
+		if target == tfeTargetTwin {
+			layout, layoutErr := buildTFETwinLayout()
+			if layoutErr != nil {
+				fmt.Printf("❌ Invalid twin configuration: %v\n", layoutErr)
+				return
+			}
+			showTFETwinStatus(engine, layout)
 			return
 		}
 
@@ -84,6 +99,16 @@ var statusCmd = &cobra.Command{
 			fmt.Println("\n   Or to tear everything down completely, run:")
 			fmt.Println("   hal terraform delete")
 		}
+
+		if target == tfeTargetBoth {
+			layout, layoutErr := buildTFETwinLayout()
+			if layoutErr != nil {
+				fmt.Printf("❌ Invalid twin configuration: %v\n", layoutErr)
+				return
+			}
+			fmt.Println("\n---------------------------------------------------------")
+			showTFETwinStatus(engine, layout)
+		}
 	},
 }
 
@@ -99,5 +124,7 @@ func checkWorkspaceAutomationReady(engine string) bool {
 }
 
 func init() {
+	bindTFETargetFlag(statusCmd)
+	bindTwinFlags(statusCmd)
 	Cmd.AddCommand(statusCmd)
 }

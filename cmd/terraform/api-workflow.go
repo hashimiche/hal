@@ -18,17 +18,20 @@ import (
 )
 
 const (
-	tfeCLIContainerName = "hal-tfe-cli"
-	tfeCLIImageName     = "hal-tfe-cli:latest"
-	defaultTFECLIBase   = "ghcr.io/straubt1/tfx:latest"
-	tfeCLIManagedWSFile = "/root/.hal-tfe-cli-managed-workspaces"
-	tfeCLIRunsSeedFile  = "/root/.hal-tfe-cli-scenario-runs-seeded-v3"
-	tfeCLIRunsSeedLock  = "/root/.hal-tfe-cli-scenario-runs-seeding.lock"
+	legacyTFECLIContainerName = "hal-tfe-cli"
+	legacyTFECLIImageName     = "hal-tfe-cli:latest"
+	tfeAPIPrimaryContainer    = "hal-tfe-api"
+	tfeAPIPrimaryImage        = "hal-tfe-api:latest"
+	tfeAPITwinContainer       = "hal-tfe-bis-api"
+	tfeAPITwinImage           = "hal-tfe-bis-api:latest"
+	defaultTFECLIBase         = "ghcr.io/straubt1/tfx:latest"
+	tfeCLIManagedWSFile       = "/root/.hal-tfe-cli-managed-workspaces"
+	tfeCLIRunsSeedFile        = "/root/.hal-tfe-cli-scenario-runs-seeded-v3"
+	tfeCLIRunsSeedLock        = "/root/.hal-tfe-cli-scenario-runs-seeding.lock"
 )
 
 var (
 	tfeCLIEnable         bool
-	tfeCLIConsole        bool
 	tfeCLIDisable        bool
 	tfeCLIUpdate         bool
 	tfeCLILocalDirectory string
@@ -41,13 +44,33 @@ var (
 	tfeCLIProjectSeed    string
 	tfeCLIShowBannerOnly bool
 	tfeCLIVerbose        bool
+	tfeCLIAutoApprove    bool
+	tfeAPIContainerName  = tfeAPIPrimaryContainer
+	tfeAPIImageName      = tfeAPIPrimaryImage
 )
 
-var cliCmd = &cobra.Command{
-	Use:   "cli [status|enable|disable|update]",
-	Short: "Build and run an ephemeral Terraform/TFX helper shell for local TFE",
+var apiCmd = &cobra.Command{
+	Use:     "api-workflow [status|enable|disable|update]",
+	Aliases: []string{"api"},
+	Short:   "Build and run an ephemeral Terraform/TFX API helper shell for local TFE",
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := parseLifecycleAction(args, &tfeCLIEnable, &tfeCLIDisable, &tfeCLIUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
+		target, err := normalizeTFETarget(tfeLifecycleTarget)
+		if err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+		if target == tfeTargetBoth {
+			fmt.Println("❌ '--target both' is not supported for 'hal tf api'.")
+			fmt.Println("   💡 Use '--target primary' or '--target twin'.")
+			return
+		}
+
+		if err := configureTFEAPITargetDefaults(cmd, target); err != nil {
 			fmt.Printf("❌ %v\n", err)
 			return
 		}
@@ -58,58 +81,65 @@ var cliCmd = &cobra.Command{
 			return
 		}
 
+		configureTFEAPIResourceNames(target)
+
 		if tfeCLIDisable {
-			if tfeCLIEnable || tfeCLIConsole || tfeCLIShowBannerOnly {
-				fmt.Println("❌ '--disable' cannot be combined with '--enable', '--console', or '--banner'.")
+			if tfeCLIEnable || tfeCLIShowBannerOnly {
+				fmt.Println("❌ '--disable' cannot be combined with '--enable' or '--banner'.")
 				return
 			}
-			if err := disableTFECLI(engine, tfeCLIUpdate); err != nil {
-				fmt.Printf("❌ Failed to disable Terraform CLI helper: %v\n", err)
+			if err := disableTFECLI(engine, tfeCLIAutoApprove); err != nil {
+				fmt.Printf("❌ Failed to disable Terraform API helper: %v\n", err)
 			}
 			return
 		}
 
 		if tfeCLIUpdate {
 			tfeCLIEnable = true
+			_ = exec.Command(engine, "rm", "-f", tfeAPIContainerName).Run()
+			_ = exec.Command(engine, "image", "rm", "-f", tfeAPIImageName).Run()
 		}
 
-		if !tfeCLIEnable && !tfeCLIConsole && !tfeCLIShowBannerOnly {
-			showTFECLIStatus(engine)
+		if !tfeCLIEnable && !tfeCLIShowBannerOnly {
+			showTFECLIStatus(engine, target)
 			return
 		}
 
-		shouldBuild := tfeCLIEnable || tfeCLIUpdate || (tfeCLIConsole && !imageExists(engine, tfeCLIImageName))
+		shouldBuild := tfeCLIUpdate || !imageExists(engine, tfeAPIImageName)
 		if shouldBuild {
-			if tfeCLIUpdate {
-				_ = exec.Command(engine, "rm", "-f", tfeCLIContainerName).Run()
-			}
-
 			if err := buildTFECLIImage(engine); err != nil {
 				fmt.Printf("❌ Failed to build helper image: %v\n", err)
 				return
 			}
-			fmt.Printf("✅ Helper image ready: %s\n", tfeCLIImageName)
-		} else if tfeCLIConsole {
-			fmt.Printf("✅ Reusing helper image: %s\n", tfeCLIImageName)
+			fmt.Printf("✅ API helper image ready: %s\n", tfeAPIImageName)
+		} else if tfeCLIEnable {
+			fmt.Printf("✅ Reusing API helper image: %s\n", tfeAPIImageName)
 		}
 
-		if tfeCLIEnable && !tfeCLIConsole {
-			fmt.Println("💡 Next Step:")
-			fmt.Println("   Run 'hal tf cli -c' to start the container and open a shell.")
-			return
-		}
-
-		if tfeCLIConsole {
-			if !global.IsContainerRunning(engine, "hal-tfe") {
-				fmt.Println("❌ Terraform Enterprise is not running.")
-				fmt.Println("   💡 Run 'hal terraform create' first.")
+		if tfeCLIEnable {
+			coreContainer, coreErr := tfeCoreContainerForTarget(target)
+			if coreErr != nil {
+				fmt.Printf("❌ %v\n", coreErr)
+				return
+			}
+			if !global.IsContainerRunning(engine, coreContainer) {
+				fmt.Printf("❌ Terraform Enterprise target is not running (%s).\n", coreContainer)
+				if target == tfeTargetTwin {
+					fmt.Println("   💡 Run 'hal tf create -t twin' first.")
+				} else {
+					fmt.Println("   💡 Run 'hal terraform create' first.")
+				}
 				return
 			}
 
-			certPath, err := tfeCLICertPath()
+			certPath, err := tfeCLICertPath(target)
 			if err != nil {
 				fmt.Printf("❌ %v\n", err)
-				fmt.Println("   💡 Run 'hal terraform create' first to generate local TLS material.")
+				if target == tfeTargetTwin {
+					fmt.Println("   💡 Run 'hal tf create -t twin' first to generate twin TLS material.")
+				} else {
+					fmt.Println("   💡 Run 'hal terraform create' first to generate local TLS material.")
+				}
 				return
 			}
 
@@ -163,34 +193,40 @@ var cliCmd = &cobra.Command{
 	},
 }
 
-func showTFECLIStatus(engine string) {
-	fmt.Println("🔍 Checking Terraform CLI Helper Status...")
+func showTFECLIStatus(engine, target string) {
+	fmt.Printf("🔍 Checking Terraform API Helper Status (target=%s)...\n", target)
 
-	if imageExists(engine, tfeCLIImageName) {
-		fmt.Printf("  🟢 image              : present (%s)\n", tfeCLIImageName)
+	if imageExists(engine, tfeAPIImageName) {
+		fmt.Printf("  🟢 image              : present (%s)\n", tfeAPIImageName)
 	} else {
-		fmt.Printf("  ⚪ image              : missing (%s)\n", tfeCLIImageName)
+		fmt.Printf("  ⚪ image              : missing (%s)\n", tfeAPIImageName)
 	}
 
-	if global.IsContainerRunning(engine, tfeCLIContainerName) {
-		fmt.Printf("  🟢 container          : running (%s)\n", tfeCLIContainerName)
-	} else if containerExists(engine, tfeCLIContainerName) {
-		fmt.Printf("  🟡 container          : stopped (%s)\n", tfeCLIContainerName)
+	if global.IsContainerRunning(engine, tfeAPIContainerName) {
+		fmt.Printf("  🟢 container          : running (%s)\n", tfeAPIContainerName)
+	} else if containerExists(engine, tfeAPIContainerName) {
+		fmt.Printf("  🟡 container          : stopped (%s)\n", tfeAPIContainerName)
 	} else {
-		fmt.Printf("  ⚪ container          : not created (%s)\n", tfeCLIContainerName)
+		fmt.Printf("  ⚪ container          : not created (%s)\n", tfeAPIContainerName)
 	}
 
-	if global.IsContainerRunning(engine, "hal-tfe") {
-		fmt.Println("  🟢 terraform-enterprise : running (hal-tfe)")
-	} else {
-		fmt.Println("  ⚪ terraform-enterprise : not running (hal-tfe)")
+	if coreContainer, err := tfeCoreContainerForTarget(target); err == nil {
+		if global.IsContainerRunning(engine, coreContainer) {
+			fmt.Printf("  🟢 terraform-enterprise : running (%s)\n", coreContainer)
+		} else {
+			fmt.Printf("  ⚪ terraform-enterprise : not running (%s)\n", coreContainer)
+		}
 	}
 
+	tfxVersion, terraformVersion, alpineVersion := tfeAPIRuntimeVersions(engine)
+	fmt.Printf("  🧰 tfx-version        : %s\n", tfxVersion)
+	fmt.Printf("  🌍 terraform-version  : %s\n", terraformVersion)
+	fmt.Printf("  🏔️ alpine-version     : %s\n", alpineVersion)
 	fmt.Printf("  🔗 target-url         : %s\n", tfeCLIURL)
 	fmt.Println("\n💡 Next Step:")
-	fmt.Println("   hal tf cli enable")
-	fmt.Println("   hal tf cli -c")
-	fmt.Println("   hal tf cli disable --update")
+	fmt.Printf("   hal tf api-workflow enable -t %s\n", target)
+	fmt.Printf("   hal tf api-workflow update -t %s\n", target)
+	fmt.Printf("   hal tf api-workflow disable -t %s --auto-approve\n", target)
 }
 
 func buildTFECLIImage(engine string) error {
@@ -248,7 +284,7 @@ CMD ["sh", "-lc", "mkdir -p /workspace && tail -f /dev/null"]
 		return err
 	}
 
-	cmd := exec.Command(engine, "build", "-t", tfeCLIImageName, "-f", dockerfilePath, buildDir)
+	cmd := exec.Command(engine, "build", "-t", tfeAPIImageName, "-f", dockerfilePath, buildDir)
 	if tfeCLIVerbose || !canRenderProgressAnimation() {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -389,35 +425,35 @@ func tailText(input string, maxLines int) string {
 }
 
 func ensureTFECLIContainer(engine, certPath, localDir string) error {
-	if global.IsContainerRunning(engine, tfeCLIContainerName) {
-		if localDir != "" && !containerHasMount(engine, tfeCLIContainerName, "/workspaces") {
+	if global.IsContainerRunning(engine, tfeAPIContainerName) {
+		if localDir != "" && !containerHasMount(engine, tfeAPIContainerName, "/workspaces") {
 			return fmt.Errorf("existing helper container is running without /workspaces mount; re-run with '--update' to recreate with --local-directory")
 		}
 		return nil
 	}
 
-	if containerExists(engine, tfeCLIContainerName) {
-		if localDir != "" && !containerHasMount(engine, tfeCLIContainerName, "/workspaces") {
-			_ = exec.Command(engine, "rm", "-f", tfeCLIContainerName).Run()
+	if containerExists(engine, tfeAPIContainerName) {
+		if localDir != "" && !containerHasMount(engine, tfeAPIContainerName, "/workspaces") {
+			_ = exec.Command(engine, "rm", "-f", tfeAPIContainerName).Run()
 		} else {
-			out, err := exec.Command(engine, "start", tfeCLIContainerName).CombinedOutput()
+			out, err := exec.Command(engine, "start", tfeAPIContainerName).CombinedOutput()
 			if err != nil {
 				return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 			}
 
-			if global.IsContainerRunning(engine, tfeCLIContainerName) {
+			if global.IsContainerRunning(engine, tfeAPIContainerName) {
 				return nil
 			}
 
 			// Older helper containers may exit immediately because they were created with
 			// a stale command or environment. Recreate transparently for a clean session.
-			_ = exec.Command(engine, "rm", "-f", tfeCLIContainerName).Run()
+			_ = exec.Command(engine, "rm", "-f", tfeAPIContainerName).Run()
 		}
 	}
 
 	runArgs := []string{
 		"run", "-d",
-		"--name", tfeCLIContainerName,
+		"--name", tfeAPIContainerName,
 		"--network", "hal-net",
 		"--entrypoint", "sh",
 		"-v", fmt.Sprintf("%s:/hal/certs/tfe-localhost.crt:ro", certPath),
@@ -428,7 +464,7 @@ func ensureTFECLIContainer(engine, certPath, localDir string) error {
 	}
 
 	runArgs = append(runArgs,
-		tfeCLIImageName,
+		tfeAPIImageName,
 		"-lc",
 		"set -e; mkdir -p /workspace /workspaces; tail -f /dev/null",
 	)
@@ -437,8 +473,8 @@ func ensureTFECLIContainer(engine, certPath, localDir string) error {
 	if err != nil {
 		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 	}
-	if !global.IsContainerRunning(engine, tfeCLIContainerName) {
-		logs, _ := exec.Command(engine, "logs", "--tail", "40", tfeCLIContainerName).CombinedOutput()
+	if !global.IsContainerRunning(engine, tfeAPIContainerName) {
+		logs, _ := exec.Command(engine, "logs", "--tail", "40", tfeAPIContainerName).CombinedOutput()
 		return fmt.Errorf("helper container exited unexpectedly: %s", strings.TrimSpace(string(logs)))
 	}
 
@@ -489,7 +525,7 @@ func refreshTFECLITrust(engine string) error {
 	out, err := exec.Command(
 		engine,
 		"exec",
-		tfeCLIContainerName,
+		tfeAPIContainerName,
 		"sh",
 		"-lc",
 		"set -e; cp /hal/certs/tfe-localhost.crt /usr/local/share/ca-certificates/tfe-localhost.crt; update-ca-certificates >/dev/null 2>&1 || true",
@@ -594,7 +630,7 @@ func writeTFECLIAuthFiles(engine, token string) error {
 		"EOF_TF",
 	}, "\n")
 
-	cmd := exec.Command(engine, "exec", tfeCLIContainerName, "sh", "-lc", writeScript)
+	cmd := exec.Command(engine, "exec", tfeAPIContainerName, "sh", "-lc", writeScript)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
@@ -612,13 +648,13 @@ type tfeCLIAuthConfig struct {
 func disableTFECLI(engine string, nonInteractiveConfirm bool) error {
 	if !nonInteractiveConfirm {
 		if !isInteractiveTTY() {
-			fmt.Println("⚠️  'hal tf cli disable' is destructive.")
+			fmt.Println("⚠️  'hal tf api-workflow disable' is destructive.")
 			fmt.Println("   It removes the helper container and deletes HAL-managed scenario workspaces tracked in TFE.")
-			fmt.Println("   Re-run with 'hal tf cli disable --update' to confirm in non-interactive mode.")
+			fmt.Println("   Re-run with 'hal tf api-workflow disable --auto-approve' to confirm in non-interactive mode.")
 			return nil
 		}
 
-		fmt.Println("⚠️  'hal tf cli disable' is destructive.")
+		fmt.Println("⚠️  'hal tf api-workflow disable' is destructive.")
 		fmt.Println("   It removes the helper container and deletes HAL-managed scenario workspaces tracked in TFE.")
 		confirmed, err := confirmTFECLIDisable()
 		if err != nil {
@@ -630,9 +666,9 @@ func disableTFECLI(engine string, nonInteractiveConfirm bool) error {
 		}
 	}
 
-	if containerExists(engine, tfeCLIContainerName) {
-		if !global.IsContainerRunning(engine, tfeCLIContainerName) {
-			_, _ = exec.Command(engine, "start", tfeCLIContainerName).CombinedOutput()
+	if containerExists(engine, tfeAPIContainerName) {
+		if !global.IsContainerRunning(engine, tfeAPIContainerName) {
+			_, _ = exec.Command(engine, "start", tfeAPIContainerName).CombinedOutput()
 		}
 
 		auth, authErr := readTFECLIAuthConfig(engine)
@@ -654,7 +690,7 @@ func disableTFECLI(engine string, nonInteractiveConfirm bool) error {
 			}
 		}
 
-		out, err := exec.Command(engine, "rm", "-f", tfeCLIContainerName).CombinedOutput()
+		out, err := exec.Command(engine, "rm", "-f", tfeAPIContainerName).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 		}
@@ -664,14 +700,14 @@ func disableTFECLI(engine string, nonInteractiveConfirm bool) error {
 		fmt.Println("ℹ️  Helper container is already absent.")
 	}
 
-	if out, err := exec.Command(engine, "image", "rm", "-f", tfeCLIImageName).CombinedOutput(); err != nil {
+	if out, err := exec.Command(engine, "image", "rm", "-f", tfeAPIImageName).CombinedOutput(); err != nil {
 		outputStr := strings.ToLower(strings.TrimSpace(string(out)))
 		if !strings.Contains(outputStr, "no such image") && !strings.Contains(outputStr, "image not known") {
-			return fmt.Errorf("failed to remove helper image %s: %s", tfeCLIImageName, strings.TrimSpace(string(out)))
+			return fmt.Errorf("failed to remove helper image %s: %s", tfeAPIImageName, strings.TrimSpace(string(out)))
 		}
 		fmt.Println("ℹ️  Helper image is already absent.")
 	} else {
-		fmt.Printf("✅ Helper image removed: %s\n", tfeCLIImageName)
+		fmt.Printf("✅ Helper image removed: %s\n", tfeAPIImageName)
 	}
 
 	return nil
@@ -694,7 +730,7 @@ func confirmTFECLIDisable() (bool, error) {
 }
 
 func readTFECLIManagedList(engine, path string) ([]string, error) {
-	cmd := exec.Command(engine, "exec", tfeCLIContainerName, "sh", "-lc", fmt.Sprintf("cat %s 2>/dev/null || true", path))
+	cmd := exec.Command(engine, "exec", tfeAPIContainerName, "sh", "-lc", fmt.Sprintf("cat %s 2>/dev/null || true", path))
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -712,7 +748,7 @@ func readTFECLIManagedList(engine, path string) ([]string, error) {
 }
 
 func readTFECLIAuthConfig(engine string) (tfeCLIAuthConfig, error) {
-	cmd := exec.Command(engine, "exec", tfeCLIContainerName, "sh", "-lc", "cat /root/.tfx.hcl")
+	cmd := exec.Command(engine, "exec", tfeAPIContainerName, "sh", "-lc", "cat /root/.tfx.hcl")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return tfeCLIAuthConfig{}, fmt.Errorf("%s", strings.TrimSpace(string(out)))
@@ -847,7 +883,7 @@ func ensureDefaultScenarioRepos(engine, token string) error {
 		"EOF_WS",
 	}, "\n")
 
-	if out, err := exec.Command(engine, "exec", tfeCLIContainerName, "sh", "-lc", managedListScript).CombinedOutput(); err != nil {
+	if out, err := exec.Command(engine, "exec", tfeAPIContainerName, "sh", "-lc", managedListScript).CombinedOutput(); err != nil {
 		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 	}
 
@@ -890,7 +926,7 @@ EOF_TF
 fi
 `, def.Name, def.Name, def.Name, tfxHostname, tfeCLIDefaultOrg, def.Workspace, def.Name, def.Theme, def.DadJoke)
 
-		if out, err := exec.Command(engine, "exec", tfeCLIContainerName, "sh", "-lc", script).CombinedOutput(); err != nil {
+		if out, err := exec.Command(engine, "exec", tfeAPIContainerName, "sh", "-lc", script).CombinedOutput(); err != nil {
 			return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 		}
 	}
@@ -997,7 +1033,7 @@ chmod +x /tmp/hal-tfe-cli-seed-runs.sh
 nohup /tmp/hal-tfe-cli-seed-runs.sh >/tmp/hal-tfe-cli-seed-runs.log 2>&1 &
 `, tfeCLIRunsSeedFile, tfeCLIRunsSeedLock, tfeCLIRunsSeedLock, tfeCLIRunsSeedLock, tfeCLIRunsSeedFile)
 
-	out, err := exec.Command(engine, "exec", tfeCLIContainerName, "sh", "-lc", launchScript).CombinedOutput()
+	out, err := exec.Command(engine, "exec", tfeAPIContainerName, "sh", "-lc", launchScript).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
 	}
@@ -1162,7 +1198,7 @@ func openTFECLIConsole(engine string) error {
 		"-e", "COLORTERM=truecolor",
 		"-e", "CLICOLOR=1",
 		"-e", "CLICOLOR_FORCE=1",
-		tfeCLIContainerName,
+		tfeAPIContainerName,
 		"sh", "-lc",
 		"cd /workspaces 2>/dev/null || cd /workspace 2>/dev/null || true; exec ${SHELL:-sh}",
 	)
@@ -1189,18 +1225,25 @@ func printTFECLIBanner() {
 		fmt.Printf("Host workspace mount: %s -> /workspaces\n", tfeCLILocalDirectory)
 	}
 	fmt.Println("Auth is already bootstrapped: avoid 'terraform login' unless you want to rotate tokens.")
-	fmt.Println("Leaving with CTRL+D or 'exit' only closes this shell. Re-enter later with 'hal tf cli -c'.")
+	fmt.Println("Leaving with CTRL+D or 'exit' only closes this shell. Re-enter later with 'hal tf api-workflow enable'.")
 	fmt.Println("Exit this console with CTRL+D or by typing 'exit'.")
 	fmt.Println("")
 }
 
-func tfeCLICertPath() (string, error) {
+func tfeCLICertPath(target string) (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 
 	certPath := filepath.Join(homeDir, ".hal", "tfe-certs", "cert.pem")
+	if target == tfeTargetTwin {
+		layout, err := buildTFETwinLayout()
+		if err != nil {
+			return "", err
+		}
+		certPath = filepath.Join(layout.CertDir, "cert.pem")
+	}
 	if _, err := os.Stat(certPath); err != nil {
 		return "", fmt.Errorf("required TFE certificate was not found at %s", certPath)
 	}
@@ -1225,6 +1268,113 @@ func isInteractiveTTY() bool {
 	return (info.Mode() & os.ModeCharDevice) != 0
 }
 
+func configureTFEAPIResourceNames(target string) {
+	if target == tfeTargetTwin {
+		tfeAPIContainerName = tfeAPITwinContainer
+		tfeAPIImageName = tfeAPITwinImage
+		return
+	}
+	tfeAPIContainerName = tfeAPIPrimaryContainer
+	tfeAPIImageName = tfeAPIPrimaryImage
+}
+
+func tfeCoreContainerForTarget(target string) (string, error) {
+	if target == tfeTargetTwin {
+		layout, err := buildTFETwinLayout()
+		if err != nil {
+			return "", err
+		}
+		return layout.CoreContainer, nil
+	}
+	return "hal-tfe", nil
+}
+
+func configureTFEAPITargetDefaults(cmd *cobra.Command, target string) error {
+	if target == tfeTargetTwin {
+		layout, err := buildTFETwinLayout()
+		if err != nil {
+			return err
+		}
+		if !cmd.Flags().Changed("tfe-url") {
+			tfeCLIURL = layout.UIURL
+		}
+		if !cmd.Flags().Changed("tfe-org") {
+			tfeCLIDefaultOrg = tfeTwinOrg
+		}
+		if !cmd.Flags().Changed("tfe-admin-username") {
+			tfeCLIAdminUsername = tfeTwinAdminUser
+		}
+		if !cmd.Flags().Changed("tfe-admin-email") {
+			tfeCLIAdminEmail = tfeTwinAdminEmail
+		}
+		if !cmd.Flags().Changed("tfe-admin-password") {
+			tfeCLIAdminPassword = tfeTwinAdminPass
+		}
+		if !cmd.Flags().Changed("tfe-project") && strings.TrimSpace(tfeCLIProjectSeed) == "" {
+			tfeCLIProjectSeed = tfeTwinProject
+		}
+		return nil
+	}
+
+	if !cmd.Flags().Changed("tfe-url") {
+		tfeCLIURL = "https://tfe.localhost:8443"
+	}
+	if !cmd.Flags().Changed("tfe-org") {
+		tfeCLIDefaultOrg = "hal"
+	}
+	if !cmd.Flags().Changed("tfe-admin-username") {
+		tfeCLIAdminUsername = "haladmin"
+	}
+	if !cmd.Flags().Changed("tfe-admin-email") {
+		tfeCLIAdminEmail = "haladmin@localhost"
+	}
+	if !cmd.Flags().Changed("tfe-admin-password") {
+		tfeCLIAdminPassword = "hal9000FTW"
+	}
+	return nil
+}
+
+func tfeAPIRuntimeVersions(engine string) (string, string, string) {
+	if !imageExists(engine, tfeAPIImageName) {
+		return "n/a", "n/a", "n/a"
+	}
+
+	probe := "tfx --version 2>/dev/null | head -n1 || true"
+	terraformProbe := "terraform version -json 2>/dev/null | sed -n 's/.*\\\"terraform_version\\\":\\\"\\([^\\\"]*\\\\)\\\".*/\\1/p' || true"
+	alpineProbe := "cat /etc/alpine-release 2>/dev/null || true"
+	script := fmt.Sprintf("echo TFX=\"$(%s)\"; echo TERRAFORM=\"$(%s)\"; echo ALPINE=\"$(%s)\"", probe, terraformProbe, alpineProbe)
+	out, err := exec.Command(engine, "run", "--rm", "--entrypoint", "sh", tfeAPIImageName, "-lc", script).CombinedOutput()
+	if err != nil {
+		return "unknown", "unknown", "unknown"
+	}
+
+	tfxVersion := "unknown"
+	terraformVersion := "unknown"
+	alpineVersion := "unknown"
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if strings.HasPrefix(line, "TFX=") {
+			value := strings.TrimSpace(strings.TrimPrefix(line, "TFX="))
+			if value != "" {
+				tfxVersion = value
+			}
+		}
+		if strings.HasPrefix(line, "TERRAFORM=") {
+			value := strings.TrimSpace(strings.TrimPrefix(line, "TERRAFORM="))
+			if value != "" {
+				terraformVersion = value
+			}
+		}
+		if strings.HasPrefix(line, "ALPINE=") {
+			value := strings.TrimSpace(strings.TrimPrefix(line, "ALPINE="))
+			if value != "" {
+				alpineVersion = value
+			}
+		}
+	}
+
+	return tfxVersion, terraformVersion, alpineVersion
+}
+
 func canRenderProgressAnimation() bool {
 	term := strings.ToLower(strings.TrimSpace(os.Getenv("TERM")))
 	if term == "dumb" {
@@ -1239,23 +1389,63 @@ func canRenderProgressAnimation() bool {
 }
 
 func init() {
-	cliCmd.Flags().BoolVarP(&tfeCLIEnable, "enable", "e", false, "Build or refresh the Terraform/TFX helper image")
-	cliCmd.Flags().BoolVarP(&tfeCLIConsole, "console", "c", false, "Start helper container and open an interactive shell")
-	cliCmd.Flags().BoolVarP(&tfeCLIDisable, "disable", "d", false, "Remove the helper container and delete HAL-managed scenario workspaces")
-	cliCmd.Flags().BoolVarP(&tfeCLIUpdate, "update", "u", false, "Reconcile helper image/container and refresh runtime configuration")
-	_ = cliCmd.Flags().MarkHidden("enable")
-	_ = cliCmd.Flags().MarkHidden("disable")
-	_ = cliCmd.Flags().MarkHidden("update")
-	cliCmd.Flags().BoolVar(&tfeCLIShowBannerOnly, "banner", false, "Print helper welcome banner without opening a shell")
-	cliCmd.Flags().StringVar(&tfeCLILocalDirectory, "local-directory", "", "Optional host directory to mount into the helper at /workspaces")
-	cliCmd.Flags().StringVar(&tfeCLIBaseImage, "base-image", defaultTFECLIBase, "Base image used to build the helper image")
-	cliCmd.Flags().StringVar(&tfeCLIURL, "tfe-url", "https://tfe.localhost:8443", "Terraform Enterprise URL used for helper auth bootstrap")
-	cliCmd.Flags().StringVar(&tfeCLIDefaultOrg, "tfe-org", "hal", "Default Terraform Enterprise organization written to ~/.tfx.hcl")
-	cliCmd.Flags().StringVar(&tfeCLIAdminUsername, "tfe-admin-username", "haladmin", "Terraform Enterprise admin username used for helper token bootstrap")
-	cliCmd.Flags().StringVar(&tfeCLIAdminEmail, "tfe-admin-email", "haladmin@localhost", "Terraform Enterprise admin email used for helper token bootstrap")
-	cliCmd.Flags().StringVar(&tfeCLIAdminPassword, "tfe-admin-password", "hal9000FTW", "Terraform Enterprise admin password used for helper token bootstrap")
-	cliCmd.Flags().StringVar(&tfeCLIProjectSeed, "tfe-project", "", "Optional Terraform Enterprise project to ensure during helper token bootstrap")
-	cliCmd.Flags().BoolVar(&tfeCLIVerbose, "verbose", false, "Show raw Docker build logs instead of HAL build animation")
+	apiCmd.Flags().BoolVarP(&tfeCLIEnable, "enable", "e", false, "Build (if missing) API helper image and open an interactive shell")
+	apiCmd.Flags().BoolVarP(&tfeCLIDisable, "disable", "d", false, "Remove the API helper container and delete HAL-managed scenario workspaces")
+	apiCmd.Flags().BoolVarP(&tfeCLIUpdate, "update", "u", false, "Delete API helper container+image, rebuild, and open shell")
+	_ = apiCmd.Flags().MarkHidden("enable")
+	_ = apiCmd.Flags().MarkHidden("disable")
+	_ = apiCmd.Flags().MarkHidden("update")
+	apiCmd.Flags().BoolVar(&tfeCLIShowBannerOnly, "banner", false, "Print API helper welcome banner without opening a shell")
+	apiCmd.Flags().StringVar(&tfeCLILocalDirectory, "local-directory", "", "Optional host directory to mount into the helper at /workspaces")
+	apiCmd.Flags().StringVar(&tfeCLIBaseImage, "base-image", defaultTFECLIBase, "Base image used to build the helper image")
+	apiCmd.Flags().StringVar(&tfeCLIURL, "tfe-url", "https://tfe.localhost:8443", "Terraform Enterprise URL used for helper auth bootstrap")
+	apiCmd.Flags().StringVar(&tfeCLIDefaultOrg, "tfe-org", "hal", "Default Terraform Enterprise organization written to ~/.tfx.hcl")
+	apiCmd.Flags().StringVar(&tfeCLIAdminUsername, "tfe-admin-username", "haladmin", "Terraform Enterprise admin username used for helper token bootstrap")
+	apiCmd.Flags().StringVar(&tfeCLIAdminEmail, "tfe-admin-email", "haladmin@localhost", "Terraform Enterprise admin email used for helper token bootstrap")
+	apiCmd.Flags().StringVar(&tfeCLIAdminPassword, "tfe-admin-password", "hal9000FTW", "Terraform Enterprise admin password used for helper token bootstrap")
+	apiCmd.Flags().StringVar(&tfeCLIProjectSeed, "tfe-project", "", "Optional Terraform Enterprise project to ensure during helper token bootstrap")
+	apiCmd.Flags().BoolVar(&tfeCLIAutoApprove, "auto-approve", false, "Skip interactive confirmation for destructive disable operations")
+	apiCmd.Flags().BoolVar(&tfeCLIVerbose, "verbose", false, "Show raw Docker build logs instead of HAL build animation")
+	bindTFETargetFlag(apiCmd)
+	apiCmd.Flags().Lookup("target").Usage = "Terraform scope to act on: primary or twin"
+	_ = apiCmd.RegisterFlagCompletionFunc("target", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{tfeTargetPrimary, tfeTargetTwin}, cobra.ShellCompDirectiveNoFileComp
+	})
+	bindTwinFlags(apiCmd)
 
-	Cmd.AddCommand(cliCmd)
+	// Keep expert controls available but hidden to avoid overwhelming default help output.
+	hiddenFlags := []string{
+		"banner",
+		"base-image",
+		"local-directory",
+		"verbose",
+		"tfe-url",
+		"tfe-org",
+		"tfe-admin-username",
+		"tfe-admin-email",
+		"tfe-admin-password",
+		"tfe-project",
+		"twin-version",
+		"twin-password",
+		"twin-tfe-org",
+		"twin-tfe-project",
+		"twin-tfe-admin-username",
+		"twin-tfe-admin-email",
+		"twin-tfe-admin-password",
+		"twin-proxy-nginx-version",
+		"twin-https-port",
+		"twin-hostname",
+		"twin-container-name",
+		"twin-proxy-ip",
+		"twin-db-password",
+		"twin-db-name",
+		"twin-minio-root-user",
+		"twin-minio-root-password",
+		"twin-s3-bucket",
+	}
+	for _, name := range hiddenFlags {
+		_ = apiCmd.Flags().MarkHidden(name)
+	}
+
+	Cmd.AddCommand(apiCmd)
 }

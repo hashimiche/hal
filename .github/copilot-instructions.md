@@ -37,6 +37,7 @@ Treat `docs/cli-lifecycle-model.md` as the source of truth for command lifecycle
 - Feature lifecycle: `enable`, `update`, `disable`, `status`.
 - Password retrieval family: `hal <product> password status`.
 - Scoped updates: allow `--target` on `update` where a scope owns multiple components.
+- Terraform twin handling is product-target based: use `hal terraform <create|update|status|delete> --target twin` instead of a dedicated `hal terraform twin` command.
 
 ### Documentation maintenance rule
 

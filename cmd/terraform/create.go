@@ -44,6 +44,17 @@ var deployCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a local Terraform Enterprise 1.x (FDO) instance via Docker",
 	Run: func(cmd *cobra.Command, args []string) {
+		target, err := normalizeTFETarget(tfeLifecycleTarget)
+		if err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
+		if target == tfeTargetTwin {
+			runTFETwinLifecycle(true, false, tfeUpdate, tfeConfigureObs)
+			return
+		}
+
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
@@ -51,6 +62,27 @@ var deployCmd = &cobra.Command{
 		}
 
 		if tfeConfigureObs {
+			if target == tfeTargetBoth {
+				if !global.IsContainerRunning(engine, "hal-tfe") {
+					fmt.Println("❌ Terraform Enterprise is not running. Deploy it first before configuring observability artifacts.")
+					fmt.Println("   💡 Run 'hal terraform create' and then retry with '--configure-obs' if needed.")
+					return
+				}
+				if !global.IsObsReady(engine) {
+					fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
+					fmt.Println("   💡 Run 'hal obs create' first, then retry '--configure-obs'.")
+					return
+				}
+
+				fmt.Println("🩺 Configuring observability artifacts for Terraform Enterprise...")
+				for _, warning := range global.RegisterObsArtifacts("terraform", []string{"hal-tfe:9090"}) {
+					fmt.Printf("⚠️  %s\n", warning)
+				}
+				fmt.Println("✅ Terraform Enterprise observability artifacts refreshed.")
+				runTFETwinLifecycle(true, false, false, true)
+				return
+			}
+
 			if !global.IsContainerRunning(engine, "hal-tfe") {
 				fmt.Println("❌ Terraform Enterprise is not running. Deploy it first before configuring observability artifacts.")
 				fmt.Println("   💡 Run 'hal terraform create' and then retry with '--configure-obs' if needed.")
@@ -341,6 +373,11 @@ http {
 		fmt.Println("\n💡 Next Step:")
 		fmt.Println("   Run 'hal terraform workspace enable' to bootstrap org/project/workspace wiring.")
 		fmt.Println("---------------------------------------------------------")
+
+		if target == tfeTargetBoth {
+			fmt.Println("\n🔁 Target includes twin. Continuing with twin Terraform Enterprise deployment...")
+			runTFETwinLifecycle(true, false, tfeUpdate, false)
+		}
 	},
 }
 
@@ -500,6 +537,10 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 func init() {
 	bindLifecycleFlags(deployCmd, true)
 	bindLifecycleFlags(updateCmd, false)
+	bindTFETargetFlag(deployCmd)
+	bindTFETargetFlag(updateCmd)
+	bindTwinFlags(deployCmd)
+	bindTwinFlags(updateCmd)
 	Cmd.AddCommand(deployCmd)
 	Cmd.AddCommand(updateCmd)
 }

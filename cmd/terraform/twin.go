@@ -94,7 +94,7 @@ var twinCmd = &cobra.Command{
 			}
 			if !global.IsContainerRunning(engine, layout.CoreContainer) {
 				fmt.Printf("❌ Twin Terraform Enterprise instance '%s' is not running.\n", layout.CoreContainer)
-				fmt.Println("   💡 Run 'hal tf twin enable' first.")
+				fmt.Println("   💡 Run 'hal tf create --target twin' first.")
 				return
 			}
 			if err := global.UpsertObsPromTargetIfRunning(engine, "terraform-bis", []string{layout.CoreContainer + ":9090"}); err != nil {
@@ -116,7 +116,7 @@ var twinCmd = &cobra.Command{
 
 		if !global.IsContainerRunning(engine, "hal-tfe") {
 			fmt.Println("❌ Primary Terraform Enterprise instance is not running (hal-tfe).")
-			fmt.Println("   💡 Run 'hal tf create' first, then retry 'hal tf twin enable'.")
+			fmt.Println("   💡 Run 'hal tf create' first, then retry 'hal tf create --target twin'.")
 			return
 		}
 
@@ -446,11 +446,11 @@ func showTFETwinStatus(engine string, layout tfeTwinLayout) {
 
 	fmt.Println("\n💡 Tips:")
 	if !anyRunning {
-		fmt.Println("   Run 'hal tf create' first, then 'hal tf twin enable'.")
+		fmt.Println("   Run 'hal tf create' first, then 'hal tf create --target twin'.")
 	} else {
 		fmt.Printf("   🔗 UI Address: %s\n", layout.UIURL)
 		fmt.Println("   Twin reuses hal-tfe-db, hal-tfe-redis, and hal-tfe-minio.")
-		fmt.Println("   To remove twin resources, run: hal tf twin disable")
+		fmt.Println("   To remove twin resources, run: hal tf delete --target twin")
 	}
 }
 
@@ -686,6 +686,34 @@ func waitForTwinService(url string, maxRetries int) error {
 	return fmt.Errorf("timeout waiting for twin TFE at %s", url)
 }
 
+func runTFETwinLifecycle(enable, disable, update, configureObsOnly bool) {
+	tfeTwinEnable = enable
+	tfeTwinDisable = disable
+	tfeTwinUpdate = update
+	tfeTwinConfigureObsOnly = configureObsOnly
+	twinCmd.Run(twinCmd, nil)
+}
+
+func bindTwinFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&tfeTwinVersion, "twin-version", "1.2.0", "Terraform Enterprise Docker image tag for the twin instance")
+	cmd.Flags().StringVar(&tfeTwinPassword, "twin-password", "hal-secret-encryption-password", "Twin TFE encryption password")
+	cmd.Flags().StringVar(&tfeTwinOrg, "twin-tfe-org", "hal-bis", "Terraform Enterprise organization name to auto-bootstrap for the twin instance")
+	cmd.Flags().StringVar(&tfeTwinProject, "twin-tfe-project", "Dave-bis", "Terraform Enterprise project name to auto-bootstrap for the twin instance")
+	cmd.Flags().StringVar(&tfeTwinAdminUser, "twin-tfe-admin-username", "haladmin", "Initial twin TFE admin username used when bootstrapping via IACT")
+	cmd.Flags().StringVar(&tfeTwinAdminEmail, "twin-tfe-admin-email", "haladmin@localhost", "Initial twin TFE admin email used when bootstrapping via IACT")
+	cmd.Flags().StringVar(&tfeTwinAdminPass, "twin-tfe-admin-password", "hal9000FTW", "Initial twin TFE admin password used when bootstrapping via IACT")
+	cmd.Flags().StringVar(&tfeTwinProxyNginxTag, "twin-proxy-nginx-version", "alpine", "Nginx image tag for the twin ingress proxy")
+	cmd.Flags().IntVar(&tfeTwinHTTPSPort, "twin-https-port", 9443, "Host HTTPS port exposed by the twin TFE ingress proxy")
+	cmd.Flags().StringVar(&tfeTwinHostname, "twin-hostname", "tfe-bis.localhost", "TLS hostname used by the twin TFE instance")
+	cmd.Flags().StringVar(&tfeTwinContainerName, "twin-container-name", "hal-tfe-bis", "Container name used for the twin TFE core application")
+	cmd.Flags().StringVar(&tfeTwinProxyInternalIP, "twin-proxy-ip", "10.89.3.55", "Static internal proxy IP on hal-net for twin hostname routing")
+	cmd.Flags().StringVar(&tfeTwinDatabasePassword, "twin-db-password", "tfe_password", "PostgreSQL password used by the twin TFE backend")
+	cmd.Flags().StringVar(&tfeTwinDatabaseName, "twin-db-name", "tfe_bis", "Database name for the twin TFE schema in shared PostgreSQL")
+	cmd.Flags().StringVar(&tfeTwinMinioRootUser, "twin-minio-root-user", "minioadmin", "MinIO root user for shared object storage")
+	cmd.Flags().StringVar(&tfeTwinMinioRootPassword, "twin-minio-root-password", "minioadmin", "MinIO root password for shared object storage")
+	cmd.Flags().StringVar(&tfeTwinObjectStorageBucket, "twin-s3-bucket", "tfe-bis-data", "S3 bucket name for twin TFE objects in shared MinIO")
+}
+
 func init() {
 	twinCmd.Flags().BoolVarP(&tfeTwinEnable, "enable", "e", false, "Deploy the twin Terraform Enterprise instance")
 	twinCmd.Flags().BoolVar(&tfeTwinDisable, "disable", false, "Destroy the twin Terraform Enterprise instance and remove its local artifacts")
@@ -694,23 +722,5 @@ func init() {
 	_ = twinCmd.Flags().MarkHidden("enable")
 	_ = twinCmd.Flags().MarkHidden("disable")
 	_ = twinCmd.Flags().MarkHidden("update")
-	twinCmd.Flags().StringVarP(&tfeTwinVersion, "version", "v", "1.2.0", "Terraform Enterprise Docker image tag for the twin instance")
-	twinCmd.Flags().StringVarP(&tfeTwinPassword, "password", "p", "hal-secret-encryption-password", "Twin TFE encryption password")
-	twinCmd.Flags().StringVar(&tfeTwinOrg, "tfe-org", "hal", "Terraform Enterprise organization name to auto-bootstrap for the twin instance")
-	twinCmd.Flags().StringVar(&tfeTwinProject, "tfe-project", "Dave", "Terraform Enterprise project name to auto-bootstrap for the twin instance")
-	twinCmd.Flags().StringVar(&tfeTwinAdminUser, "tfe-admin-username", "haladmin", "Initial twin TFE admin username used when bootstrapping via IACT")
-	twinCmd.Flags().StringVar(&tfeTwinAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial twin TFE admin email used when bootstrapping via IACT")
-	twinCmd.Flags().StringVar(&tfeTwinAdminPass, "tfe-admin-password", "hal9000FTW", "Initial twin TFE admin password used when bootstrapping via IACT")
-	twinCmd.Flags().StringVar(&tfeTwinProxyNginxTag, "proxy-nginx-version", "alpine", "Nginx image tag for the twin ingress proxy")
-	twinCmd.Flags().IntVar(&tfeTwinHTTPSPort, "https-port", 9443, "Host HTTPS port exposed by the twin TFE ingress proxy")
-	twinCmd.Flags().StringVar(&tfeTwinHostname, "hostname", "tfe-bis.localhost", "TLS hostname used by the twin TFE instance")
-	twinCmd.Flags().StringVar(&tfeTwinContainerName, "container-name", "hal-tfe-bis", "Container name used for the twin TFE core application")
-	twinCmd.Flags().StringVar(&tfeTwinProxyInternalIP, "proxy-ip", "10.89.3.55", "Static internal proxy IP on hal-net for twin hostname routing")
-	twinCmd.Flags().StringVar(&tfeTwinDatabasePassword, "db-password", "tfe_password", "PostgreSQL password used by the twin TFE backend")
-	twinCmd.Flags().StringVar(&tfeTwinDatabaseName, "db-name", "tfe_bis", "Database name for the twin TFE schema in shared PostgreSQL")
-	twinCmd.Flags().StringVar(&tfeTwinMinioRootUser, "minio-root-user", "minioadmin", "MinIO root user for shared object storage")
-	twinCmd.Flags().StringVar(&tfeTwinMinioRootPassword, "minio-root-password", "minioadmin", "MinIO root password for shared object storage")
-	twinCmd.Flags().StringVar(&tfeTwinObjectStorageBucket, "s3-bucket", "tfe-bis-data", "S3 bucket name for twin TFE objects in shared MinIO")
-
-	Cmd.AddCommand(twinCmd)
+	bindTwinFlags(twinCmd)
 }
