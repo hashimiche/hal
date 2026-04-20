@@ -369,7 +369,7 @@ func ensureTFETwinFoundation(engine string, layout tfeTwinLayout) (string, error
 
 	if token == "" {
 		// Best-effort warmup to reduce startup races without blocking the CLI for minutes.
-		_ = waitForTFECoreReadiness(engine, 30*time.Second)
+		_ = waitForTFECoreReadiness(engine, baseURL, 30*time.Second)
 
 		autoToken, err := bootstrapTFEAPIToken(engine, baseURL, tfeTwinAdminUser, tfeTwinAdminEmail, tfeTwinAdminPass)
 		if err != nil {

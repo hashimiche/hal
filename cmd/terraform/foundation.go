@@ -3,6 +3,7 @@ package terraform
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
@@ -40,7 +41,7 @@ func ensureTFEFoundation(engine string, cfg tfeFoundationConfig) (string, string
 
 	if token == "" {
 		// Best-effort warmup to reduce startup races without blocking the CLI for minutes.
-		_ = waitForTFECoreReadiness(engine, 30*time.Second)
+		_ = waitForTFECoreReadiness(engine, cfg.BaseURL, 30*time.Second)
 
 		autoToken, err := bootstrapTFEAPIToken(engine, cfg.BaseURL, cfg.AdminUsername, cfg.AdminEmail, cfg.AdminPassword)
 		if err != nil {
@@ -58,14 +59,19 @@ func ensureTFEFoundation(engine string, cfg tfeFoundationConfig) (string, string
 	return token, projectID, nil
 }
 
-func waitForTFECoreReadiness(engine string, timeout time.Duration) error {
+func waitForTFECoreReadiness(engine, baseURL string, timeout time.Duration) error {
+	containerName, err := tfeCoreContainerForBaseURL(baseURL)
+	if err != nil {
+		return err
+	}
+
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
 		vaultReady := exec.Command(
 			engine,
 			"exec",
-			"hal-tfe",
+			containerName,
 			"bash",
 			"-lc",
 			"VAULT_ADDR=http://127.0.0.1:8200 vault status -format=json 2>/dev/null | grep -q '\"sealed\":false'",
@@ -74,7 +80,7 @@ func waitForTFECoreReadiness(engine string, timeout time.Duration) error {
 		archivistReady := exec.Command(
 			engine,
 			"exec",
-			"hal-tfe",
+			containerName,
 			"bash",
 			"-lc",
 			"(echo >/dev/tcp/127.0.0.1/7675) >/dev/null 2>&1",
@@ -91,27 +97,13 @@ func waitForTFECoreReadiness(engine string, timeout time.Duration) error {
 }
 
 func bootstrapTFEAPIToken(engine, baseURL, username, email, password string) (string, error) {
-	if token, err := bootstrapTFEAPITokenFromAdminCLI(engine); err == nil {
+	if token, err := bootstrapTFEUserTokenFromContainer(engine, baseURL, username, email, "hal-auto-foundation"); err == nil {
 		if isTFEAPITokenUsable(baseURL, token) {
 			return token, nil
 		}
 	}
 
 	return bootstrapTFEAPITokenFromIACT(engine, baseURL, username, email, password)
-}
-
-func bootstrapTFEAPITokenFromAdminCLI(engine string) (string, error) {
-	out, err := exec.Command(engine, "exec", "hal-tfe", "tfectl", "admin", "api-token", "generate", "--description", "hal-auto-foundation", "--ttl", "720").CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("failed to generate admin api token: %s", strings.TrimSpace(string(out)))
-	}
-
-	token := extractHexToken(string(out))
-	if token == "" {
-		return "", fmt.Errorf("admin api token output did not include token")
-	}
-
-	return token, nil
 }
 
 func isTFEAPITokenUsable(baseURL, token string) bool {
@@ -133,7 +125,12 @@ func isTFEAPITokenUsable(baseURL, token string) bool {
 }
 
 func bootstrapTFEAPITokenFromIACT(engine, baseURL, username, email, password string) (string, error) {
-	out, err := exec.Command(engine, "exec", "hal-tfe", "tfectl", "admin", "token").CombinedOutput()
+	containerName, err := tfeCoreContainerForBaseURL(baseURL)
+	if err != nil {
+		return "", err
+	}
+
+	out, err := exec.Command(engine, "exec", containerName, "tfectl", "admin", "token").CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve IACT token: %s", strings.TrimSpace(string(out)))
 	}
@@ -154,6 +151,61 @@ func bootstrapTFEAPITokenFromIACT(engine, baseURL, username, email, password str
 	}
 
 	return "", fmt.Errorf("initial admin bootstrap failed (%d): %s", status, resp)
+}
+
+func bootstrapTFEUserTokenFromContainer(engine, baseURL, username, email, description string) (string, error) {
+	containerName, err := tfeCoreContainerForBaseURL(baseURL)
+	if err != nil {
+		return "", err
+	}
+
+	usernameLiteral, _ := json.Marshal(strings.TrimSpace(username))
+	emailLiteral, _ := json.Marshal(strings.TrimSpace(email))
+	descriptionLiteral, _ := json.Marshal(strings.TrimSpace(description))
+	rubySnippet := fmt.Sprintf("user = User.with_insensitive_username(%s).first || User.find_by!(email: %s); token = Api::V2::AuthenticationTokenCreator.new(parent: user, created_by: user, description: %s).create; puts token.token", string(usernameLiteral), string(emailLiteral), string(descriptionLiteral))
+	shellScript := fmt.Sprintf("source /run/terraform-enterprise/atlas/atlas-env && source /run/terraform-enterprise/atlas/redis-env && cd /app && bundle exec rails runner %s 2>/dev/null", shellSingleQuote(rubySnippet))
+	out, err := exec.Command(engine, "exec", containerName, "bash", "-lc", shellScript).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to mint user token from container runtime: %s", strings.TrimSpace(string(out)))
+	}
+
+	token := extractAtlasUserToken(string(out))
+	if token == "" {
+		return "", fmt.Errorf("container token mint output did not include a user token")
+	}
+
+	return token, nil
+}
+
+func tfeCoreContainerForBaseURL(baseURL string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return "", fmt.Errorf("invalid TFE base URL %q: %w", baseURL, err)
+	}
+
+	hostname := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	if hostname == "" {
+		return "hal-tfe", nil
+	}
+
+	if hostname == "tfe-bis.localhost" {
+		layout, layoutErr := buildTFETwinLayout()
+		if layoutErr != nil {
+			return "", layoutErr
+		}
+		return layout.CoreContainer, nil
+	}
+
+	return "hal-tfe", nil
+}
+
+func extractAtlasUserToken(raw string) string {
+	tokenPattern := regexp.MustCompile(`[A-Za-z0-9_-]+\.atlasv1\.[A-Za-z0-9_-]+`)
+	return strings.TrimSpace(tokenPattern.FindString(raw))
+}
+
+func shellSingleQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func extractHexToken(raw string) string {
