@@ -250,7 +250,7 @@ func mcpOpsTools() []map[string]interface{} {
 		},
 		{
 			"name":        "setup_tfe_workspace",
-			"description": "Run Terraform workspace bootstrap in dry_run/apply mode.",
+			"description": "Run Terraform VCS workflow bootstrap in dry_run/apply mode.",
 			"inputSchema": modeSchema(),
 		},
 		{
@@ -506,7 +506,7 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 			commands = []string{"hal boundary status", "hal boundary ssh"}
 			docs = []string{"https://developer.hashicorp.com/boundary"}
 		case "terraform", "terraform_workspace", "tfe":
-			commands = []string{"hal terraform status", "hal terraform workspace"}
+			commands = []string{"hal terraform status", "hal terraform vcs-workflow"}
 			docs = []string{"https://developer.hashicorp.com/terraform/enterprise"}
 		case "terraform_agent", "tfe_agent":
 			commands = []string{"hal terraform agent", "hal terraform agent enable", "hal terraform status"}
@@ -649,7 +649,7 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		return handleTFECLIStatus(), true
 
 	case "setup_tfe_workspace":
-		return handleEnableScenarioMode("setup_tfe_workspace", []string{"terraform", "workspace", "enable"}, []string{"hal terraform workspace", "hal terraform status"}, args), true
+		return handleEnableScenarioMode("setup_tfe_workspace", []string{"terraform", "vcs-workflow", "enable"}, []string{"hal terraform vcs-workflow", "hal terraform status"}, args), true
 
 	case "get_k8s_integration_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
@@ -1320,14 +1320,14 @@ func componentContext(component string) (map[string]interface{}, []string, error
 				"http://grafana.localhost:3000",
 				"http://prometheus.localhost:9090",
 			},
-		}, []string{"hal terraform status", "hal terraform create", "hal terraform workspace", "hal terraform api-workflow", "hal terraform agent"}, nil
+		}, []string{"hal terraform status", "hal terraform create", "hal terraform vcs-workflow", "hal terraform api-workflow", "hal terraform agent"}, nil
 	case "terraform_workspace":
 		return map[string]interface{}{
 			"component":  "terraform_workspace",
 			"depends_on": []string{"hal-tfe", "hal-gitlab"},
 			"workflow":   "prepare gitlab repo + wire TFE workspace VCS",
 			"trigger":    "push commit to main branch",
-		}, []string{"hal terraform workspace", "hal terraform workspace enable", "hal terraform status"}, nil
+		}, []string{"hal terraform vcs-workflow", "hal terraform vcs-workflow enable", "hal terraform status"}, nil
 	case "terraform_agent":
 		return map[string]interface{}{
 			"component":         "terraform_agent",
@@ -1388,9 +1388,9 @@ func buildFeaturePlan(intent string) (map[string]interface{}, bool) {
 		return map[string]interface{}{
 			"intent":       intent,
 			"action":       "terraform_workspace_setup",
-			"prechecks":    []string{"hal terraform status", "hal terraform workspace"},
-			"steps":        []map[string]string{{"command": "hal terraform workspace enable", "reason": "Prepare GitLab repo and wire TFE workspace"}},
-			"postchecks":   []string{"hal terraform workspace", "hal terraform status"},
+			"prechecks":    []string{"hal terraform status", "hal terraform vcs-workflow"},
+			"steps":        []map[string]string{{"command": "hal terraform vcs-workflow enable", "reason": "Prepare GitLab repo and wire TFE workspace"}},
+			"postchecks":   []string{"hal terraform vcs-workflow", "hal terraform status"},
 			"next_trigger": []string{"Push a commit to main to validate end-to-end VCS run"},
 			"rollback":     []string{"hal terraform delete"},
 		}, true
@@ -1604,25 +1604,26 @@ func handleEnableAuthMode(mode string, args map[string]interface{}) mcpToolCallR
 }
 
 func handleEnableScenarioMode(toolName string, baseCmd []string, postChecks []string, args map[string]interface{}) mcpToolCallResult {
+	recovery := []string{"hal " + strings.Join(baseCmd, " "), "hal status"}
 	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "update": true}); err != nil {
-		return opErrorForTool(toolName, codeParseError, err.Error(), nil, []string{"hal " + strings.Join(baseCmd, " ")}, nil, nil, nil)
+		return opErrorForTool(toolName, codeParseError, err.Error(), nil, recovery, nil, nil, nil)
 	}
 	runMode := "dry_run"
 	if raw, ok := args["mode"]; ok {
 		parsed, ok := raw.(string)
 		if !ok {
-			return opErrorForTool(toolName, codeParseError, "mode must be string", nil, []string{"hal " + strings.Join(baseCmd, " ")}, nil, nil, nil)
+			return opErrorForTool(toolName, codeParseError, "mode must be string", nil, recovery, nil, nil, nil)
 		}
 		runMode = strings.TrimSpace(strings.ToLower(parsed))
 	}
 	if runMode != "dry_run" && runMode != "apply" {
-		return opErrorForTool(toolName, codeParseError, "mode must be dry_run or apply", nil, []string{"hal " + strings.Join(baseCmd, " ")}, nil, nil, nil)
+		return opErrorForTool(toolName, codeParseError, "mode must be dry_run or apply", nil, recovery, nil, nil, nil)
 	}
 	update := false
 	if raw, ok := args["update"]; ok {
 		parsed, ok := raw.(bool)
 		if !ok {
-			return opErrorForTool(toolName, codeParseError, "update must be boolean", nil, []string{"hal " + strings.Join(baseCmd, " ")}, nil, nil, nil)
+			return opErrorForTool(toolName, codeParseError, "update must be boolean", nil, recovery, nil, nil, nil)
 		}
 		update = parsed
 	}
@@ -1759,12 +1760,12 @@ func handleTFEStatus() mcpToolCallResult {
 	data := map[string]interface{}{
 		"runtime":         product,
 		"workspace_state": workspaceState,
-		"workspace_hint":  "Use get_help_for_topic(terraform workspace) and get_component_context(terraform_workspace) for workspace-specific guidance.",
+		"workspace_hint":  "Use get_help_for_topic(terraform vcs-workflow) and get_component_context(terraform_workspace) for workspace-specific guidance.",
 	}
 	if state != "running" {
 		return opErrorForTool("get_tfe_status", runtimeCodeFromState(state), "tfe runtime not healthy; deploy terraform first", data, []string{"hal terraform create", "hal terraform status"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
 	}
-	return opSuccessForTool("get_tfe_status", "tfe status collected", data, []string{"hal terraform status", "hal terraform workspace enable"}, checks, nil, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+	return opSuccessForTool("get_tfe_status", "tfe status collected", data, []string{"hal terraform status", "hal terraform vcs-workflow enable"}, checks, nil, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
 }
 
 func handleTFECLIStatus() mcpToolCallResult {

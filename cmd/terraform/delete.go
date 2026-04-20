@@ -152,10 +152,15 @@ var destroyCmd = &cobra.Command{
 			fmt.Println("  🧹 Removed cached TFE API token.")
 		}
 
-		if err := removeTFEAgentState(); err != nil {
-			fmt.Printf("⚠️  Could not remove cached TFE agent state: %v\n", err)
+		if err := removeTFEAgentState(tfeTargetPrimary); err != nil {
+			fmt.Printf("⚠️  Could not remove cached primary TFE agent state: %v\n", err)
 		} else {
-			fmt.Println("  🧹 Removed cached TFE agent state.")
+			fmt.Println("  🧹 Removed cached primary TFE agent state.")
+		}
+		if err := removeTFEAgentState(tfeTargetTwin); err != nil {
+			fmt.Printf("⚠️  Could not remove cached twin TFE agent state: %v\n", err)
+		} else {
+			fmt.Println("  🧹 Removed cached twin TFE agent state.")
 		}
 
 		if preserveSharedBackend {

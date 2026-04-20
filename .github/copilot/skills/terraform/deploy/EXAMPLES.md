@@ -7,7 +7,7 @@ User: Deploy Terraform lab resources and confirm readiness.
 Assistant:
 
     hal terraform create
-    hal terraform workspace enable
+    hal terraform vcs-workflow enable
     hal terraform status
 
 Assistant: I summarize provisioning success and any post-deploy steps required by this lab.
@@ -32,7 +32,7 @@ User: Stand up Terraform lab and wire end-to-end VCS automation.
 Assistant:
 
     hal terraform create
-    hal terraform workspace enable
+    hal terraform vcs-workflow enable
     hal terraform status
 
 Assistant: I verify both infrastructure availability and workspace automation readiness in one sequence.
@@ -66,6 +66,6 @@ User: The run triggers, but plan/apply errors immediately.
 Assistant:
 
     hal terraform create -f
-    hal terraform workspace enable
+    hal terraform vcs-workflow enable
 
 Assistant: Deploy now patches the task-worker cache mount for writable Terraform downloads and preserves `:8443` archivist log links for UI/raw log access.

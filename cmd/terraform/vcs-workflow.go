@@ -1,6 +1,7 @@
 package terraform
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ var (
 	workspaceEnable          bool
 	workspaceDisable         bool
 	workspaceUpdate          bool
+	workspaceAutoApprove     bool
 	workspaceGitLabVersion   string
 	workspaceGitLabPassword  string
 	workspaceProjectPath     string
@@ -36,16 +38,21 @@ var (
 	tfeAdminPassword         string
 	tfeTagsRegex             string
 	tfeVCSBranch             string
-	workspaceSharedConsumer  = "terraform-workspace"
 	workspaceGitLabServiceID = "gitlab"
 )
 
 var workspaceCmd = &cobra.Command{
-	Use:     "workspace [status|enable|disable|update]",
-	Aliases: []string{"ws"},
-	Short:   "Configure a Terraform workspace lab with shared GitLab reuse",
+	Use:     "vcs-workflow [status|enable|disable|update]",
+	Aliases: []string{"vcs", "workspace", "ws"},
+	Short:   "Configure a Terraform VCS-driven lab with shared GitLab reuse",
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := parseLifecycleAction(args, &workspaceEnable, &workspaceDisable, &workspaceUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
+		target, err := normalizeTFETarget(tfeLifecycleTarget)
+		if err != nil {
 			fmt.Printf("❌ %v\n", err)
 			return
 		}
@@ -56,202 +63,265 @@ var workspaceCmd = &cobra.Command{
 			return
 		}
 
-		if workspaceDisable {
-			if workspaceEnable || workspaceUpdate {
-				fmt.Println("❌ '--disable' cannot be combined with '--enable' or '--update'.")
-				return
-			}
-			disableWorkspaceScenario(engine)
-			return
-		}
-
 		if workspaceUpdate {
 			workspaceEnable = true
 		}
 
+		if target == tfeTargetBoth {
+			if workspaceDisable {
+				disableWorkspaceScenario(engine, tfeTargetPrimary, workspaceAutoApprove)
+				disableWorkspaceScenario(engine, tfeTargetTwin, workspaceAutoApprove)
+				return
+			}
+
+			if !workspaceEnable {
+				showWorkspaceScenarioStatus(engine, tfeTargetPrimary)
+				fmt.Println("---------------------------------------------------------")
+				showWorkspaceScenarioStatus(engine, tfeTargetTwin)
+				return
+			}
+
+			if err := runWorkspaceScenarioEnable(cmd, engine, tfeTargetPrimary); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return
+			}
+			fmt.Println("---------------------------------------------------------")
+			if err := runWorkspaceScenarioEnable(cmd, engine, tfeTargetTwin); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return
+			}
+			return
+		}
+
+		if workspaceDisable {
+			if workspaceEnable {
+				fmt.Println("❌ '--disable' cannot be combined with '--enable'.")
+				return
+			}
+			disableWorkspaceScenario(engine, target, workspaceAutoApprove)
+			return
+		}
+
 		if !workspaceEnable {
-			fmt.Println("🔍 Checking Terraform workspace scenario prerequisites...")
-			if global.IsContainerRunning(engine, "hal-tfe") {
-				fmt.Println("  ✅ Terraform Enterprise: running")
-			} else {
-				fmt.Println("  ❌ Terraform Enterprise: not running")
-			}
-
-			if global.IsContainerRunning(engine, "hal-gitlab") {
-				fmt.Println("  ✅ Shared GitLab: running")
-			} else {
-				fmt.Println("  ⚠️  Shared GitLab: not running (will be bootstrapped automatically)")
-			}
-
-			fmt.Println("\n💡 Next Step:")
-			fmt.Println("   hal terraform workspace enable")
+			showWorkspaceScenarioStatus(engine, target)
 			return
 		}
 
-		if !global.IsContainerRunning(engine, "hal-tfe") {
-			fmt.Println("❌ Terraform Enterprise is not running.")
-			fmt.Println("   💡 Run 'hal terraform create' first.")
-			return
-		}
-
-		global.EnsureNetwork(engine)
-
-		reused, err := integrations.EnsureGitLabCE(engine, workspaceGitLabVersion, workspaceGitLabPassword)
-		if err != nil {
+		if err := runWorkspaceScenarioEnable(cmd, engine, target); err != nil {
 			fmt.Printf("❌ %v\n", err)
-			return
 		}
-		if reused {
-			fmt.Println("ℹ️  Reusing existing shared GitLab service.")
-		} else {
-			fmt.Println("🚀 Booted shared GitLab service for Terraform workspace setup.")
-		}
-
-		fmt.Println("⏳ Waiting for GitLab API...")
-		if err := integrations.WaitForGitLab("http://127.0.0.1:8080", 90); err != nil {
-			fmt.Println("❌ GitLab failed to become ready in time.")
-			return
-		}
-
-		if err := ensureGitLabCanReachTFEWebhook(engine); err != nil {
-			fmt.Printf("⚠️  Could not enforce GitLab -> TFE webhook routing automatically: %v\n", err)
-			fmt.Println("   💡 VCS push events may not trigger runs if tfe.localhost is unreachable from hal-gitlab.")
-		}
-
-		vcsToken, err := integrations.GitLabPasswordToken("http://127.0.0.1:8080/oauth/token", "root", workspaceGitLabPassword)
-		if err != nil {
-			fmt.Printf("❌ Failed to retrieve GitLab API token: %v\n", err)
-			return
-		}
-
-		if err := ensureGitLabAllowsLocalWebhooks(vcsToken); err != nil {
-			fmt.Printf("⚠️  Could not relax GitLab local webhook policy automatically: %v\n", err)
-			fmt.Println("   💡 TFE may fail to attach VCS webhooks until this is enabled in GitLab application settings.")
-		}
-
-		gitlabProjectID, webURL, err := ensureTFDemoProject(vcsToken)
-		if err != nil {
-			fmt.Printf("❌ Failed to prepare Terraform demo repository: %v\n", err)
-			return
-		}
-
-		if err := seedTFDemoFiles(vcsToken, gitlabProjectID); err != nil {
-			fmt.Printf("⚠️  Repository exists but demo files were not fully updated: %v\n", err)
-		}
-
-		if err := global.AddSharedServiceConsumer(workspaceGitLabServiceID, workspaceSharedConsumer); err != nil {
-			fmt.Printf("⚠️  Could not persist shared ownership metadata: %v\n", err)
-		}
-
-		tokenSourceHint := ""
-		if tfeVCSOAuthTokenID == "" {
-			tfeVCSOAuthTokenID = os.Getenv("TFE_GITLAB_OAUTH_TOKEN_ID")
-		}
-		if tfeVCSOAuthTokenID == "" {
-			tfeVCSOAuthTokenID = os.Getenv("TFE_GITLAB_TOKEN_ID")
-		}
-
-		tfeProjectID := ""
-		tfeAPIToken, tfeProjectID, err = ensureTFEFoundation(engine, tfeFoundationConfig{
-			BaseURL:       tfeBaseURL,
-			OrgName:       tfeOrgName,
-			ProjectName:   tfeProjectName,
-			APIToken:      tfeAPIToken,
-			AdminUsername: tfeAdminUsername,
-			AdminEmail:    tfeAdminEmail,
-			AdminPassword: tfeAdminPassword,
-		})
-		if err != nil {
-			fmt.Printf("⚠️  TFE foundation bootstrap incomplete: %v\n", err)
-			fmt.Println("   💡 HAL could not mint a usable API token automatically from this TFE instance.")
-		} else {
-			tokenSourceHint = "✅ TFE app API token ready (cached for reuse)."
-		}
-
-		if tfeAPIToken != "" && strings.TrimSpace(tfeVCSOAuthTokenID) != "" {
-			valid, reason := isGitLabOAuthTokenIDUsable(strings.TrimSpace(tfeVCSOAuthTokenID))
-			if !valid {
-				fmt.Printf("⚠️  Ignoring provided GitLab OAuth token id '%s': %s\n", tfeVCSOAuthTokenID, reason)
-				tfeVCSOAuthTokenID = ""
-			}
-		}
-
-		if tfeAPIToken != "" && tfeVCSOAuthTokenID == "" {
-			fmt.Println("⚙️  Creating GitLab VCS token and wiring Terraform Enterprise OAuth automatically...")
-			oauthID, oauthErr := ensureTFEGitLabOAuthTokenID(tfeOrgName, vcsToken)
-			if oauthErr != nil {
-				fmt.Printf("⚠️  OAuth-access-token wiring failed, retrying with PAT fallback: %v\n", oauthErr)
-				gitlabPAT, patErr := createGitLabPAT(vcsToken)
-				if patErr != nil {
-					fmt.Printf("⚠️  Could not create GitLab PAT for TFE VCS wiring: %v\n", patErr)
-				} else {
-					oauthID, oauthErr = ensureTFEGitLabOAuthTokenID(tfeOrgName, gitlabPAT)
-					if oauthErr != nil {
-						fmt.Printf("⚠️  Could not auto-create TFE GitLab OAuth token id: %v\n", oauthErr)
-					} else {
-						tfeVCSOAuthTokenID = oauthID
-						fmt.Printf("✅ TFE GitLab OAuth token id ready: %s\n", tfeVCSOAuthTokenID)
-					}
-				}
-			} else {
-				tfeVCSOAuthTokenID = oauthID
-				fmt.Printf("✅ TFE GitLab OAuth token id ready: %s\n", tfeVCSOAuthTokenID)
-			}
-		}
-
-		if tfeAPIToken == "" {
-			fmt.Println("⚠️  Skipping TFE workspace wiring: missing usable TFE API token.")
-		} else {
-			repoIdentifier := fmt.Sprintf("root/%s", workspaceProjectPath)
-			workspaceURL, err := ensureTFEWorkspace(strings.ToLower(tfeOrgName), tfeProjectID, repoIdentifier)
-			if err != nil && strings.Contains(strings.ToLower(err.Error()), "tags regex") {
-				fmt.Println("⚠️  TFE rejected tags-regex with current trigger settings; retrying without tags-regex...")
-				tfeTagsRegex = ""
-				workspaceURL, err = ensureTFEWorkspace(strings.ToLower(tfeOrgName), tfeProjectID, repoIdentifier)
-			}
-			if err != nil && strings.Contains(strings.ToLower(err.Error()), "failed to create webhook on repository") {
-				fmt.Println("⚠️  Webhook creation failed with current OAuth token; rotating token and retrying once...")
-				if refreshedID, rotateErr := ensureTFEGitLabOAuthTokenID(tfeOrgName, vcsToken); rotateErr == nil {
-					tfeVCSOAuthTokenID = refreshedID
-					workspaceURL, err = ensureTFEWorkspace(strings.ToLower(tfeOrgName), tfeProjectID, repoIdentifier)
-				} else {
-					fmt.Printf("⚠️  OAuth token rotation failed: %v\n", rotateErr)
-				}
-			}
-			if err != nil {
-				fmt.Printf("⚠️  TFE workspace bootstrap incomplete: %v\n", err)
-			} else {
-				fmt.Printf("🔗 TFE Workspace: %s\n", workspaceURL)
-			}
-		}
-		if tokenSourceHint != "" {
-			fmt.Println(tokenSourceHint)
-		}
-
-		fmt.Println("\n✅ Terraform workspace GitLab scenario prepared.")
-		fmt.Println("---------------------------------------------------------")
-		fmt.Printf("🔗 GitLab Repo: %s\n", webURL)
-		fmt.Println("   Login:       root / hal9000FTW")
-		fmt.Println("🧭 Next:        Push a new commit to main in GitLab to validate the end-to-end VCS-driven auto-apply workflow")
-		fmt.Println("---------------------------------------------------------")
 	},
 }
 
-func disableWorkspaceScenario(engine string) {
+func showWorkspaceScenarioStatus(engine, target string) {
+	fmt.Printf("🔍 Checking Terraform VCS workflow prerequisites (target=%s)...\n", target)
+	coreContainer, err := tfeCoreContainerForTarget(target)
+	if err != nil {
+		fmt.Printf("  ❌ Terraform Enterprise target: unresolved (%v)\n", err)
+	} else if global.IsContainerRunning(engine, coreContainer) {
+		fmt.Printf("  ✅ Terraform Enterprise target: running (%s)\n", coreContainer)
+	} else {
+		fmt.Printf("  ❌ Terraform Enterprise target: not running (%s)\n", coreContainer)
+	}
+
+	if global.IsContainerRunning(engine, "hal-gitlab") {
+		fmt.Println("  ✅ Shared GitLab: running")
+	} else {
+		fmt.Println("  ⚠️  Shared GitLab: not running (will be bootstrapped automatically)")
+	}
+
+	fmt.Println("\n💡 Next Step:")
+	fmt.Printf("   hal terraform vcs-workflow enable -t %s\n", target)
+}
+
+func runWorkspaceScenarioEnable(cmd *cobra.Command, engine, target string) error {
+	if err := configureWorkspaceTargetDefaults(cmd, target); err != nil {
+		return err
+	}
+
+	coreContainer, err := tfeCoreContainerForTarget(target)
+	if err != nil {
+		return err
+	}
+	if !global.IsContainerRunning(engine, coreContainer) {
+		if target == tfeTargetTwin {
+			return fmt.Errorf("Terraform Enterprise twin target is not running (%s). Run 'hal terraform create -t twin' first", coreContainer)
+		}
+		return fmt.Errorf("Terraform Enterprise is not running (%s). Run 'hal terraform create' first", coreContainer)
+	}
+
+	global.EnsureNetwork(engine)
+
+	reused, err := integrations.EnsureGitLabCE(engine, workspaceGitLabVersion, workspaceGitLabPassword)
+	if err != nil {
+		return err
+	}
+	if reused {
+		fmt.Println("ℹ️  Reusing existing shared GitLab service.")
+	} else {
+		fmt.Println("🚀 Booted shared GitLab service for Terraform VCS workflow setup.")
+	}
+
+	fmt.Println("⏳ Waiting for GitLab API...")
+	if err := integrations.WaitForGitLab("http://127.0.0.1:8080", 90); err != nil {
+		return fmt.Errorf("GitLab failed to become ready in time")
+	}
+
+	if err := ensureGitLabCanReachTFEWebhook(engine); err != nil {
+		fmt.Printf("⚠️  Could not enforce GitLab -> TFE webhook routing automatically: %v\n", err)
+		fmt.Println("   💡 VCS push events may not trigger runs if tfe.localhost is unreachable from hal-gitlab.")
+	}
+
+	vcsToken, err := integrations.GitLabPasswordToken("http://127.0.0.1:8080/oauth/token", "root", workspaceGitLabPassword)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve GitLab API token: %w", err)
+	}
+
+	if err := ensureGitLabAllowsLocalWebhooks(vcsToken); err != nil {
+		fmt.Printf("⚠️  Could not relax GitLab local webhook policy automatically: %v\n", err)
+		fmt.Println("   💡 TFE may fail to attach VCS webhooks until this is enabled in GitLab application settings.")
+	}
+
+	gitlabProjectID, webURL, err := ensureTFDemoProject(vcsToken)
+	if err != nil {
+		return fmt.Errorf("failed to prepare Terraform demo repository: %w", err)
+	}
+
+	if err := seedTFDemoFiles(vcsToken, gitlabProjectID); err != nil {
+		fmt.Printf("⚠️  Repository exists but demo files were not fully updated: %v\n", err)
+	}
+
+	if err := global.AddSharedServiceConsumer(workspaceGitLabServiceID, workspaceSharedConsumerForTarget(target)); err != nil {
+		fmt.Printf("⚠️  Could not persist shared ownership metadata: %v\n", err)
+	}
+
+	tokenSourceHint := ""
+	if tfeVCSOAuthTokenID == "" {
+		tfeVCSOAuthTokenID = os.Getenv("TFE_GITLAB_OAUTH_TOKEN_ID")
+	}
+	if tfeVCSOAuthTokenID == "" {
+		tfeVCSOAuthTokenID = os.Getenv("TFE_GITLAB_TOKEN_ID")
+	}
+
+	tfeProjectID := ""
+	tfeAPIToken, tfeProjectID, err = ensureTFEFoundation(engine, tfeFoundationConfig{
+		BaseURL:       tfeBaseURL,
+		OrgName:       tfeOrgName,
+		ProjectName:   tfeProjectName,
+		APIToken:      tfeAPIToken,
+		AdminUsername: tfeAdminUsername,
+		AdminEmail:    tfeAdminEmail,
+		AdminPassword: tfeAdminPassword,
+	})
+	if err != nil {
+		fmt.Printf("⚠️  TFE foundation bootstrap incomplete: %v\n", err)
+		fmt.Println("   💡 HAL could not mint a usable API token automatically from this TFE instance.")
+	} else {
+		tokenSourceHint = "✅ TFE app API token ready (cached for reuse)."
+	}
+
+	if tfeAPIToken != "" && strings.TrimSpace(tfeVCSOAuthTokenID) != "" {
+		valid, reason := isGitLabOAuthTokenIDUsable(strings.TrimSpace(tfeVCSOAuthTokenID))
+		if !valid {
+			fmt.Printf("⚠️  Ignoring provided GitLab OAuth token id '%s': %s\n", tfeVCSOAuthTokenID, reason)
+			tfeVCSOAuthTokenID = ""
+		}
+	}
+
+	if tfeAPIToken != "" && tfeVCSOAuthTokenID == "" {
+		fmt.Println("⚙️  Creating GitLab VCS token and wiring Terraform Enterprise OAuth automatically...")
+		oauthID, oauthErr := ensureTFEGitLabOAuthTokenID(tfeOrgName, vcsToken)
+		if oauthErr != nil {
+			fmt.Printf("⚠️  OAuth-access-token wiring failed, retrying with PAT fallback: %v\n", oauthErr)
+			gitlabPAT, patErr := createGitLabPAT(vcsToken)
+			if patErr != nil {
+				fmt.Printf("⚠️  Could not create GitLab PAT for TFE VCS wiring: %v\n", patErr)
+			} else {
+				oauthID, oauthErr = ensureTFEGitLabOAuthTokenID(tfeOrgName, gitlabPAT)
+				if oauthErr != nil {
+					fmt.Printf("⚠️  Could not auto-create TFE GitLab OAuth token id: %v\n", oauthErr)
+				} else {
+					tfeVCSOAuthTokenID = oauthID
+					fmt.Printf("✅ TFE GitLab OAuth token id ready: %s\n", tfeVCSOAuthTokenID)
+				}
+			}
+		} else {
+			tfeVCSOAuthTokenID = oauthID
+			fmt.Printf("✅ TFE GitLab OAuth token id ready: %s\n", tfeVCSOAuthTokenID)
+		}
+	}
+
+	if tfeAPIToken == "" {
+		fmt.Println("⚠️  Skipping TFE workspace wiring: missing usable TFE API token.")
+	} else {
+		repoIdentifier := fmt.Sprintf("root/%s", workspaceProjectPath)
+		workspaceURL, err := ensureTFEWorkspace(strings.ToLower(tfeOrgName), tfeProjectID, repoIdentifier)
+		if err != nil && strings.Contains(strings.ToLower(err.Error()), "tags regex") {
+			fmt.Println("⚠️  TFE rejected tags-regex with current trigger settings; retrying without tags-regex...")
+			tfeTagsRegex = ""
+			workspaceURL, err = ensureTFEWorkspace(strings.ToLower(tfeOrgName), tfeProjectID, repoIdentifier)
+		}
+		if err != nil && strings.Contains(strings.ToLower(err.Error()), "failed to create webhook on repository") {
+			fmt.Println("⚠️  Webhook creation failed with current OAuth token; rotating token and retrying once...")
+			if refreshedID, rotateErr := ensureTFEGitLabOAuthTokenID(tfeOrgName, vcsToken); rotateErr == nil {
+				tfeVCSOAuthTokenID = refreshedID
+				workspaceURL, err = ensureTFEWorkspace(strings.ToLower(tfeOrgName), tfeProjectID, repoIdentifier)
+			} else {
+				fmt.Printf("⚠️  OAuth token rotation failed: %v\n", rotateErr)
+			}
+		}
+		if err != nil {
+			fmt.Printf("⚠️  TFE workspace bootstrap incomplete: %v\n", err)
+		} else {
+			fmt.Printf("🔗 TFE Workspace: %s\n", workspaceURL)
+		}
+	}
+	if tokenSourceHint != "" {
+		fmt.Println(tokenSourceHint)
+	}
+
+	fmt.Printf("\n✅ Terraform VCS workflow prepared (target=%s).\n", target)
+	fmt.Println("---------------------------------------------------------")
+	fmt.Printf("🔗 GitLab Repo: %s\n", webURL)
+	fmt.Println("   Login:       root / hal9000FTW")
+	fmt.Println("🧭 Next:        Push a new commit to main in GitLab to validate the end-to-end VCS-driven auto-apply workflow")
+	fmt.Println("---------------------------------------------------------")
+
+	return nil
+}
+
+func disableWorkspaceScenario(engine, target string, autoApprove bool) {
 	if global.DryRun {
-		fmt.Println("[DRY RUN] Would remove terraform-workspace consumer from shared gitlab service")
+		fmt.Printf("[DRY RUN] Would remove terraform-vcs-workflow consumer (%s) from shared gitlab service\n", target)
 		fmt.Println("[DRY RUN] Would stop shared GitLab if no remaining consumers")
 		return
 	}
 
-	remaining, err := global.RemoveSharedServiceConsumer(workspaceGitLabServiceID, workspaceSharedConsumer)
+	if !autoApprove && isInteractiveTTY() {
+		fmt.Printf("⚠️  'hal tf vcs-workflow disable -t %s' is destructive for workflow metadata. Continue? [y/N]: ", target)
+		reader := bufio.NewReader(os.Stdin)
+		answer, _ := reader.ReadString('\n')
+		answer = strings.ToLower(strings.TrimSpace(answer))
+		if answer != "y" && answer != "yes" {
+			fmt.Println("ℹ️  Disable cancelled.")
+			return
+		}
+	}
+
+	remaining, err := global.RemoveSharedServiceConsumer(workspaceGitLabServiceID, workspaceSharedConsumerForTarget(target))
 	if err != nil {
 		fmt.Printf("⚠️  Could not update shared GitLab ownership metadata: %v\n", err)
 	}
 
 	if len(remaining) > 0 {
 		fmt.Printf("ℹ️  Shared GitLab remains active (still used by: %s).\n", strings.Join(remaining, ", "))
-		fmt.Println("✅ Terraform workspace scenario disabled (metadata only).")
+		fmt.Printf("✅ Terraform VCS workflow disabled for target=%s (metadata only).\n", target)
+		return
+	}
+
+	if isAnyTFERuntimeRunning(engine) {
+		fmt.Println("ℹ️  Shared GitLab remains active because at least one Terraform Enterprise runtime is still running.")
+		fmt.Printf("✅ Terraform VCS workflow disabled for target=%s (GitLab preserved).\n", target)
 		return
 	}
 
@@ -264,7 +334,7 @@ func disableWorkspaceScenario(engine string) {
 	}
 
 	_ = global.ClearSharedService(workspaceGitLabServiceID)
-	fmt.Println("✅ Terraform workspace scenario disabled.")
+	fmt.Printf("✅ Terraform VCS workflow disabled for target=%s.\n", target)
 }
 
 func ensureTFEWorkspace(orgName, projectID, repoIdentifier string) (string, error) {
@@ -337,7 +407,7 @@ func ensureTFEWorkspace(orgName, projectID, repoIdentifier string) (string, erro
 
 	if tfeVCSOAuthTokenID == "" {
 		fmt.Println("⚠️  Workspace created without VCS link (missing GitLab OAuth token id).")
-		fmt.Println("   💡 Re-run 'hal tf ws enable' after TFE token is available to finish VCS wiring automatically.")
+		fmt.Println("   💡 Re-run 'hal tf vcs enable' after TFE token is available to finish VCS wiring automatically.")
 	}
 
 	return fmt.Sprintf("%s/app/organizations/%s/workspaces/%s", tfeBaseURL, orgName, tfeWorkspaceName), nil
@@ -759,13 +829,96 @@ terraform-validate:
 	return updateErr
 }
 
+func workspaceSharedConsumerForTarget(target string) string {
+	return fmt.Sprintf("terraform-vcs-workflow-%s", target)
+}
+
+func isAnyTFERuntimeRunning(engine string) bool {
+	if global.IsContainerRunning(engine, "hal-tfe") {
+		return true
+	}
+	layout, err := buildTFETwinLayout()
+	if err != nil {
+		return false
+	}
+	return global.IsContainerRunning(engine, layout.CoreContainer)
+}
+
+func configureWorkspaceTargetDefaults(cmd *cobra.Command, target string) error {
+	if target == tfeTargetTwin {
+		layout, err := buildTFETwinLayout()
+		if err != nil {
+			return err
+		}
+		if !cmd.Flags().Changed("tfe-url") {
+			tfeBaseURL = layout.UIURL
+		}
+		if !cmd.Flags().Changed("tfe-org") {
+			tfeOrgName = tfeTwinOrg
+		}
+		if !cmd.Flags().Changed("tfe-project") {
+			tfeProjectName = tfeTwinProject
+		}
+		if !cmd.Flags().Changed("tfe-admin-username") {
+			tfeAdminUsername = tfeTwinAdminUser
+		}
+		if !cmd.Flags().Changed("tfe-admin-email") {
+			tfeAdminEmail = tfeTwinAdminEmail
+		}
+		if !cmd.Flags().Changed("tfe-admin-password") {
+			tfeAdminPassword = tfeTwinAdminPass
+		}
+		if !cmd.Flags().Changed("tfe-workspace") {
+			tfeWorkspaceName = "tfe-agent-demo-bis"
+		}
+		if !cmd.Flags().Changed("project-name") {
+			workspaceProjectName = "tfe-agent-demo-bis"
+		}
+		if !cmd.Flags().Changed("project-path") {
+			workspaceProjectPath = "tfe-agent-demo-bis"
+		}
+		return nil
+	}
+
+	if !cmd.Flags().Changed("tfe-url") {
+		tfeBaseURL = "https://tfe.localhost:8443"
+	}
+	if !cmd.Flags().Changed("tfe-org") {
+		tfeOrgName = "hal"
+	}
+	if !cmd.Flags().Changed("tfe-project") {
+		tfeProjectName = "Dave"
+	}
+	if !cmd.Flags().Changed("tfe-admin-username") {
+		tfeAdminUsername = "haladmin"
+	}
+	if !cmd.Flags().Changed("tfe-admin-email") {
+		tfeAdminEmail = "haladmin@localhost"
+	}
+	if !cmd.Flags().Changed("tfe-admin-password") {
+		tfeAdminPassword = "hal9000FTW"
+	}
+	if !cmd.Flags().Changed("tfe-workspace") {
+		tfeWorkspaceName = "tfe-agent-demo"
+	}
+	if !cmd.Flags().Changed("project-name") {
+		workspaceProjectName = "tfe-agent-demo"
+	}
+	if !cmd.Flags().Changed("project-path") {
+		workspaceProjectPath = "tfe-agent-demo"
+	}
+
+	return nil
+}
+
 func init() {
-	workspaceCmd.Flags().BoolVarP(&workspaceEnable, "enable", "e", false, "Bootstrap or reuse shared GitLab and configure a Terraform demo repository")
-	workspaceCmd.Flags().BoolVarP(&workspaceDisable, "disable", "d", false, "Disable Terraform workspace automation and release shared GitLab ownership")
-	workspaceCmd.Flags().BoolVarP(&workspaceUpdate, "update", "u", false, "Reconcile existing Terraform workspace automation without full teardown")
+	workspaceCmd.Flags().BoolVarP(&workspaceEnable, "enable", "e", false, "Bootstrap or reuse shared GitLab and configure a Terraform VCS demo repository")
+	workspaceCmd.Flags().BoolVarP(&workspaceDisable, "disable", "d", false, "Disable Terraform VCS workflow automation and release shared GitLab ownership")
+	workspaceCmd.Flags().BoolVarP(&workspaceUpdate, "update", "u", false, "Reconcile existing Terraform VCS workflow automation without full teardown")
 	_ = workspaceCmd.Flags().MarkHidden("enable")
 	_ = workspaceCmd.Flags().MarkHidden("disable")
 	_ = workspaceCmd.Flags().MarkHidden("update")
+	workspaceCmd.Flags().BoolVar(&workspaceAutoApprove, "auto-approve", false, "Skip interactive confirmation for destructive disable operations")
 	workspaceCmd.Flags().StringVar(&workspaceGitLabVersion, "gitlab-version", "18.10.1-ce.0", "Version of the GitLab CE image used for shared Terraform workspace setup")
 	workspaceCmd.Flags().StringVar(&workspaceGitLabPassword, "gitlab-root-password", "hal9000FTW", "Root password used to bootstrap GitLab when HAL starts it")
 	workspaceCmd.Flags().StringVar(&workspaceProjectName, "project-name", "tfe-agent-demo", "GitLab project name for the Terraform workspace demo")
@@ -782,6 +935,28 @@ func init() {
 	workspaceCmd.Flags().StringVar(&tfeAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
 	workspaceCmd.Flags().StringVar(&tfeAdminPassword, "tfe-admin-password", "hal9000FTW", "Initial TFE admin password used when bootstrapping via IACT")
 	workspaceCmd.Flags().StringVar(&tfeTagsRegex, "tfe-tags-regex", "", "Optional regex for VCS tag-triggered runs (leave empty to disable)")
+
+	bindTFETargetFlag(workspaceCmd)
+	for _, name := range []string{
+		"gitlab-version",
+		"gitlab-root-password",
+		"project-name",
+		"project-path",
+		"tfe-api-token",
+		"tfe-vcs-oauth-token-id",
+		"gitlab-token-id",
+		"tfe-url",
+		"tfe-org",
+		"tfe-project",
+		"tfe-workspace",
+		"tfe-vcs-branch",
+		"tfe-admin-username",
+		"tfe-admin-email",
+		"tfe-admin-password",
+		"tfe-tags-regex",
+	} {
+		_ = workspaceCmd.Flags().MarkHidden(name)
+	}
 
 	Cmd.AddCommand(workspaceCmd)
 }

@@ -16,10 +16,13 @@ import (
 )
 
 const (
-	tfeAgentContainerName      = "hal-tfe-agent"
+	tfeAgentPrimaryContainer   = "hal-tfe-agent"
+	tfeAgentTwinContainer      = "hal-tfe-bis-agent"
 	defaultTFEAgentImage       = "hashicorp/tfc-agent:1.28"
 	defaultTFEAgentPoolName    = "hal-agent-pool"
+	defaultTFETwinAgentPool    = "hal-agent-pool-bis"
 	defaultTFEAgentDisplayName = "hal-tfc-agent"
+	defaultTFETwinAgentName    = "hal-tfc-agent-bis"
 	tfeProxyInternalIP         = "10.89.3.54"
 )
 
@@ -47,6 +50,7 @@ var (
 	tfeAgentAdminUsername string
 	tfeAgentAdminEmail    string
 	tfeAgentAdminPassword string
+	tfeAgentAutoApprove   bool
 )
 
 var agentCmd = &cobra.Command{
@@ -54,6 +58,12 @@ var agentCmd = &cobra.Command{
 	Short: "Deploy and manage a custom TFE agent for agent-pool-backed workspace runs",
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := parseLifecycleAction(args, &tfeAgentEnable, &tfeAgentDisable, &tfeAgentUpdate); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+
+		target, err := normalizeTFETarget(tfeLifecycleTarget)
+		if err != nil {
 			fmt.Printf("❌ %v\n", err)
 			return
 		}
@@ -69,8 +79,15 @@ var agentCmd = &cobra.Command{
 				fmt.Println("❌ '--disable' cannot be combined with '--enable' or '--update'.")
 				return
 			}
-			if err := disableTFEAgent(engine); err != nil {
-				fmt.Printf("❌ Failed to disable Terraform agent flow: %v\n", err)
+			for _, lifecycleTarget := range tfeAgentTargets(target) {
+				if err := configureTFEAgentTargetDefaults(cmd, lifecycleTarget); err != nil {
+					fmt.Printf("❌ Failed to configure agent target defaults (%s): %v\n", lifecycleTarget, err)
+					return
+				}
+				if err := disableTFEAgent(engine, lifecycleTarget, tfeAgentAutoApprove); err != nil {
+					fmt.Printf("❌ Failed to disable Terraform agent flow (%s): %v\n", lifecycleTarget, err)
+					return
+				}
 			}
 			return
 		}
@@ -80,13 +97,28 @@ var agentCmd = &cobra.Command{
 		}
 
 		if !tfeAgentEnable {
-			showTFEAgentStatus(engine)
+			for i, lifecycleTarget := range tfeAgentTargets(target) {
+				if err := configureTFEAgentTargetDefaults(cmd, lifecycleTarget); err != nil {
+					fmt.Printf("❌ Failed to configure agent target defaults (%s): %v\n", lifecycleTarget, err)
+					return
+				}
+				showTFEAgentStatus(engine, lifecycleTarget)
+				if i+1 < len(tfeAgentTargets(target)) {
+					fmt.Println("---------------------------------------------------------")
+				}
+			}
 			return
 		}
 
-		if err := enableTFEAgent(engine); err != nil {
-			fmt.Printf("❌ Failed to enable Terraform agent flow: %v\n", err)
-			return
+		for _, lifecycleTarget := range tfeAgentTargets(target) {
+			if err := configureTFEAgentTargetDefaults(cmd, lifecycleTarget); err != nil {
+				fmt.Printf("❌ Failed to configure agent target defaults (%s): %v\n", lifecycleTarget, err)
+				return
+			}
+			if err := enableTFEAgent(engine, lifecycleTarget); err != nil {
+				fmt.Printf("❌ Failed to enable Terraform agent flow (%s): %v\n", lifecycleTarget, err)
+				return
+			}
 		}
 
 		fmt.Println("✅ Terraform agent flow is ready.")
@@ -96,24 +128,36 @@ var agentCmd = &cobra.Command{
 	},
 }
 
-func showTFEAgentStatus(engine string) {
-	fmt.Println("🔍 Checking Terraform Agent Status...")
+func tfeAgentTargets(target string) []string {
+	if target == tfeTargetBoth {
+		return []string{tfeTargetPrimary, tfeTargetTwin}
+	}
+	return []string{target}
+}
 
-	if global.IsContainerRunning(engine, "hal-tfe") {
-		fmt.Println("  🟢 tfe-runtime         : running (hal-tfe)")
+func showTFEAgentStatus(engine, target string) {
+	fmt.Printf("🔍 Checking Terraform Agent Status (target=%s)...\n", target)
+
+	coreContainer, coreErr := tfeCoreContainerForTarget(target)
+	if coreErr != nil {
+		fmt.Printf("  ❌ tfe-runtime         : unresolved (%v)\n", coreErr)
+	} else if global.IsContainerRunning(engine, coreContainer) {
+		fmt.Printf("  🟢 tfe-runtime         : running (%s)\n", coreContainer)
 	} else {
-		fmt.Println("  ⚪ tfe-runtime         : not running (hal-tfe)")
+		fmt.Printf("  ⚪ tfe-runtime         : not running (%s)\n", coreContainer)
 	}
 
-	if global.IsContainerRunning(engine, tfeAgentContainerName) {
-		fmt.Printf("  🟢 agent-container     : running (%s)\n", tfeAgentContainerName)
-	} else if containerExists(engine, tfeAgentContainerName) {
-		fmt.Printf("  🟡 agent-container     : stopped (%s)\n", tfeAgentContainerName)
+	containerName := tfeAgentContainerNameForTarget(target)
+
+	if global.IsContainerRunning(engine, containerName) {
+		fmt.Printf("  🟢 agent-container     : running (%s)\n", containerName)
+	} else if containerExists(engine, containerName) {
+		fmt.Printf("  🟡 agent-container     : stopped (%s)\n", containerName)
 	} else {
-		fmt.Printf("  ⚪ agent-container     : not created (%s)\n", tfeAgentContainerName)
+		fmt.Printf("  ⚪ agent-container     : not created (%s)\n", containerName)
 	}
 
-	state, err := loadTFEAgentState()
+	state, err := loadTFEAgentState(target)
 	if err != nil {
 		fmt.Printf("  ⚠️  state              : unreadable (%v)\n", err)
 	} else if state == nil {
@@ -129,12 +173,19 @@ func showTFEAgentStatus(engine string) {
 	}
 
 	fmt.Println("\n💡 Next Step:")
-	fmt.Println("   hal terraform agent enable")
-	fmt.Println("   hal terraform agent disable")
+	fmt.Printf("   hal terraform agent enable -t %s\n", target)
+	fmt.Printf("   hal terraform agent disable -t %s\n", target)
 }
 
-func enableTFEAgent(engine string) error {
-	if !global.IsContainerRunning(engine, "hal-tfe") {
+func enableTFEAgent(engine, target string) error {
+	coreContainer, err := tfeCoreContainerForTarget(target)
+	if err != nil {
+		return err
+	}
+	if !global.IsContainerRunning(engine, coreContainer) {
+		if target == tfeTargetTwin {
+			return fmt.Errorf("terraform enterprise twin is not running; run 'hal terraform create -t twin' first")
+		}
 		return fmt.Errorf("terraform enterprise is not running; run 'hal terraform create' first")
 	}
 
@@ -165,12 +216,14 @@ func enableTFEAgent(engine string) error {
 		return fmt.Errorf("agent image cannot be empty")
 	}
 
+	containerName := tfeAgentContainerNameForTarget(target)
+
 	if tfeAgentUpdate {
-		_ = exec.Command(engine, "rm", "-f", tfeAgentContainerName).Run()
+		_ = exec.Command(engine, "rm", "-f", containerName).Run()
 	}
 
-	state, _ := loadTFEAgentState()
-	if global.IsContainerRunning(engine, tfeAgentContainerName) && !tfeAgentUpdate {
+	state, _ := loadTFEAgentState(target)
+	if global.IsContainerRunning(engine, containerName) && !tfeAgentUpdate {
 		fmt.Println("ℹ️  Agent container is already running. Reusing existing runtime.")
 		if state != nil {
 			fmt.Printf("ℹ️  Existing pool: %s (%s)\n", state.PoolName, state.PoolID)
@@ -206,7 +259,7 @@ func enableTFEAgent(engine string) error {
 		return err
 	}
 
-	certPath, err := tfeCLICertPath(tfeTargetPrimary)
+	certPath, err := tfeCLICertPath(target)
 	if err != nil {
 		return fmt.Errorf("missing local TFE certificate: %w", err)
 	}
@@ -215,12 +268,14 @@ func enableTFEAgent(engine string) error {
 	if parsed, parseErr := url.Parse(baseURL); parseErr == nil {
 		if strings.EqualFold(parsed.Hostname(), "tfe.localhost") {
 			addHostArg = "tfe.localhost:" + tfeProxyInternalIP
+		} else if strings.EqualFold(parsed.Hostname(), "tfe-bis.localhost") {
+			addHostArg = "tfe-bis.localhost:" + tfeTwinProxyInternalIP
 		}
 	}
 
 	runArgs := []string{
 		"run", "-d",
-		"--name", tfeAgentContainerName,
+		"--name", containerName,
 		"--network", "hal-net",
 	}
 	if addHostArg != "" {
@@ -246,13 +301,13 @@ func enableTFEAgent(engine string) error {
 		PoolID:        poolID,
 		PoolName:      poolName,
 		TokenID:       tokenID,
-		ContainerName: tfeAgentContainerName,
+		ContainerName: containerName,
 		AgentName:     agentName,
 		Image:         image,
 		Org:           org,
 		BaseURL:       baseURL,
 	}
-	if err := saveTFEAgentState(state); err != nil {
+	if err := saveTFEAgentState(target, state); err != nil {
 		fmt.Printf("⚠️  Agent started but state persistence failed: %v\n", err)
 	}
 
@@ -266,16 +321,29 @@ func enableTFEAgent(engine string) error {
 	return nil
 }
 
-func disableTFEAgent(engine string) error {
-	state, _ := loadTFEAgentState()
+func disableTFEAgent(engine, target string, autoApprove bool) error {
+	if !autoApprove && isInteractiveTTY() {
+		fmt.Printf("⚠️  Disable Terraform agent runtime for target=%s? [y/N]: ", target)
+		var confirm string
+		if _, err := fmt.Scanln(&confirm); err == nil {
+			confirm = strings.ToLower(strings.TrimSpace(confirm))
+			if confirm != "y" && confirm != "yes" {
+				fmt.Println("ℹ️  Disable cancelled.")
+				return nil
+			}
+		}
+	}
 
-	if out, err := exec.Command(engine, "rm", "-f", tfeAgentContainerName).CombinedOutput(); err != nil {
+	state, _ := loadTFEAgentState(target)
+	containerName := tfeAgentContainerNameForTarget(target)
+
+	if out, err := exec.Command(engine, "rm", "-f", containerName).CombinedOutput(); err != nil {
 		msg := strings.ToLower(strings.TrimSpace(string(out)))
 		if !strings.Contains(msg, "no such container") && !strings.Contains(msg, "no container") {
 			return fmt.Errorf("failed to remove agent container: %s", strings.TrimSpace(string(out)))
 		}
 	} else if strings.TrimSpace(string(out)) != "" {
-		fmt.Printf("✅ Removed container: %s\n", tfeAgentContainerName)
+		fmt.Printf("✅ Removed container: %s\n", containerName)
 	}
 
 	if state != nil && strings.TrimSpace(state.TokenID) != "" {
@@ -303,11 +371,11 @@ func disableTFEAgent(engine string) error {
 		}
 	}
 
-	if err := removeTFEAgentState(); err != nil {
+	if err := removeTFEAgentState(target); err != nil {
 		fmt.Printf("⚠️  Could not remove local agent state file: %v\n", err)
 	}
 
-	fmt.Println("✅ Terraform agent container removed.")
+	fmt.Printf("✅ Terraform agent container removed for target=%s.\n", target)
 	fmt.Println("ℹ️  Agent pool remains in TFE so you can re-attach quickly later.")
 	return nil
 }
@@ -423,19 +491,85 @@ func listTFEPoolAgents(baseURL, poolID, apiToken string) ([]string, error) {
 	return agents, nil
 }
 
-func tfeAgentStatePath() (string, error) {
+func tfeAgentContainerNameForTarget(target string) string {
+	if target == tfeTargetTwin {
+		return tfeAgentTwinContainer
+	}
+	return tfeAgentPrimaryContainer
+}
+
+func configureTFEAgentTargetDefaults(cmd *cobra.Command, target string) error {
+	if target == tfeTargetTwin {
+		layout, err := buildTFETwinLayout()
+		if err != nil {
+			return err
+		}
+		if !cmd.Flags().Changed("tfe-url") {
+			tfeAgentBaseURL = layout.UIURL
+		}
+		if !cmd.Flags().Changed("tfe-org") {
+			tfeAgentOrg = tfeTwinOrg
+		}
+		if !cmd.Flags().Changed("tfe-admin-username") {
+			tfeAgentAdminUsername = tfeTwinAdminUser
+		}
+		if !cmd.Flags().Changed("tfe-admin-email") {
+			tfeAgentAdminEmail = tfeTwinAdminEmail
+		}
+		if !cmd.Flags().Changed("tfe-admin-password") {
+			tfeAgentAdminPassword = tfeTwinAdminPass
+		}
+		if !cmd.Flags().Changed("pool-name") {
+			tfeAgentPoolName = defaultTFETwinAgentPool
+		}
+		if !cmd.Flags().Changed("agent-name") {
+			tfeAgentName = defaultTFETwinAgentName
+		}
+		return nil
+	}
+
+	if !cmd.Flags().Changed("tfe-url") {
+		tfeAgentBaseURL = "https://tfe.localhost:8443"
+	}
+	if !cmd.Flags().Changed("tfe-org") {
+		tfeAgentOrg = "hal"
+	}
+	if !cmd.Flags().Changed("tfe-admin-username") {
+		tfeAgentAdminUsername = "haladmin"
+	}
+	if !cmd.Flags().Changed("tfe-admin-email") {
+		tfeAgentAdminEmail = "haladmin@localhost"
+	}
+	if !cmd.Flags().Changed("tfe-admin-password") {
+		tfeAgentAdminPassword = "hal9000FTW"
+	}
+	if !cmd.Flags().Changed("pool-name") {
+		tfeAgentPoolName = defaultTFEAgentPoolName
+	}
+	if !cmd.Flags().Changed("agent-name") {
+		tfeAgentName = defaultTFEAgentDisplayName
+	}
+
+	return nil
+}
+
+func tfeAgentStatePath(target string) (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(homeDir, ".hal", "tfe-agent-state.json"), nil
+	name := "tfe-agent-state.json"
+	if target == tfeTargetTwin {
+		name = "tfe-agent-bis-state.json"
+	}
+	return filepath.Join(homeDir, ".hal", name), nil
 }
 
-func saveTFEAgentState(state *tfeAgentState) error {
+func saveTFEAgentState(target string, state *tfeAgentState) error {
 	if state == nil {
 		return fmt.Errorf("state cannot be nil")
 	}
-	path, err := tfeAgentStatePath()
+	path, err := tfeAgentStatePath(target)
 	if err != nil {
 		return err
 	}
@@ -449,8 +583,8 @@ func saveTFEAgentState(state *tfeAgentState) error {
 	return os.WriteFile(path, raw, 0600)
 }
 
-func loadTFEAgentState() (*tfeAgentState, error) {
-	path, err := tfeAgentStatePath()
+func loadTFEAgentState(target string) (*tfeAgentState, error) {
+	path, err := tfeAgentStatePath(target)
 	if err != nil {
 		return nil, err
 	}
@@ -469,8 +603,8 @@ func loadTFEAgentState() (*tfeAgentState, error) {
 	return &state, nil
 }
 
-func removeTFEAgentState() error {
-	path, err := tfeAgentStatePath()
+func removeTFEAgentState(target string) error {
+	path, err := tfeAgentStatePath(target)
 	if err != nil {
 		return err
 	}
@@ -487,6 +621,7 @@ func init() {
 	_ = agentCmd.Flags().MarkHidden("enable")
 	_ = agentCmd.Flags().MarkHidden("disable")
 	_ = agentCmd.Flags().MarkHidden("update")
+	agentCmd.Flags().BoolVar(&tfeAgentAutoApprove, "auto-approve", false, "Skip interactive confirmation for destructive disable operations")
 	agentCmd.Flags().StringVar(&tfeAgentImage, "image", defaultTFEAgentImage, "Docker image used for the custom TFE agent")
 	agentCmd.Flags().StringVar(&tfeAgentPoolName, "pool-name", defaultTFEAgentPoolName, "TFE agent pool name to create or reuse")
 	agentCmd.Flags().StringVar(&tfeAgentName, "agent-name", defaultTFEAgentDisplayName, "Display name advertised by the running agent")
@@ -496,6 +631,40 @@ func init() {
 	agentCmd.Flags().StringVar(&tfeAgentAdminUsername, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
 	agentCmd.Flags().StringVar(&tfeAgentAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
 	agentCmd.Flags().StringVar(&tfeAgentAdminPassword, "tfe-admin-password", "hal9000FTW", "Initial TFE admin password used when bootstrapping via IACT")
+	bindTFETargetFlag(agentCmd)
+	bindTwinFlags(agentCmd)
+
+	// Keep advanced tuning available but hidden for a concise default help surface.
+	for _, name := range []string{
+		"image",
+		"pool-name",
+		"agent-name",
+		"tfe-org",
+		"tfe-url",
+		"tfe-api-token",
+		"tfe-admin-username",
+		"tfe-admin-email",
+		"tfe-admin-password",
+		"twin-version",
+		"twin-password",
+		"twin-tfe-org",
+		"twin-tfe-project",
+		"twin-tfe-admin-username",
+		"twin-tfe-admin-email",
+		"twin-tfe-admin-password",
+		"twin-proxy-nginx-version",
+		"twin-https-port",
+		"twin-hostname",
+		"twin-container-name",
+		"twin-proxy-ip",
+		"twin-db-password",
+		"twin-db-name",
+		"twin-minio-root-user",
+		"twin-minio-root-password",
+		"twin-s3-bucket",
+	} {
+		_ = agentCmd.Flags().MarkHidden(name)
+	}
 
 	Cmd.AddCommand(agentCmd)
 }
