@@ -546,17 +546,17 @@ func ensureTFECLIUserToken(engine string) (string, error) {
 		AdminPassword: tfeCLIAdminPassword,
 	})
 	if err != nil {
-		return "", err
+		return bootstrapTFEUserTokenFromContainer(engine, tfeCLIURL, tfeCLIAdminUsername, tfeCLIAdminEmail, "hal-tfe-cli-session")
 	}
 
 	accountBody, _, err := integrations.TFERequest("GET", fmt.Sprintf("%s/api/v2/account/details", tfeCLIURL), apiToken, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to read account details")
+		return bootstrapTFEUserTokenFromContainer(engine, tfeCLIURL, tfeCLIAdminUsername, tfeCLIAdminEmail, "hal-tfe-cli-session")
 	}
 
 	userID := extractTFEDataID(accountBody)
 	if userID == "" {
-		return "", fmt.Errorf("account details did not include user id")
+		return bootstrapTFEUserTokenFromContainer(engine, tfeCLIURL, tfeCLIAdminUsername, tfeCLIAdminEmail, "hal-tfe-cli-session")
 	}
 
 	payload := map[string]interface{}{
@@ -571,12 +571,12 @@ func ensureTFECLIUserToken(engine string) (string, error) {
 	createURL := fmt.Sprintf("%s/api/v2/users/%s/authentication-tokens", tfeCLIURL, userID)
 	createBody, _, createErr := integrations.TFERequest("POST", createURL, apiToken, payload)
 	if createErr != nil {
-		return "", fmt.Errorf("failed to create user authentication token")
+		return bootstrapTFEUserTokenFromContainer(engine, tfeCLIURL, tfeCLIAdminUsername, tfeCLIAdminEmail, "hal-tfe-cli-session")
 	}
 
 	token := extractTFEAuthToken(createBody)
 	if token == "" {
-		return "", fmt.Errorf("token create response did not include token")
+		return bootstrapTFEUserTokenFromContainer(engine, tfeCLIURL, tfeCLIAdminUsername, tfeCLIAdminEmail, "hal-tfe-cli-session")
 	}
 
 	return token, nil
