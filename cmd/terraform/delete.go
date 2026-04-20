@@ -167,6 +167,10 @@ var destroyCmd = &cobra.Command{
 			fmt.Println("  ℹ️  Shared backend state retained for running twin instance.")
 		}
 
+		if preserveSharedBackend {
+			fmt.Println("  ℹ️  Shared backend state retained for running twin instance.")
+		}
+
 		if !global.DryRun {
 			fmt.Println("\n✅ TFE environment wiped. You are ready for a clean 'hal terraform create'.")
 		}
