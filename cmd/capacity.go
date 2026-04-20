@@ -103,6 +103,7 @@ var capacityCmd = &cobra.Command{
 			{product: "Platform", scenario: "vault-k8s", label: "KinD + VSO (Vault K8s flow)", deployed: isVaultK8sDeployed(engine), containers: []string{"kind-control-plane"}},
 			{product: "Platform", scenario: "vault-jwt", label: "GitLab CI + runner (shared service)", deployed: global.IsContainerRunning(engine, "hal-gitlab"), containers: []string{"hal-gitlab", "hal-gitlab-runner"}},
 			{product: "Terraform", scenario: "terraform-deploy", label: "Terraform Enterprise stack", deployed: global.IsContainerRunning(engine, "hal-tfe"), containers: []string{"hal-tfe", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio", "hal-tfe-proxy"}},
+			{product: "Terraform", scenario: "terraform-deploy", label: "Terraform Enterprise twin stack", deployed: global.IsContainerRunning(engine, "hal-tfe-bis"), containers: []string{"hal-tfe-bis", "hal-tfe-bis-proxy"}},
 			{product: "Observability", scenario: "obs-deploy", label: "Observability stack", deployed: global.IsContainerRunning(engine, "hal-grafana"), containers: []string{"hal-grafana", "hal-prometheus", "hal-loki", "hal-promtail"}},
 		}
 		type compColor struct {
@@ -113,6 +114,7 @@ var capacityCmd = &cobra.Command{
 			"GitLab CI + runner (shared service)": {ansi: ansiOrange, name: "orange"},
 			"KinD + VSO (Vault K8s flow)":         {ansi: ansiBlue, name: "blue"},
 			"Terraform Enterprise stack":          {ansi: ansiMagenta, name: "purple"},
+			"Terraform Enterprise twin stack":     {ansi: ansiMauve, name: "mauve"},
 			"Observability stack":                 {ansi: ansiRed, name: "red"},
 			// Product palette kept consistent with HAL visual language for future scenarios.
 			"Nomad":    {ansi: ansiGreen, name: "green"},
