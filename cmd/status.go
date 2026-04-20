@@ -136,7 +136,9 @@ func printProductFeatureStatus(engine, productName string, running bool) {
 		fmt.Printf("   ↳ %-8s %s\n", "ssh", colorizeFeatureState(boolState(checkMultipass("hal-boundary-ssh"))))
 	case "TFE":
 		tfeUp := checkContainer(engine, "hal-tfe")
-		fmt.Printf("   ↳ %-8s %s\n", "workspace", colorizeFeatureState(boolState(tfeUp && checkContainer(engine, "hal-gitlab"))))
+		fmt.Printf("   ↳ %-12s %s\n", "api-workflow", colorizeFeatureState(boolState(tfeUp && checkContainer(engine, "hal-tfe-api"))))
+		fmt.Printf("   ↳ %-12s %s\n", "vcs-workflow", colorizeFeatureState(boolState(tfeUp && checkContainer(engine, "hal-gitlab"))))
+		fmt.Printf("   ↳ %-12s %s\n", "agent", colorizeFeatureState(boolState(tfeUp && checkContainer(engine, "hal-tfe-agent"))))
 	case "Nomad":
 		fmt.Printf("   ↳ %-8s %s\n", "job", colorizeFeatureState(boolState(checkMultipass("hal-nomad"))))
 	case "Consul":
