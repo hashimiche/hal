@@ -204,9 +204,17 @@ func printTFETargetStatus(engine, target string) {
 	}
 
 	fmt.Printf("%s %-14s %-13s %-31s %s\n", icon, productName, state, endpoint, resolveContainerVersion(engine, coreContainer, running))
-	fmt.Printf("   ↳ api-workflow %s\n", featureStateForTarget(engine, target, running, "api"))
-	fmt.Printf("   ↳ vcs-workflow %s\n", featureStateForTarget(engine, target, running, "vcs"))
-	fmt.Printf("   ↳ agent %s\n", featureStateForTarget(engine, target, running, "agent"))
+	printTerraformFeatureStatus("api-workflow", featureStateForTarget(engine, target, running, "api"))
+	printTerraformFeatureStatus("vcs-workflow", featureStateForTarget(engine, target, running, "vcs"))
+	printTerraformFeatureStatus("agent", featureStateForTarget(engine, target, running, "agent"))
+}
+
+func printTerraformFeatureStatus(name, state string) {
+	icon := "⚪"
+	if state == "enabled" {
+		icon = "🟢"
+	}
+	fmt.Printf("  %s %-12s : %s\n", icon, name, state)
 }
 
 func checkTargetWorkspaceAutomationReady(engine, target string) bool {
