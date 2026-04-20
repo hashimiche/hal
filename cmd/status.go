@@ -55,6 +55,31 @@ var statusCmd = &cobra.Command{
 			{name: "Observability", container: "hal-grafana", running: obsRunning, endpoint: obsEndpoint},
 		}
 
+		if containerExists(engine, "hal-tfe-bis") {
+			twinSvc := svcStatus{
+				name:      "TFE (twin)",
+				container: "hal-tfe-bis",
+				running:   checkContainer(engine, "hal-tfe-bis"),
+				endpoint:  "https://tfe-bis.localhost:9443",
+			}
+
+			inserted := false
+			orderedServices := make([]svcStatus, 0, len(services)+1)
+			for _, svc := range services {
+				orderedServices = append(orderedServices, svc)
+				if svc.name == "TFE" {
+					orderedServices = append(orderedServices, twinSvc)
+					inserted = true
+				}
+			}
+
+			if inserted {
+				services = orderedServices
+			} else {
+				services = append(services, twinSvc)
+			}
+		}
+
 		for i := range services {
 			if services[i].running {
 				services[i].version = resolveProductVersion(engine, services[i].name, services[i].container)
@@ -135,10 +160,9 @@ func printProductFeatureStatus(engine, productName string, running bool) {
 		fmt.Printf("   ↳ %-8s %s\n", "mariadb", colorizeFeatureState(boolState(checkContainer(engine, "hal-boundary-target-mariadb"))))
 		fmt.Printf("   ↳ %-8s %s\n", "ssh", colorizeFeatureState(boolState(checkMultipass("hal-boundary-ssh"))))
 	case "TFE":
-		tfeUp := checkContainer(engine, "hal-tfe")
-		fmt.Printf("   ↳ %-12s %s\n", "api-workflow", colorizeFeatureState(boolState(tfeUp && checkContainer(engine, "hal-tfe-api"))))
-		fmt.Printf("   ↳ %-12s %s\n", "vcs-workflow", colorizeFeatureState(boolState(tfeUp && checkContainer(engine, "hal-gitlab"))))
-		fmt.Printf("   ↳ %-12s %s\n", "agent", colorizeFeatureState(boolState(tfeUp && checkContainer(engine, "hal-tfe-agent"))))
+		printTFEFeatureStatus(engine, false)
+	case "TFE (twin)":
+		printTFEFeatureStatus(engine, true)
 	case "Nomad":
 		fmt.Printf("   ↳ %-8s %s\n", "job", colorizeFeatureState(boolState(checkMultipass("hal-nomad"))))
 	case "Consul":
@@ -146,6 +170,22 @@ func printProductFeatureStatus(engine, productName string, running bool) {
 	case "Observability":
 		printObsFeatureStatus(engine)
 	}
+}
+
+func printTFEFeatureStatus(engine string, twin bool) {
+	tfeContainer := "hal-tfe"
+	apiContainer := "hal-tfe-api"
+	agentContainer := "hal-tfe-agent"
+	if twin {
+		tfeContainer = "hal-tfe-bis"
+		apiContainer = "hal-tfe-bis-api"
+		agentContainer = "hal-tfe-bis-agent"
+	}
+
+	tfeUp := checkContainer(engine, tfeContainer)
+	fmt.Printf("   ↳ %-12s %s\n", "api-workflow", colorizeFeatureState(boolState(tfeUp && checkContainer(engine, apiContainer))))
+	fmt.Printf("   ↳ %-12s %s\n", "vcs-workflow", colorizeFeatureState(boolState(tfeUp && checkContainer(engine, "hal-gitlab"))))
+	fmt.Printf("   ↳ %-12s %s\n", "agent", colorizeFeatureState(boolState(tfeUp && checkContainer(engine, agentContainer))))
 }
 
 func printObsFeatureStatus(engine string) {
@@ -256,6 +296,11 @@ func getContainerImageRef(engine, name string) string {
 	}
 
 	return strings.TrimSpace(string(out))
+}
+
+func containerExists(engine, name string) bool {
+	err := exec.Command(engine, "inspect", name).Run()
+	return err == nil
 }
 
 // Helper to silently check if a container exists and is running
