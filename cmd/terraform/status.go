@@ -75,7 +75,7 @@ var statusCmd = &cobra.Command{
 		if workspaceReady {
 			fmt.Println("  🟢 workspace           : Ready (TFE + shared GitLab running)")
 		} else {
-			fmt.Println("  ⚪ workspace           : Not ready (run: hal terraform workspace enable)")
+			fmt.Println("  ⚪ workspace           : Not ready (run: hal terraform vcs-workflow enable)")
 		}
 
 		// Smart assistant guidance
@@ -91,7 +91,7 @@ var statusCmd = &cobra.Command{
 				fmt.Println("   Workspace automation is enabled and ready for VCS-triggered runs.")
 			} else {
 				fmt.Println("   Enable the full VCS automation workflow with:")
-				fmt.Println("   hal terraform workspace enable")
+				fmt.Println("   hal terraform vcs-workflow enable")
 			}
 		} else {
 			fmt.Println("   Environment is partially degraded or stopped. To safely reset, run:")

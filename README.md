@@ -61,7 +61,7 @@ hal vault status
 
 # Bring up Terraform Enterprise local stack
 hal terraform create
-hal terraform workspace enable
+hal terraform vcs-workflow enable
 hal terraform status
 ```
 
@@ -147,10 +147,10 @@ hal vault k8s enable
 hal vault k8s update
 hal vault k8s disable
 
-# Terraform workspace lifecycle (now includes disable)
-hal terraform workspace enable
-hal terraform workspace update
-hal terraform workspace disable
+# Terraform vcs-workflow lifecycle (now includes disable)
+hal terraform vcs-workflow enable
+hal terraform vcs-workflow update
+hal terraform vcs-workflow disable
 ```
 
 ### MCP quick notes

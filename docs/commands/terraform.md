@@ -22,9 +22,9 @@
   - Supports `--target primary|twin|both` (default `primary`)
   - Spec: [terraform-destroy.md](terraform-destroy.md)
 
-- `hal terraform workspace`
-  - Alias: `hal terraform ws`
-  - Configure GitLab-backed workspace/VCS lab flow
+- `hal terraform vcs-workflow`
+  - Alias: `hal terraform vcs`
+  - Configure GitLab-backed VCS workflow lab flow with target-aware workspace wiring
   - Spec: [terraform-workspace.md](terraform-workspace.md)
 
 - `hal terraform api-workflow`
@@ -34,8 +34,9 @@
   - Spec: [terraform-cli.md](terraform-cli.md)
 
 - `hal terraform agent`
-  - Manage local TFE custom agent pool runtime and `hal-tfe-agent` lifecycle
+  - Manage local TFE custom agent pool runtime for primary, twin, or both targets
   - Lifecycle actions: `enable`, `disable`, `update`
+  - Supports `--target primary|twin|both` (default `primary`)
   - Spec: [terraform-agent.md](terraform-agent.md)
 
 ## Related Detailed Specs

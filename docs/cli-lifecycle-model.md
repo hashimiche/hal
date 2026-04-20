@@ -62,7 +62,7 @@ Intent:
 | `hal boundary ssh` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |
 | `hal terraform agent` | `enable`, `update`, `disable`, `status` | Treat as product feature. |
 | `hal terraform api-workflow` (alias `api`) | `enable`, `update`, `disable`, `status` | Treat as product feature. |
-| `hal terraform workspace` | `enable`, `update`, `disable`, `status` | Treat as product feature. |
+| `hal terraform vcs-workflow` | `enable`, `update`, `disable`, `status` | Treat as product feature. |
 | `hal mcp policy` | `create`, `update`, `delete`, `status` | Explicitly modeled as a managed resource. |
 
 ## Password Retrieval Command Family (Target)

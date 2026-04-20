@@ -18,7 +18,7 @@ Assistant:
 
     hal terraform create
     hal terraform agent enable
-    hal terraform workspace enable
+    hal terraform vcs-workflow enable
     hal terraform status
 
 ## Example 3: Full Reset
@@ -29,7 +29,7 @@ Assistant:
 
     hal terraform delete
     hal terraform create
-    hal terraform workspace enable
+    hal terraform vcs-workflow enable
 
 ## Example 4: Default Access Reminder
 

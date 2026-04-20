@@ -371,7 +371,7 @@ http {
 		}
 		fmt.Println("⚠️  Note:        Accept the browser warning for the self-signed certificate.")
 		fmt.Println("\n💡 Next Step:")
-		fmt.Println("   Run 'hal terraform workspace enable' to bootstrap org/project/workspace wiring.")
+		fmt.Println("   Run 'hal terraform vcs-workflow enable' to bootstrap org/project/workspace wiring.")
 		fmt.Println("---------------------------------------------------------")
 
 		if target == tfeTargetBoth {

@@ -12,7 +12,7 @@ description: Deprecated Terraform token workflow note. Use when users ask about 
 ## Recommended Replacement Flow
 
 - hal terraform create
-- hal terraform workspace enable
+- hal terraform vcs-workflow enable
 - hal terraform status
 
 ## Validation

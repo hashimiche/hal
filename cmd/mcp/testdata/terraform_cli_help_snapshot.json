@@ -49,6 +49,10 @@
       "name": "--verbose"
     },
     {
+      "description": "Start helper container and open an interactive shell",
+      "name": "-c, --console"
+    },
+    {
       "description": "Remove the helper container and delete HAL-managed scenario workspaces",
       "name": "-d, --disable"
     },
@@ -61,12 +65,12 @@
       "name": "-f, --force"
     },
     {
-      "description": "help for api-workflow",
+      "description": "help for cli",
       "name": "-h, --help"
     }
   ],
   "recommended_commands": [
-    "hal terraform api-workflow --help"
+    "hal terraform cli --help"
   ],
   "topic": "terraform cli",
   "usage": ""

@@ -68,10 +68,12 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 - Terraform Enterprise local deployment depends on a mocked PostgreSQL, Redis, and MinIO stack and uses local TLS material under `~/.hal/tfe-certs`.
     - Rootless Podman path uses `https://tfe.localhost:8443` through `hal-tfe-proxy`.
     - Twin TFE lifecycle is target-based on product CRUD commands (for example `hal terraform create --target twin`) instead of a dedicated `hal terraform twin` subcommand.
+    - Terraform helper subcommands are lifecycle-only: `hal terraform api-workflow`, `hal terraform vcs-workflow`, and `hal terraform agent` accept `status|enable|disable|update` (no `create|delete` aliases).
+    - `hal terraform api-workflow` target scope is `primary|twin` only; do not suggest `--target both` for this helper.
     - Custom local agent-pool flow uses `hal terraform agent enable` and should report running state via `hal terraform agent` before directing users to select Agent execution mode in TFE UI.
     - Task worker agent-run config must keep `/tmp/terraform` writable (not read-only) so remote plans can download Terraform binaries.
     - TFE API responses can emit archivist object links without `:8443`; proxy response rewriting keeps UI/raw plan/apply log links host-reachable.
-    - `hal terraform workspace enable` should describe validation in terms of pushing a new commit to `main`; tag creation alone is not a reliable first-run trigger when the tagged SHA was already ingested from branch pushes.
+    - `hal terraform vcs-workflow enable` should describe validation in terms of pushing a new commit to `main`; tag creation alone is not a reliable first-run trigger when the tagged SHA was already ingested from branch pushes.
 - Shared runtime helpers live under `internal/global`, especially engine detection and network management.
 - Engine resource advisory helpers live under `internal/global`; reuse them instead of open-coding engine-specific capacity checks in individual commands.
 - Vault k8s demo (`hal vault k8s`) now supports two explicit demo modes behind the same nginx endpoint (`http://web.localhost:8088`):
