@@ -4,7 +4,7 @@
 - `hal mcp create`
 
 ## Purpose
-Create HAL MCP client scaffold configuration (and managed binary flow when enabled).
+Create or replace the HAL MCP client scaffold configuration and, when enabled, the managed HAL MCP binary.
 
 ## Related
 - Parent namespace: [mcp.md](mcp.md)
@@ -18,14 +18,20 @@ Create HAL MCP client scaffold configuration (and managed binary flow when enabl
 --binary-path string   Path to write the managed HAL binary used by MCP clients (default ~/.hal/bin/hal-mcp)
 --command string       HAL command name/path to use in generated MCP client config (default "hal")
 -h, --help                 help for create
---json                 Only generate/update MCP config JSON (skip managed binary provisioning)
+--json                 Only generate/replace MCP config JSON (skip managed binary provisioning)
 ```
 - Global flags: `--debug`, `--dry-run`
 
 ## Side Effects
-- This command may create, mutate, or remove local lab resources depending on its operation.
+- Rewrites `~/.hal/mcp/hal-mcp.json`.
+- Replaces the managed HAL MCP binary when binary provisioning is enabled.
+- Generated MCP config launches `hal mcp serve`.
 
 ## Example
 ```bash
 hal mcp create
 ```
+
+## Notes
+- Running `hal mcp create` again refreshes the same HAL-managed MCP artifacts in place.
+- It does not create multiple MCP configs or multiple managed binaries.

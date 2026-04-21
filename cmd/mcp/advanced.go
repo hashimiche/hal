@@ -705,7 +705,7 @@ func validateCommand(proposed string) map[string]interface{} {
 		"catalog":   {},
 		"delete":    {},
 		"version":   {},
-		"mcp":       {"create", "update", "status", "delete"},
+		"mcp":       {"create", "serve", "status", "delete"},
 		"vault":     {"create", "status", "delete", "audit", "jwt", "k8s", "ldap", "database", "oidc", "db"},
 		"consul":    {"create", "status", "delete"},
 		"nomad":     {"create", "status", "delete", "job"},

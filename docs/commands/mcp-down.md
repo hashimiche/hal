@@ -4,7 +4,14 @@
 - `hal mcp delete`
 
 ## Purpose
-Stop background HAL MCP process if PID file is present.
+Remove HAL-managed MCP artifacts.
+
+This command deletes:
+- `~/.hal/mcp/hal-mcp.json`
+- `~/.hal/bin/hal-mcp` (managed binary, when present)
+- `~/.hal/mcp/hal-mcp.pid` (stale PID state, when present)
+
+If a PID file points to a running process, HAL also attempts a best-effort `SIGTERM` first.
 
 ## Related
 - Parent namespace: [mcp.md](mcp.md)
@@ -20,7 +27,9 @@ Stop background HAL MCP process if PID file is present.
 - Global flags: `--debug`, `--dry-run`
 
 ## Side Effects
-- This command may create, mutate, or remove local lab resources depending on its operation.
+- Removes HAL-managed MCP local artifacts.
+- Does not affect product lab resources.
+- The same MCP artifact cleanup is also performed by `hal delete` and `hal daisy`.
 
 ## Example
 ```bash

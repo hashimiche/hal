@@ -55,7 +55,7 @@ This index maps the HAL command tree to one spec file per command area.
 - [Observability destroy](observability-destroy.md)
 - [MCP](mcp.md)
 - [MCP create](mcp-create.md)
-- [MCP update](mcp-up.md)
+- [MCP serve](mcp-serve.md)
 - [MCP status](mcp-status.md)
 - [MCP delete](mcp-down.md)
 
