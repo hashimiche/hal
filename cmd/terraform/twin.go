@@ -39,7 +39,6 @@ var (
 	tfeTwinHostname            string
 	tfeTwinContainerName       string
 	tfeTwinProxyInternalIP     string
-	tfeTwinConfigureObsOnly    bool
 	tfeTwinDatabasePassword    string
 	tfeTwinDatabaseName        string
 	tfeTwinMinioRootUser       string
@@ -79,29 +78,11 @@ var twinCmd = &cobra.Command{
 		}
 
 		if tfeTwinDisable {
-			if tfeTwinEnable || tfeTwinUpdate || tfeTwinConfigureObsOnly {
-				fmt.Println("❌ '--disable' cannot be combined with '--enable', '--update', or '--configure-obs'.")
+			if tfeTwinEnable || tfeTwinUpdate {
+				fmt.Println("❌ '--disable' cannot be combined with '--enable' or '--update'.")
 				return
 			}
 			destroyTFETwin(engine, layout)
-			return
-		}
-
-		if tfeTwinConfigureObsOnly {
-			if tfeTwinEnable || tfeTwinUpdate {
-				fmt.Println("❌ '--configure-obs' cannot be combined with '--enable' or '--update'.")
-				return
-			}
-			if !global.IsContainerRunning(engine, layout.CoreContainer) {
-				fmt.Printf("❌ Twin Terraform Enterprise instance '%s' is not running.\n", layout.CoreContainer)
-				fmt.Println("   💡 Run 'hal tf create --target twin' first.")
-				return
-			}
-			if err := global.UpsertObsPromTargetIfRunning(engine, "terraform-bis", []string{layout.CoreContainer + ":9090"}); err != nil {
-				fmt.Printf("⚠️  Could not refresh twin Prometheus target: %v\n", err)
-				return
-			}
-			fmt.Println("✅ Twin Terraform Enterprise Prometheus target refreshed.")
 			return
 		}
 
@@ -328,8 +309,8 @@ http {
 			return
 		}
 
-		if err := global.UpsertObsPromTargetIfRunning(engine, "terraform-bis", []string{layout.CoreContainer + ":9090"}); err != nil {
-			fmt.Printf("⚠️  Could not register twin Prometheus target: %v\n", err)
+		if err := syncTerraformObsTargets(engine); err != nil {
+			fmt.Printf("⚠️  Could not refresh Terraform Prometheus targets: %v\n", err)
 		}
 
 		token, err := ensureTFETwinFoundation(engine, layout)
@@ -351,7 +332,7 @@ http {
 		fmt.Printf("👤 Admin User:   %s\n", tfeTwinAdminUser)
 		fmt.Printf("🔑 Admin Pass:   %s\n", tfeTwinAdminPass)
 		fmt.Println("⚠️  Note:         Accept the browser warning for the self-signed certificate.")
-		fmt.Println("💡 Dashboard import is intentionally skipped for the twin instance.")
+		fmt.Println("💡 Observability uses the shared Terraform dashboard with both primary and twin targets.")
 		fmt.Println("---------------------------------------------------------")
 	},
 }
@@ -485,8 +466,8 @@ func destroyTFETwin(engine string, layout tfeTwinLayout) {
 		_ = os.Remove(layout.ProxyConfPath)
 	}
 
-	if err := global.RemoveObsPromTargetFile("terraform-bis"); err != nil {
-		fmt.Printf("⚠️  Could not remove twin Terraform observability target file: %v\n", err)
+	if err := syncTerraformObsTargets(engine); err != nil {
+		fmt.Printf("⚠️  Could not refresh Terraform observability target file: %v\n", err)
 	}
 
 	if !global.DryRun {
@@ -686,11 +667,10 @@ func waitForTwinService(url string, maxRetries int) error {
 	return fmt.Errorf("timeout waiting for twin TFE at %s", url)
 }
 
-func runTFETwinLifecycle(enable, disable, update, configureObsOnly bool) {
+func runTFETwinLifecycle(enable, disable, update bool) {
 	tfeTwinEnable = enable
 	tfeTwinDisable = disable
 	tfeTwinUpdate = update
-	tfeTwinConfigureObsOnly = configureObsOnly
 	twinCmd.Run(twinCmd, nil)
 }
 
@@ -718,7 +698,6 @@ func init() {
 	twinCmd.Flags().BoolVarP(&tfeTwinEnable, "enable", "e", false, "Deploy the twin Terraform Enterprise instance")
 	twinCmd.Flags().BoolVar(&tfeTwinDisable, "disable", false, "Destroy the twin Terraform Enterprise instance and remove its local artifacts")
 	twinCmd.Flags().BoolVarP(&tfeTwinUpdate, "update", "u", false, "Reconcile the twin Terraform Enterprise instance in place")
-	twinCmd.Flags().BoolVar(&tfeTwinConfigureObsOnly, "configure-obs", false, "Refresh only the twin Prometheus target file")
 	_ = twinCmd.Flags().MarkHidden("enable")
 	_ = twinCmd.Flags().MarkHidden("disable")
 	_ = twinCmd.Flags().MarkHidden("update")

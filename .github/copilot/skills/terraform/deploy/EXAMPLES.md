@@ -11,7 +11,7 @@ Assistant:
     hal terraform status
 
 Assistant: I summarize provisioning success and any post-deploy steps required by this lab.
-Assistant: If obs is already running, I also call out automatic Prometheus target and Grafana HAL-folder dashboard import.
+Assistant: If obs is already running, I call out the explicit Terraform observability command family (`hal terraform obs ...`).
 
 ## Example 2: Recover From Stale or Drifted State
 
@@ -55,7 +55,7 @@ User: TFE is already deployed. I added obs after the fact and only want monitori
 
 Assistant:
 
-    hal terraform create --configure-obs
+    hal terraform obs create
 
 Assistant: This refreshes only the Prometheus target and Grafana dashboard artifacts without redeploying TFE.
 

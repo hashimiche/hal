@@ -17,15 +17,16 @@ Handle hal consul create requests with a stable lifecycle pattern.
 
 - Confirm command output and summarize the resulting lab state.
 - If applicable, suggest the next expected command in the lifecycle.
-- If observability is already running, mention that Consul target/dashboard artifacts are handled automatically.
+- Consul deployment no longer auto-registers observability artifacts.
 
 ## Observability Notes
 
-- Consul deploy uses shared observability artifact registration.
-- When `hal obs create` is up, Prometheus target updates are automatic.
-- Official Consul dashboard import is automatic in Grafana folder HAL.
-- If Consul is already running and obs comes later, use `hal consul create --configure-obs` to backfill only monitoring artifacts.
-- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs create` first.
+- Use explicit lifecycle commands for Consul observability artifacts:
+	- `hal consul obs create`
+	- `hal consul obs update`
+	- `hal consul obs delete`
+	- `hal consul obs status`
+- `hal consul obs create` expects the obs stack to already be running; otherwise it should ask the user to run `hal obs create` first.
 
 ## Edge Cases
 

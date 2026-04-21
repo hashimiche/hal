@@ -12,7 +12,7 @@ Assistant: I verify service health and entry points, then mention observability 
 
     hal vault status
 
-Assistant: I remind the user Vault is in dev mode with root token `root`. If `hal obs create` is already active, Vault metrics are auto-registered in Prometheus and the Vault dashboard is auto-imported into Grafana folder HAL.
+Assistant: I remind the user Vault is in dev mode with root token `root`. Observability artifacts are managed explicitly with `hal vault obs create`.
 
 ## Example 2: Redeploy After Bad State
 
@@ -32,9 +32,10 @@ User: Vault is up now, but I also want metrics and dashboards ready.
 Assistant:
 
     hal obs create
-    hal vault create -f
+    hal vault create
+    hal vault obs create
 
-Assistant: Vault deploy re-registers the Prometheus target and re-imports the Vault dashboard into folder HAL automatically.
+Assistant: Vault obs create writes/refreshes the Prometheus target and Vault dashboard artifacts in the HAL obs directories.
 
 ## Example 5: Backfill Vault Monitoring Without Redeploy
 
@@ -42,7 +43,7 @@ User: I deployed Vault earlier, then added obs later. Just wire monitoring.
 
 Assistant:
 
-    hal vault create --configure-obs
+    hal vault obs create
 
 Assistant: This refreshes only the Prometheus target and Grafana dashboard artifacts without redeploying Vault.
 

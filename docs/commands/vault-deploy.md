@@ -16,7 +16,6 @@ Deploy a local Vault instance and baseline configuration for HAL labs.
 - Deprecated: older HAL docs may reference `hal vault create --force` or `hal vault create --edition ent --force`. Those forms have been removed from the CLI. Use `hal vault update` or `hal vault create --update`.
 - Command flags from `hal vault create --help`:
 ```text
---configure-obs         Refresh Prometheus target and Grafana dashboard artifacts without redeploying Vault
 -e, --edition string        Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise) (default "ce")
 -u, --update                Reconcile an existing Vault deployment in place
 -h, --help                  help for deploy
@@ -25,6 +24,8 @@ Deploy a local Vault instance and baseline configuration for HAL labs.
 -v, --version string        Vault version to deploy (default "2.0")
 ```
 - Global flags: `--debug`, `--dry-run`
+
+Observability artifacts are now managed explicitly with `hal vault obs <create|update|delete|status>`.
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

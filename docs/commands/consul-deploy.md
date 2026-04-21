@@ -16,12 +16,13 @@ Deploy a standalone local Consul server for labs/testing.
 - Deprecated: older HAL docs may reference `hal consul create --force`. That flag has been removed from the CLI. Use `hal consul update` or `hal consul create --update`.
 - Command flags from `hal consul create --help`:
 ```text
---configure-obs    Refresh Prometheus target and Grafana dashboard artifacts without redeploying Consul
 -u, --update           Reconcile an existing Consul deployment in place
 -h, --help             help for deploy
 -v, --version string   Consul version to deploy (default "1.15.0")
 ```
 - Global flags: `--debug`, `--dry-run`
+
+Observability artifacts are now managed explicitly with `hal consul obs <create|update|delete|status>`.
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

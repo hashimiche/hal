@@ -142,8 +142,8 @@ var destroyCmd = &cobra.Command{
 		// 3. Attempt to clean the network
 		global.CleanNetworkIfEmpty(engine)
 
-		if err := global.RemoveObsPromTargetFile("terraform"); err != nil {
-			fmt.Printf("⚠️  Could not remove Terraform observability target file: %v\n", err)
+		if err := syncTerraformObsTargets(engine); err != nil {
+			fmt.Printf("⚠️  Could not refresh Terraform observability target file: %v\n", err)
 		}
 
 		if err := global.RemoveCachedTFEAPIToken(); err != nil {

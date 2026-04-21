@@ -35,6 +35,7 @@ Treat `docs/cli-lifecycle-model.md` as the source of truth for command lifecycle
 
 - Product lifecycle: `create`, `update`, `delete`, `status`.
 - Feature lifecycle: `enable`, `update`, `disable`, `status`.
+- Feature resources may use CRUD lifecycle when they manage artifacts directly (for product observability use `hal <product> obs <create|update|delete|status>`).
 - Password retrieval family: `hal <product> password status`.
 - Scoped updates: allow `--target` on `update` where a scope owns multiple components.
 - Terraform twin handling is product-target based: use `hal terraform <create|update|status|delete> --target twin` instead of a dedicated `hal terraform twin` command.

@@ -118,12 +118,12 @@ For the full surface and latest flags, use `hal --help` and `hal <product> --hel
 
 | Namespace | Product lifecycle commands | Feature subcommands | Feature lifecycle actions |
 |---|---|---|---|
-| `hal vault` | `create`, `update`, `status`, `delete` | `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc` | `enable`, `update`, `disable` |
-| `hal boundary` | `create`, `update`, `status`, `delete` | `mariadb`, `ssh` | `enable`, `update`, `disable` |
-| `hal consul` | `create`, `update`, `status`, `delete` | none | n/a |
-| `hal nomad` | `create`, `update`, `status`, `delete` | `job` | n/a |
+| `hal vault` | `create`, `update`, `status`, `delete` | `obs`, `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc` | `obs`: `create`, `update`, `delete`, `status`; others: `enable`, `update`, `disable` |
+| `hal boundary` | `create`, `update`, `status`, `delete` | `obs`, `mariadb`, `ssh` | `obs`: `create`, `update`, `delete`, `status`; others: `enable`, `update`, `disable` |
+| `hal consul` | `create`, `update`, `status`, `delete` | `obs` | `create`, `update`, `delete`, `status` |
+| `hal nomad` | `create`, `update`, `status`, `delete` | `obs`, `job` | `obs`: `create`, `update`, `delete`, `status`; `job`: n/a |
 | `hal obs` | `create`, `update`, `status`, `delete` | none | n/a |
-| `hal terraform` (`hal tf`) | `create`, `update`, `status`, `delete` | `agent`, `api-workflow` (alias `api`), `workspace` | `enable`, `update`, `disable` |
+| `hal terraform` (`hal tf`) | `create`, `update`, `status`, `delete` | `obs`, `agent`, `api-workflow` (alias `api`), `workspace` | `obs`: `create`, `update`, `delete`, `status`; others: `enable`, `update`, `disable` |
 
 Twin TFE lifecycle is now target-based on product CRUD commands:
 
@@ -147,10 +147,22 @@ hal vault k8s enable
 hal vault k8s update
 hal vault k8s disable
 
+# Product observability feature lifecycle (opt-in)
+hal vault obs create
+hal consul obs create
+hal nomad obs create
+hal boundary obs create
+
 # Terraform vcs-workflow lifecycle (now includes disable)
 hal terraform vcs-workflow enable
 hal terraform vcs-workflow update
 hal terraform vcs-workflow disable
+
+# Terraform observability artifact lifecycle
+hal terraform obs create --target both
+hal terraform obs status --target both
+hal terraform obs update --target twin
+hal terraform obs delete --target primary
 ```
 
 ### MCP quick notes

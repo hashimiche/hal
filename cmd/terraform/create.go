@@ -32,7 +32,6 @@ var (
 	minioConsolePort    int
 	tfeProxyNginxTag    string
 	tfeUpdate           bool
-	tfeConfigureObs     bool
 	deployTFEOrg        string
 	deployTFEProject    string
 	deployTFEAdminUser  string
@@ -51,54 +50,13 @@ var deployCmd = &cobra.Command{
 		}
 
 		if target == tfeTargetTwin {
-			runTFETwinLifecycle(true, false, tfeUpdate, tfeConfigureObs)
+			runTFETwinLifecycle(true, false, tfeUpdate)
 			return
 		}
 
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
-			return
-		}
-
-		if tfeConfigureObs {
-			if target == tfeTargetBoth {
-				if !global.IsContainerRunning(engine, "hal-tfe") {
-					fmt.Println("❌ Terraform Enterprise is not running. Deploy it first before configuring observability artifacts.")
-					fmt.Println("   💡 Run 'hal terraform create' and then retry with '--configure-obs' if needed.")
-					return
-				}
-				if !global.IsObsReady(engine) {
-					fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
-					fmt.Println("   💡 Run 'hal obs create' first, then retry '--configure-obs'.")
-					return
-				}
-
-				fmt.Println("🩺 Configuring observability artifacts for Terraform Enterprise...")
-				for _, warning := range global.RegisterObsArtifacts("terraform", []string{"hal-tfe:9090"}) {
-					fmt.Printf("⚠️  %s\n", warning)
-				}
-				fmt.Println("✅ Terraform Enterprise observability artifacts refreshed.")
-				runTFETwinLifecycle(true, false, false, true)
-				return
-			}
-
-			if !global.IsContainerRunning(engine, "hal-tfe") {
-				fmt.Println("❌ Terraform Enterprise is not running. Deploy it first before configuring observability artifacts.")
-				fmt.Println("   💡 Run 'hal terraform create' and then retry with '--configure-obs' if needed.")
-				return
-			}
-			if !global.IsObsReady(engine) {
-				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
-				fmt.Println("   💡 Run 'hal obs create' first, then retry '--configure-obs'.")
-				return
-			}
-
-			fmt.Println("🩺 Configuring observability artifacts for Terraform Enterprise...")
-			for _, warning := range global.RegisterObsArtifacts("terraform", []string{"hal-tfe:9090"}) {
-				fmt.Printf("⚠️  %s\n", warning)
-			}
-			fmt.Println("✅ Terraform Enterprise observability artifacts refreshed.")
 			return
 		}
 
@@ -366,9 +324,6 @@ http {
 				fmt.Println("   📄 Token cache: ~/.hal/tfe-app-api-token")
 			}
 		}
-		for _, warning := range global.RegisterObsArtifacts("terraform", []string{"hal-tfe:9090"}) {
-			fmt.Printf("⚠️  %s\n", warning)
-		}
 		fmt.Println("⚠️  Note:        Accept the browser warning for the self-signed certificate.")
 		fmt.Println("\n💡 Next Step:")
 		fmt.Println("   Run 'hal terraform vcs-workflow enable' to bootstrap org/project/workspace wiring.")
@@ -376,7 +331,7 @@ http {
 
 		if target == tfeTargetBoth {
 			fmt.Println("\n🔁 Target includes twin. Continuing with twin Terraform Enterprise deployment...")
-			runTFETwinLifecycle(true, false, tfeUpdate, false)
+			runTFETwinLifecycle(true, false, tfeUpdate)
 		}
 	},
 }
@@ -531,7 +486,6 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&tfeUpdate, "update", "u", false, "Reconcile an existing Terraform Enterprise deployment in place")
 	}
-	cmd.Flags().BoolVar(&tfeConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Terraform Enterprise")
 }
 
 func init() {

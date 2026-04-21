@@ -47,4 +47,4 @@ User: Boundary is already up. I only want Prometheus/Grafana wiring now.
 
 Assistant:
 
-    hal boundary create --configure-obs
+    hal boundary obs create

@@ -16,7 +16,6 @@ Deploy local Nomad cluster resources via Multipass.
 - Deprecated: older HAL docs may reference `hal nomad create --force`. That flag has been removed from the CLI. Use `hal nomad update` or `hal nomad create --update`.
 - Command flags from `hal nomad create --help`:
 ```text
---configure-obs         Refresh Prometheus target and Grafana dashboard artifacts without redeploying Nomad
 --cpus string           Number of CPUs for the VM (default "2")
 -u, --update                Reconcile an existing Nomad deployment in place
 -h, --help                  help for deploy
@@ -26,6 +25,8 @@ Deploy local Nomad cluster resources via Multipass.
 -v, --version string        Nomad version to install (default "1.11.3")
 ```
 - Global flags: `--debug`, `--dry-run`
+
+Observability artifacts are now managed explicitly with `hal nomad obs <create|update|delete|status>`.
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

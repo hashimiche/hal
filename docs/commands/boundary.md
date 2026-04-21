@@ -18,6 +18,11 @@
   - Destroy Boundary and associated target resources
   - Spec: [boundary-destroy.md](boundary-destroy.md)
 
+- `hal boundary obs`
+  - Manage Boundary observability artifacts
+  - Subcommands: `create`, `update`, `delete`, `status`
+  - Spec: [boundary-obs.md](boundary-obs.md)
+
 - `hal boundary mariadb`
   - Deploy a MariaDB target for Boundary
   - Spec: [boundary-mariadb.md](boundary-mariadb.md)

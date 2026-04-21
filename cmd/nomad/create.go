@@ -13,50 +13,18 @@ import (
 )
 
 var (
-	nomadVersion      string
-	nomadUbuntuImage  string
-	nomadCPUs         string
-	nomadMem          string
-	nomadJoinConsul   bool // The new unified Control Plane flag
-	nomadUpdate       bool
-	nomadConfigureObs bool
+	nomadVersion     string
+	nomadUbuntuImage string
+	nomadCPUs        string
+	nomadMem         string
+	nomadJoinConsul  bool // The new unified Control Plane flag
+	nomadUpdate      bool
 )
 
 var deployCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a local Nomad cluster via Multipass",
 	Run: func(cmd *cobra.Command, args []string) {
-		if nomadConfigureObs {
-			if global.DryRun {
-				fmt.Println("[DRY RUN] Would refresh Nomad Prometheus target and Grafana dashboard artifacts")
-				return
-			}
-			if !global.MultipassInstanceExists("hal-nomad") {
-				fmt.Println("❌ Nomad VM is not present. Deploy it first before configuring observability artifacts.")
-				fmt.Println("   💡 Run 'hal nomad create' and then retry with '--configure-obs' if needed.")
-				return
-			}
-			engine, err := global.DetectEngine()
-			if err != nil {
-				fmt.Printf("❌ Error: %v\n", err)
-				return
-			}
-			if !global.IsObsReady(engine) {
-				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
-				fmt.Println("   💡 Run 'hal obs create' first, then retry '--configure-obs'.")
-				return
-			}
-
-			ipOut, _ := exec.Command("multipass", "info", "hal-nomad", "--format", "csv").Output()
-			ip := extractMultipassIP(string(ipOut))
-			fmt.Println("🩺 Configuring observability artifacts for Nomad...")
-			for _, warning := range global.RegisterObsArtifacts("nomad", []string{fmt.Sprintf("%s:4646", ip)}) {
-				fmt.Printf("⚠️  %s\n", warning)
-			}
-			fmt.Println("✅ Nomad observability artifacts refreshed.")
-			return
-		}
-
 		if err := exec.Command("multipass", "version").Run(); err != nil {
 			fmt.Println("❌ Error: Multipass is not installed or not running.")
 			return
@@ -92,7 +60,6 @@ var deployCmd = &cobra.Command{
 				fmt.Println("[DRY RUN] Would configure Nomad to join global Consul")
 			}
 			fmt.Println("[DRY RUN] Would wait for Nomad health endpoint")
-			fmt.Println("[DRY RUN] Would refresh Nomad observability artifacts")
 			return
 		}
 
@@ -172,10 +139,6 @@ var deployCmd = &cobra.Command{
 		fmt.Println("\n✅ Environment is fully verified and ready!")
 		fmt.Printf("   🔗 Nomad UI:  http://%s:4646\n", ip)
 
-		for _, warning := range global.RegisterObsArtifacts("nomad", []string{fmt.Sprintf("%s:4646", ip)}) {
-			fmt.Printf("⚠️  %s\n", warning)
-		}
-
 		if nomadJoinConsul {
 			fmt.Println("   🟢 Nomad is successfully tethered to the global Consul Control Plane!")
 		}
@@ -246,7 +209,6 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&nomadUpdate, "update", "u", false, "Reconcile an existing Nomad deployment in place")
 	}
-	cmd.Flags().BoolVar(&nomadConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Nomad")
 	cmd.Flags().BoolVarP(&nomadJoinConsul, "join-consul", "c", false, "Tether Nomad to the global HAL Consul instance")
 }
 

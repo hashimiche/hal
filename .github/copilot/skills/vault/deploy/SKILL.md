@@ -23,15 +23,16 @@ Handle hal vault create requests with a stable lifecycle pattern.
 
 - Confirm Vault is reachable after deployment.
 - Summarize UI/API endpoints (`http://vault.localhost:8200`) and next steps.
-- If Grafana/Prometheus are already running, mention that Vault metrics target registration and dashboard import happen automatically.
+- Vault deployment no longer auto-registers observability artifacts.
 
 ## Observability Notes
 
-- Deploy path now runs shared observability artifact registration.
-- Prometheus target file is written when obs is active.
-- Vault dashboard is downloaded/imported automatically into Grafana folder HAL (no manual import step needed).
-- If Vault is already running and obs comes later, use `hal vault create --configure-obs` to backfill only monitoring artifacts.
-- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs create` first.
+- Use explicit lifecycle commands for Vault observability artifacts:
+	- `hal vault obs create`
+	- `hal vault obs update`
+	- `hal vault obs delete`
+	- `hal vault obs status`
+- `hal vault obs create` expects the obs stack to already be running; otherwise it should ask the user to run `hal obs create` first.
 
 ## Edge Cases
 

@@ -10,7 +10,7 @@ Assistant:
     hal nomad status
 
 Assistant: I report whether servers and clients are healthy before any workload submission.
-Assistant: If `hal obs create` is already up, I also mention Nomad target and dashboard registration are automatic.
+Assistant: If `hal obs create` is already up, I mention the explicit Nomad observability command family (`hal nomad obs ...`).
 
 ## Example 4: Backfill Nomad Monitoring Without Redeploy
 
@@ -18,7 +18,7 @@ User: Nomad is already deployed. Just wire its metrics and dashboard.
 
 Assistant:
 
-    hal nomad create --configure-obs
+    hal nomad obs create
 
 ## Example 2: Partial Recovery After Unstable Allocations
 

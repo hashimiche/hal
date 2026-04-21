@@ -25,7 +25,6 @@ Deploy the local Terraform Enterprise (TFE) stack for HAL labs.
 - Deprecated: older HAL docs may reference `hal terraform create --force`. That flag has been removed from the CLI. Use `hal terraform update` or `hal terraform create --update`.
 - Command flags from `hal terraform create --help`:
 ```text
---configure-obs                Refresh Prometheus target and Grafana dashboard artifacts without redeploying Terraform Enterprise
 -u, --update                       Reconcile an existing Terraform Enterprise deployment in place
 -h, --help                         help for deploy
 --minio-api-port int           Host port mapped to MinIO S3 API container port 9000 (default 19000)
@@ -61,6 +60,8 @@ Deploy the local Terraform Enterprise (TFE) stack for HAL labs.
 -v, --version string               Terraform Enterprise Docker image tag (default "1.2.0")
 ```
 - Global flags: `--debug`, `--dry-run`
+
+Observability artifacts are managed explicitly with `hal terraform obs <create|update|delete|status>`.
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.
