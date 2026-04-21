@@ -23,6 +23,7 @@ var destroyCmd = &cobra.Command{
 			fmt.Println("[DRY RUN] Would remove HAL containers on active Docker/Podman engines")
 			fmt.Println("[DRY RUN] Would delete HAL Multipass VMs and purge")
 			fmt.Println("[DRY RUN] Would remove local observability state")
+			fmt.Println("[DRY RUN] Would remove HAL MCP config and managed binary artifacts")
 			return
 		}
 
@@ -47,6 +48,7 @@ var destroyCmd = &cobra.Command{
 		fmt.Printf("   - KinD clusters deleted:     %d\n", result.KindClustersDeleted)
 		fmt.Printf("   - Multipass VMs deleted:     %d\n", result.MultipassVMsDeleted)
 		fmt.Printf("   - Obs state cleaned:         %t\n", result.ObsStateCleaned)
+		fmt.Printf("   - MCP artifacts cleaned:     %t\n", result.MCPArtifactsCleaned)
 		if len(result.Warnings) > 0 {
 			fmt.Println("\n⚠️  Teardown warnings:")
 			for _, warning := range result.Warnings {

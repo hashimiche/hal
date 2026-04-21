@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"hal/cmd/mcp"
 	"hal/internal/global"
 )
 
@@ -15,6 +16,7 @@ type globalTeardownResult struct {
 	KindClustersDeleted     int
 	MultipassVMsDeleted     int
 	ObsStateCleaned         bool
+	MCPArtifactsCleaned     bool
 	Warnings                []string
 }
 
@@ -114,6 +116,12 @@ func runGlobalTeardown() globalTeardownResult {
 	} else {
 		result.ObsStateCleaned = true
 	}
+
+	mcpCleanup := mcp.CleanupArtifacts()
+	if mcpCleanup.ConfigRemoved || mcpCleanup.BinaryRemoved || mcpCleanup.PIDRemoved || mcpCleanup.ProcessStopped {
+		result.MCPArtifactsCleaned = true
+	}
+	result.Warnings = append(result.Warnings, mcpCleanup.Warnings...)
 
 	return result
 }

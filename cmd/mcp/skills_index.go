@@ -2,12 +2,15 @@ package mcp
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+
+	halskills "hal/internal/skills"
 )
 
 type skillDoc struct {
@@ -38,7 +41,7 @@ func getSkillIndex() (*skillIndex, error) {
 }
 
 func loadSkillIndex() (*skillIndex, error) {
-	skillsDir, err := resolveSkillsDir()
+	skillsFS, root, err := resolveSkillsFS()
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +55,7 @@ func loadSkillIndex() (*skillIndex, error) {
 
 	seenCommands := map[string]bool{}
 
-	walkErr := filepath.WalkDir(skillsDir, func(path string, d os.DirEntry, walkErr error) error {
+	walkErr := fs.WalkDir(skillsFS, root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -63,7 +66,7 @@ func loadSkillIndex() (*skillIndex, error) {
 			return nil
 		}
 
-		contentBytes, readErr := os.ReadFile(path)
+		contentBytes, readErr := fs.ReadFile(skillsFS, path)
 		if readErr != nil {
 			return nil
 		}
@@ -100,21 +103,31 @@ func loadSkillIndex() (*skillIndex, error) {
 	return idx, nil
 }
 
-func resolveSkillsDir() (string, error) {
+// resolveSkillsFS returns an fs.FS and the root path within it to walk for skills.
+// Priority:
+//  1. HAL_SKILLS_DIR env var (absolute path on disk)
+//  2. <cwd>/.github/copilot/skills (repo checkout)
+//  3. Embedded skills baked into the binary at build time
+func resolveSkillsFS() (fs.FS, string, error) {
 	if custom := strings.TrimSpace(os.Getenv("HAL_SKILLS_DIR")); custom != "" {
 		if info, err := os.Stat(custom); err == nil && info.IsDir() {
-			return custom, nil
+			return os.DirFS(custom), ".", nil
 		}
 	}
 
 	if wd, err := os.Getwd(); err == nil {
 		candidate := filepath.Join(wd, ".github", "copilot", "skills")
 		if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
-			return candidate, nil
+			return os.DirFS(candidate), ".", nil
 		}
 	}
 
-	return "", fmt.Errorf("skills directory not found (expected .github/copilot/skills); set HAL_SKILLS_DIR to override")
+	// Fall back to skills embedded in the binary.
+	sub, err := fs.Sub(halskills.FS, "data")
+	if err != nil {
+		return nil, "", fmt.Errorf("embedded skills unavailable: %w", err)
+	}
+	return sub, ".", nil
 }
 
 func parseSkillFrontmatter(content string) (string, string) {

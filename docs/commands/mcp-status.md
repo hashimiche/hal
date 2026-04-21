@@ -8,6 +8,9 @@ Display HAL MCP readiness and scaffold/config state.
 
 ## Behavior
 - Default when running `hal mcp` with no subcommand.
+- Reports whether the MCP config file exists.
+- Reports whether the managed HAL MCP binary exists.
+- Reminds the user that stdio clients start and stop `hal mcp serve` on demand.
 
 ## Related
 - Parent namespace: [mcp.md](mcp.md)
@@ -23,7 +26,7 @@ Display HAL MCP readiness and scaffold/config state.
 - Global flags: `--debug`, `--dry-run`
 
 ## Side Effects
-- This command may create, mutate, or remove local lab resources depending on its operation.
+- None. This is a read-only inspection command.
 
 ## Example
 ```bash

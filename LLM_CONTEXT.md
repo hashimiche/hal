@@ -62,7 +62,7 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 
 - Boundary target setup has version-sensitive API behavior around auth methods, grant strings, target host-source actions, and brokered credential source attachment.
 - HAL MCP command namespace (`hal mcp`) is a stdio-first MVP for external tool integration.
-    - `hal mcp create|update|status|delete` should stay stable for operator UX consistency (with `up/down` aliases for compatibility).
+    - `hal mcp create|serve|status|delete` is the primary operator surface.
     - Initial MCP tool surface is read-only and should leverage existing HAL command paths (`status`, `capacity`, `<product> status`) instead of reimplementing product logic.
     - Product status tools (for example `get_tfe_status`) should keep product-specific `recommended_commands` first (`hal terraform status`) so AI clients can answer quick health prompts without falling back to generic checks like `hal capacity`.
 - Terraform Enterprise local deployment depends on a mocked PostgreSQL, Redis, and MinIO stack and uses local TLS material under `~/.hal/tfe-certs`.

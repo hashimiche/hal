@@ -68,7 +68,7 @@ Intent:
 | `hal terraform api-workflow` (alias `api`) | `enable`, `update`, `disable`, `status` | Treat as product feature. |
 | `hal terraform vcs-workflow` | `enable`, `update`, `disable`, `status` | Treat as product feature. |
 | `hal terraform obs` | `create`, `update`, `delete`, `status` | Observability artifacts are modeled as a managed feature resource (Prometheus targets + Grafana dashboard artifacts). |
-| `hal mcp policy` | `create`, `update`, `delete`, `status` | Explicitly modeled as a managed resource. |
+| `hal mcp policy` | n/a | Introspection/export command for HAL MCP runtime answer/tool policy; not a managed lifecycle resource. |
 
 ## Password Retrieval Command Family (Target)
 
