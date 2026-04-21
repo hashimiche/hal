@@ -1,0 +1,13 @@
+# Local build artifacts
+hal
+bin/
+dist/
+
+# Go test and coverage outputs
+*.test
+*.out
+coverage.out
+coverage.txt
+
+# OS/editor noise
+.DS_Store
