@@ -18,4 +18,4 @@ Use this router when the user asks for Boundary workflows in hal but has not sel
 
 - Prefer hal commands first.
 - For post-deploy operations, provide exact CLI commands.
-- If Boundary is already running and obs comes later, `hal boundary create --configure-obs` backfills only monitoring artifacts.
+- If Boundary is already running and obs comes later, use `hal boundary obs create` to backfill monitoring artifacts.

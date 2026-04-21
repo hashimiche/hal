@@ -80,11 +80,12 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - Native mode: `VaultStaticSecret` sync to Kubernetes secret, injected as env var, HTML rendered in-pod.
     - CSI mode (`--csi`, Enterprise): `CSISecrets` projection via `csi.vso.hashicorp.com`, HTML rendered from mounted file.
 - Observability product integration is centralized through shared artifact registration in `internal/global/obs.go`.
-    - Product create commands auto-register Prometheus targets when obs is running.
+    - Product create commands no longer auto-register Prometheus targets/dashboards.
+    - Observability onboarding is explicit and opt-in via `hal <product> obs <create|update|delete|status>`.
     - Official dashboards are auto-downloaded and imported into Grafana folder `HAL`.
     - Dashboard JSON is normalized so panel datasources resolve to local `hal-prometheus`.
-    - Product create commands also support `--configure-obs` to backfill monitoring artifacts without recreating the product.
-    - `--configure-obs` should require the obs stack to already be running; it is a refresh action, not a pre-staging action.
+    - For Terraform Enterprise, prefer `hal terraform obs <create|update|delete|status>` for monitoring artifact lifecycle.
+    - Terraform obs actions should require the obs stack to already be running; they are refresh/manage actions, not pre-staging actions.
 - Global teardown logic is centralized for `hal delete` and `hal daisy`.
     - KinD cleanup includes default cluster name `kind` plus `hal-*` clusters.
     - Leftover KinD containers are removed by cluster label as a fallback.

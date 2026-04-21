@@ -17,7 +17,7 @@ Use this router when the user says Vault but does not clearly specify the exact 
 	- Prometheus: `http://prometheus.localhost:9090`
 	- Loki: `http://loki.localhost:3100/ready`
 
-If obs comes after Vault, prefer `hal vault create --configure-obs` to backfill metrics/dashboard artifacts.
+If obs comes after Vault, prefer `hal vault obs create` to backfill metrics/dashboard artifacts.
 
 ## Routing Rules
 

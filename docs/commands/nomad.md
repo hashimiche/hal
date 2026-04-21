@@ -18,6 +18,11 @@
   - Destroy Nomad VM resources
   - Spec: [nomad-destroy.md](nomad-destroy.md)
 
+- `hal nomad obs`
+  - Manage Nomad observability artifacts
+  - Subcommands: `create`, `update`, `delete`, `status`
+  - Spec: [nomad-obs.md](nomad-obs.md)
+
 - `hal nomad job`
   - Submit sample workloads/jobs to Nomad
   - Spec: [nomad-job.md](nomad-job.md)

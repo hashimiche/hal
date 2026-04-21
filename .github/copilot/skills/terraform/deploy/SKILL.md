@@ -17,15 +17,16 @@ Handle hal terraform create requests with a stable lifecycle pattern.
 
 - Confirm command output and summarize the resulting lab state.
 - If applicable, suggest the next expected command in the lifecycle.
-- If observability is running, mention automatic target/dashboard artifact updates.
+- Terraform deployment no longer auto-registers observability artifacts.
 
 ## Observability Notes
 
-- Terraform deploy uses shared observability artifact registration.
-- TFE metrics target file is refreshed automatically when obs is active.
-- Official Terraform Enterprise dashboard is imported automatically into Grafana folder HAL.
-- If TFE is already running and obs comes later, use `hal terraform create --configure-obs` to backfill only monitoring artifacts.
-- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs create` first.
+- Use explicit lifecycle commands for Terraform observability artifacts:
+	- `hal terraform obs create`
+	- `hal terraform obs update`
+	- `hal terraform obs delete`
+	- `hal terraform obs status`
+- `hal terraform obs create` expects the obs stack to already be running; otherwise it should ask the user to run `hal obs create` first.
 
 ## Edge Cases
 

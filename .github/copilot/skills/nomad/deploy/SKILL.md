@@ -17,15 +17,16 @@ Handle hal nomad create requests with a stable lifecycle pattern.
 
 - Confirm command output and summarize the resulting lab state.
 - If applicable, suggest the next expected command in the lifecycle.
-- If observability is running, call out that target/dashboard artifacts are handled automatically.
+- Nomad deployment no longer auto-registers observability artifacts.
 
 ## Observability Notes
 
-- Nomad deploy now calls shared observability artifact registration.
-- Prometheus target file is refreshed automatically when obs is active.
-- Official Nomad dashboard is imported automatically into Grafana folder HAL.
-- If Nomad is already running and obs comes later, use `hal nomad create --configure-obs` to backfill only monitoring artifacts.
-- `--configure-obs` expects the obs stack to already be running; otherwise it should stop and ask the user to run `hal obs create` first.
+- Use explicit lifecycle commands for Nomad observability artifacts:
+	- `hal nomad obs create`
+	- `hal nomad obs update`
+	- `hal nomad obs delete`
+	- `hal nomad obs status`
+- `hal nomad obs create` expects the obs stack to already be running; otherwise it should ask the user to run `hal obs create` first.
 
 ## Edge Cases
 

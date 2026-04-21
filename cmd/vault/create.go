@@ -14,12 +14,11 @@ import (
 )
 
 var (
-	vaultVersion      string
-	vaultEdition      string // ce or ent
-	vaultHelperImage  string
-	vaultUpdate       bool
-	vaultJoinConsul   bool
-	vaultConfigureObs bool
+	vaultVersion     string
+	vaultEdition     string // ce or ent
+	vaultHelperImage string
+	vaultUpdate      bool
+	vaultJoinConsul  bool
 )
 
 var deployCmd = &cobra.Command{
@@ -30,26 +29,6 @@ var deployCmd = &cobra.Command{
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
-			return
-		}
-
-		if vaultConfigureObs {
-			if !global.IsContainerRunning(engine, "hal-vault") {
-				fmt.Println("❌ Vault is not running. Deploy it first before configuring observability artifacts.")
-				fmt.Println("   💡 Run 'hal vault create' and then retry with '--configure-obs' if needed.")
-				return
-			}
-			if !global.IsObsReady(engine) {
-				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
-				fmt.Println("   💡 Run 'hal obs create' first, then retry '--configure-obs'.")
-				return
-			}
-
-			fmt.Println("🩺 Configuring observability artifacts for Vault...")
-			for _, warning := range global.RegisterObsArtifacts("vault", []string{"hal-vault:8200"}) {
-				fmt.Printf("⚠️  %s\n", warning)
-			}
-			fmt.Println("✅ Vault observability artifacts refreshed.")
 			return
 		}
 
@@ -165,10 +144,6 @@ var deployCmd = &cobra.Command{
 			fmt.Println("   🟢 Vault is successfully tethered to the global Consul Control Plane!")
 		}
 
-		for _, warning := range global.RegisterObsArtifacts("vault", []string{"hal-vault:8200"}) {
-			fmt.Printf("⚠️  %s\n", warning)
-		}
-
 		fmt.Println("\n💡 Tip: Export your environment variables to use your local CLI:")
 		fmt.Println("   export VAULT_ADDR='http://vault.localhost:8200'")
 		fmt.Println("   export VAULT_TOKEN='root'")
@@ -227,7 +202,6 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&vaultUpdate, "update", "u", false, "Reconcile an existing Vault deployment in place")
 	}
-	cmd.Flags().BoolVar(&vaultConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Vault")
 	cmd.Flags().BoolVarP(&vaultJoinConsul, "join-consul", "c", false, "Tether Vault to the global HAL Consul instance")
 }
 

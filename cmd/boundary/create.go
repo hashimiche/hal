@@ -13,11 +13,10 @@ import (
 )
 
 var (
-	boundaryVersion      string
-	pgVersion            string
-	boundaryUpdate       bool
-	boundaryJoinConsul   bool
-	boundaryConfigureObs bool
+	boundaryVersion    string
+	pgVersion          string
+	boundaryUpdate     bool
+	boundaryJoinConsul bool
 )
 
 var deployCmd = &cobra.Command{
@@ -28,26 +27,6 @@ var deployCmd = &cobra.Command{
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
-			return
-		}
-
-		if boundaryConfigureObs {
-			if !global.IsContainerRunning(engine, "hal-boundary") {
-				fmt.Println("❌ Boundary is not running. Deploy it first before configuring observability artifacts.")
-				fmt.Println("   💡 Run 'hal boundary create' and then retry with '--configure-obs' if needed.")
-				return
-			}
-			if !global.IsObsReady(engine) {
-				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
-				fmt.Println("   💡 Run 'hal obs create' first, then retry '--configure-obs'.")
-				return
-			}
-
-			fmt.Println("🩺 Configuring observability artifacts for Boundary...")
-			for _, warning := range global.RegisterObsArtifacts("boundary", []string{"hal-boundary:9200"}) {
-				fmt.Printf("⚠️  %s\n", warning)
-			}
-			fmt.Println("✅ Boundary observability artifacts refreshed.")
 			return
 		}
 
@@ -133,9 +112,6 @@ var deployCmd = &cobra.Command{
 		if boundaryJoinConsul {
 			fmt.Println("   🟢 Tethered:   Global Consul Control Plane")
 		}
-		for _, warning := range global.RegisterObsArtifacts("boundary", []string{"hal-boundary:9200"}) {
-			fmt.Printf("⚠️  %s\n", warning)
-		}
 		fmt.Println("---------------------------------------------------------")
 		fmt.Println("💡 Next Step: Deploy some targets to connect to!")
 		fmt.Println("   hal boundary mariadb enable")
@@ -190,7 +166,6 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&boundaryUpdate, "update", "u", false, "Reconcile an existing Boundary deployment in place")
 	}
-	cmd.Flags().BoolVar(&boundaryConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Boundary")
 	cmd.Flags().BoolVarP(&boundaryJoinConsul, "join-consul", "c", false, "Tether Boundary to the global HAL Consul instance")
 }
 

@@ -22,6 +22,12 @@
   - Supports `--target primary|twin|both` (default `primary`)
   - Spec: [terraform-destroy.md](terraform-destroy.md)
 
+- `hal terraform obs`
+  - Manage Terraform Enterprise observability artifacts (Prometheus target file + Grafana dashboard artifact lifecycle)
+  - Subcommands: `create`, `update`, `delete`, `status`
+  - Supports `--target primary|twin|both` (default `primary`)
+  - Spec: [terraform-obs.md](terraform-obs.md)
+
 - `hal terraform vcs-workflow`
   - Alias: `hal terraform vcs`
   - Configure GitLab-backed VCS workflow lab flow with target-aware workspace wiring

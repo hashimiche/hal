@@ -279,7 +279,13 @@ func ImportGrafanaDashboardIfKnown(product string) error {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("grafana import failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		trimmedBody := strings.TrimSpace(string(respBody))
+		// Grafana rejects API writes for dashboards provisioned from files.
+		// This is expected in HAL, where dashboards are mounted via provisioning.
+		if resp.StatusCode == http.StatusBadRequest && strings.Contains(trimmedBody, "Cannot save provisioned dashboard") {
+			return nil
+		}
+		return fmt.Errorf("grafana import failed with status %d: %s", resp.StatusCode, trimmedBody)
 	}
 
 	return nil

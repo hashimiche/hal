@@ -11,9 +11,8 @@ import (
 )
 
 var (
-	consulVersion      string
-	consulUpdate       bool
-	consulConfigureObs bool
+	consulVersion string
+	consulUpdate  bool
 )
 
 var deployCmd = &cobra.Command{
@@ -25,26 +24,6 @@ var deployCmd = &cobra.Command{
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
-			return
-		}
-
-		if consulConfigureObs {
-			if !global.IsContainerRunning(engine, "hal-consul") {
-				fmt.Println("❌ Consul is not running. Deploy it first before configuring observability artifacts.")
-				fmt.Println("   💡 Run 'hal consul create' and then retry with '--configure-obs' if needed.")
-				return
-			}
-			if !global.IsObsReady(engine) {
-				fmt.Printf("❌ Observability stack is not ready. Missing: %s\n", strings.Join(global.ObsMissingComponents(engine), ", "))
-				fmt.Println("   💡 Run 'hal obs create' first, then retry '--configure-obs'.")
-				return
-			}
-
-			fmt.Println("🩺 Configuring observability artifacts for Consul...")
-			for _, warning := range global.RegisterObsArtifacts("consul", []string{"hal-consul:8500"}) {
-				fmt.Printf("⚠️  %s\n", warning)
-			}
-			fmt.Println("✅ Consul observability artifacts refreshed.")
 			return
 		}
 
@@ -87,9 +66,6 @@ var deployCmd = &cobra.Command{
 
 		fmt.Println("✅ Standalone Consul Server is up!")
 		fmt.Println("   🔗 UI Address: http://consul.localhost:8500")
-		for _, warning := range global.RegisterObsArtifacts("consul", []string{"hal-consul:8500"}) {
-			fmt.Printf("⚠️  %s\n", warning)
-		}
 		fmt.Println("\n💡 Tip: Use this to test the KV store or learn the API.")
 		fmt.Println("   (For real workloads, use 'hal nomad create --with-consul' instead!)")
 	},
@@ -110,7 +86,6 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&consulUpdate, "update", "u", false, "Reconcile an existing Consul deployment in place")
 	}
-	cmd.Flags().BoolVar(&consulConfigureObs, "configure-obs", false, "Refresh Prometheus target and Grafana dashboard artifacts without redeploying Consul")
 }
 
 func init() {

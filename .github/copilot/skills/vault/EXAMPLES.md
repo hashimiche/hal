@@ -46,7 +46,7 @@ User: Vault was already deployed. I now want metrics and dashboards in obs.
 Assistant:
 
     hal obs create
-    hal vault create --configure-obs
+    hal vault obs create
 
 Assistant: Then verify surfaces:
 

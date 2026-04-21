@@ -18,6 +18,11 @@
   - Destroy local Consul server resources
   - Spec: [consul-destroy.md](consul-destroy.md)
 
+- `hal consul obs`
+  - Manage Consul observability artifacts
+  - Subcommands: `create`, `update`, `delete`, `status`
+  - Spec: [consul-obs.md](consul-obs.md)
+
 ## Sources
 - Namespace: `cmd/consul/consul.go`
 - Subcommands: `cmd/consul/*.go`

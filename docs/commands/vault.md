@@ -18,6 +18,11 @@
   - Destroy Vault and associated extension resources
   - Spec: [vault-destroy.md](vault-destroy.md)
 
+- `hal vault obs`
+  - Manage Vault observability artifacts
+  - Subcommands: `create`, `update`, `delete`, `status`
+  - Spec: [vault-obs.md](vault-obs.md)
+
 - `hal vault audit`
   - Manage/check Vault audit logging state
   - Spec: [vault-audit.md](vault-audit.md)

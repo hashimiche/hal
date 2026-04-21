@@ -10,7 +10,7 @@ Assistant:
     hal consul status
 
 Assistant: I summarize whether the server and UI endpoint are reachable, then provide the next command to continue with dependent services.
-Assistant: If obs is already deployed, I also mention that Consul target registration and dashboard import are automatic.
+Assistant: If obs is already deployed, I mention the explicit Consul observability command family (`hal consul obs ...`).
 
 ## Example 4: Backfill Consul Monitoring Without Redeploy
 
@@ -18,7 +18,7 @@ User: Consul is already up. I only want monitoring artifacts now.
 
 Assistant:
 
-    hal consul create --configure-obs
+    hal consul obs create
 
 ## Example 2: Drift Recovery After Host Restart
 
