@@ -18,6 +18,7 @@ type skillDoc struct {
 	Name        string   `json:"name,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Commands    []string `json:"commands,omitempty"`
+	Content     string   `json:"content,omitempty"`
 }
 
 type skillIndex struct {
@@ -89,6 +90,7 @@ func loadSkillIndex() (*skillIndex, error) {
 			Name:        name,
 			Description: description,
 			Commands:    commands,
+			Content:     content,
 		})
 
 		idx.DeprecatedCommands = mergeDeprecated(idx.DeprecatedCommands, parseDeprecatedCommands(content))
@@ -337,4 +339,29 @@ func appendUnique(values []string, value string) []string {
 		}
 	}
 	return append(values, value)
+}
+
+// findSkillsForTopic returns all embedded skill docs whose path, name, or
+// description contains any of the whitespace-separated words in topic.
+// Content is included so callers can surface the full skill markdown.
+func findSkillsForTopic(topic string) ([]skillDoc, error) {
+	idx, err := getSkillIndex()
+	if err != nil {
+		return nil, err
+	}
+	words := strings.Fields(strings.ToLower(strings.TrimSpace(topic)))
+	if len(words) == 0 {
+		return idx.Skills, nil
+	}
+	var matched []skillDoc
+	for _, s := range idx.Skills {
+		haystack := strings.ToLower(s.Path + " " + s.Name + " " + s.Description)
+		for _, w := range words {
+			if strings.Contains(haystack, w) {
+				matched = append(matched, s)
+				break
+			}
+		}
+	}
+	return matched, nil
 }

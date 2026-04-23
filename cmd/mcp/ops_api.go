@@ -182,12 +182,23 @@ func mcpOpsTools() []map[string]interface{} {
 			},
 		},
 		{
+			"name":        "get_skill_for_topic",
+			"description": "Return full embedded skill content (lifecycle commands, edge cases, notes) for a given HAL topic such as 'terraform obs', 'vault oidc', or 'boundary ssh'.",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"topic": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"topic"},
+			},
+		},
+		{
 			"name":        "get_component_context",
 			"description": "Return endpoint/auth context for a component without exposing secrets.",
 			"inputSchema": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"component": map[string]interface{}{"type": "string", "enum": []string{"vault", "vault_k8s", "vault_vso", "vault_csi", "vault_oidc", "vault_jwt", "vault_ldap", "vault_database", "terraform", "terraform_workspace", "consul", "nomad", "boundary", "boundary_ssh", "boundary_mariadb", "obs"}},
+					"component": map[string]interface{}{"type": "string", "enum": []string{"vault", "vault_k8s", "vault_vso", "vault_csi", "vault_oidc", "vault_jwt", "vault_ldap", "vault_database", "terraform", "terraform_vcs_workflow", "terraform_api_workflow", "terraform_workspace", "terraform_cli", "consul", "nomad", "boundary", "boundary_ssh", "boundary_mariadb", "obs"}},
 				},
 				"required": []string{"component"},
 			},
@@ -244,12 +255,12 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
-			"name":        "get_tfe_cli_status",
+			"name":        "get_tfe_api_workflow_status",
 			"description": "Return Terraform API helper readiness for local TFE workflows.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
-			"name":        "setup_tfe_workspace",
+			"name":        "enable_tfe_vcs_workflow",
 			"description": "Run Terraform VCS workflow bootstrap in dry_run/apply mode.",
 			"inputSchema": modeSchema(),
 		},
@@ -408,13 +419,70 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 			"error_codes": contractErrorCodes(),
 		}
 		if idx, err := getSkillIndex(); err == nil && idx != nil {
+			// Build a compact index (no Content) for discovery; full content is in get_skill_for_topic.
+			skillMeta := make([]map[string]interface{}, 0, len(idx.Skills))
+			for _, s := range idx.Skills {
+				entry := map[string]interface{}{"path": s.Path}
+				if s.Name != "" {
+					entry["name"] = s.Name
+				}
+				if s.Description != "" {
+					entry["description"] = s.Description
+				}
+				if len(s.Commands) > 0 {
+					entry["commands"] = s.Commands
+				}
+				skillMeta = append(skillMeta, entry)
+			}
 			cap["skills"] = map[string]interface{}{
 				"skills_count":        len(idx.Skills),
 				"commands_count":      len(idx.Commands),
 				"deprecated_commands": idx.DeprecatedCommands,
+				"index":               skillMeta,
 			}
 		}
 		return opSuccess("capabilities collected", cap, []string{"hal --help"}, nil), true
+
+	case "get_skill_for_topic":
+		if err := ensureOnlyKeys(args, map[string]bool{"topic": true}); err != nil {
+			return opError(codeParseError, err.Error(), nil, []string{"get_capabilities"}, nil), true
+		}
+		topic, ok := args["topic"].(string)
+		if !ok || strings.TrimSpace(topic) == "" {
+			return opError(codeParseError, "topic is required", nil, []string{"get_capabilities"}, nil), true
+		}
+		matched, skillErr := findSkillsForTopic(strings.TrimSpace(topic))
+		if skillErr != nil {
+			return opError(codeUnsupportedOp, skillErr.Error(), nil, []string{"get_capabilities"}, nil), true
+		}
+		type skillResult struct {
+			Path        string   `json:"path"`
+			Name        string   `json:"name,omitempty"`
+			Description string   `json:"description,omitempty"`
+			Commands    []string `json:"commands,omitempty"`
+			Content     string   `json:"content"`
+		}
+		results := make([]skillResult, 0, len(matched))
+		recommended := make([]string, 0, 16)
+		for _, s := range matched {
+			results = append(results, skillResult{
+				Path:        s.Path,
+				Name:        s.Name,
+				Description: s.Description,
+				Commands:    s.Commands,
+				Content:     s.Content,
+			})
+			recommended = append(recommended, s.Commands...)
+		}
+		recommended = sortedUnique(recommended)
+		if len(recommended) == 0 {
+			recommended = []string{"get_capabilities"}
+		}
+		return opSuccess(fmt.Sprintf("%d skill(s) matched topic %q", len(results), topic), map[string]interface{}{
+			"topic":  topic,
+			"skills": results,
+			"count":  len(results),
+		}, recommended, nil), true
 
 	case "hal_policy_profile":
 		if err := ensureOnlyKeys(args, map[string]bool{"profile": true}); err != nil {
@@ -465,12 +533,12 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		if !ok || strings.TrimSpace(intent) == "" {
 			return opError(codeParseError, "intent is required", nil, []string{"get_capabilities"}, nil), true
 		}
+		if featurePlan, featureOK := buildFeaturePlan(strings.TrimSpace(intent)); featureOK {
+			recommended := extractPlanCommands(featurePlan)
+			return opSuccess("plan generated", featurePlan, recommended, nil), true
+		}
 		plan, ok := buildPlan(strings.TrimSpace(intent))
 		if !ok {
-			if featurePlan, featureOK := buildFeaturePlan(strings.TrimSpace(intent)); featureOK {
-				recommended := extractPlanCommands(featurePlan)
-				return opSuccess("plan generated", featurePlan, recommended, nil), true
-			}
 			return opError(codeUnsupportedOp, "unable to generate plan for intent", map[string]interface{}{"intent": intent}, []string{"get_capabilities", "get_help_for_topic"}, nil), true
 		}
 		recommended := extractPlanCommands(plan)
@@ -505,13 +573,13 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		case "boundary", "boundary_ssh", "boundary_mariadb":
 			commands = []string{"hal boundary status", "hal boundary ssh"}
 			docs = []string{"https://developer.hashicorp.com/boundary"}
-		case "terraform", "terraform_workspace", "tfe":
+		case "terraform", "terraform_vcs_workflow", "terraform_workspace", "tfe":
 			commands = []string{"hal terraform status", "hal terraform vcs-workflow"}
 			docs = []string{"https://developer.hashicorp.com/terraform/enterprise"}
 		case "terraform_agent", "tfe_agent":
 			commands = []string{"hal terraform agent", "hal terraform agent enable", "hal terraform status"}
 			docs = []string{"https://developer.hashicorp.com/terraform/enterprise/agents"}
-		case "terraform_cli", "tfe_cli":
+		case "terraform_api_workflow", "terraform_cli", "tfe_cli":
 			commands = []string{"hal terraform api-workflow", "hal tf api-workflow enable", "hal terraform status"}
 			docs = []string{"https://developer.hashicorp.com/terraform/enterprise"}
 		case "obs", "observability":
@@ -642,14 +710,14 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		return handleTFEStatus(), true
 
-	case "get_tfe_cli_status":
+	case "get_tfe_api_workflow_status", "get_tfe_cli_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
-			return opErrorForTool("get_tfe_cli_status", codeParseError, err.Error(), nil, []string{"hal terraform api-workflow"}, nil, nil, nil), true
+			return opErrorForTool("get_tfe_api_workflow_status", codeParseError, err.Error(), nil, []string{"hal terraform api-workflow"}, nil, nil, nil), true
 		}
 		return handleTFECLIStatus(), true
 
-	case "setup_tfe_workspace":
-		return handleEnableScenarioMode("setup_tfe_workspace", []string{"terraform", "vcs-workflow", "enable"}, []string{"hal terraform vcs-workflow", "hal terraform status"}, args), true
+	case "enable_tfe_vcs_workflow", "setup_tfe_workspace":
+		return handleEnableScenarioMode("enable_tfe_vcs_workflow", []string{"terraform", "vcs-workflow", "enable"}, []string{"hal terraform vcs-workflow", "hal terraform status"}, args), true
 
 	case "get_k8s_integration_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
@@ -677,10 +745,10 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 				{"component": "nomad", "depends_on": []string{"consul"}},
 				{"component": "boundary", "depends_on": []string{"vault"}},
 				{"component": "boundary_ssh", "depends_on": []string{"boundary"}},
-				{"component": "terraform_workspace", "depends_on": []string{"terraform", "gitlab"}},
+				{"component": "terraform_vcs_workflow", "depends_on": []string{"terraform", "gitlab"}},
 				{"component": "observability", "depends_on": []string{}},
 			},
-			"recommended_order": []string{"vault", "consul", "nomad", "boundary", "boundary_ssh", "terraform", "terraform_workspace", "observability", "vault_k8s_vso_csi"},
+			"recommended_order": []string{"vault", "consul", "nomad", "boundary", "boundary_ssh", "terraform", "terraform_vcs_workflow", "observability", "vault_k8s_vso_csi"},
 		}
 		checks := []opCheck{{Name: "dependency_graph", Status: "ok", Details: "static deterministic graph"}}
 		return opSuccessForTool("get_cross_product_dependencies", "cross-product dependencies resolved", deps, []string{"hal status", "hal vault status", "hal consul status", "hal nomad status", "hal boundary status", "hal terraform status", "hal obs status"}, checks, nil, nil, nil), true
@@ -1321,9 +1389,9 @@ func componentContext(component string) (map[string]interface{}, []string, error
 				"http://prometheus.localhost:9090",
 			},
 		}, []string{"hal terraform status", "hal terraform create", "hal terraform vcs-workflow", "hal terraform api-workflow", "hal terraform agent"}, nil
-	case "terraform_workspace":
+	case "terraform_vcs_workflow", "terraform_workspace":
 		return map[string]interface{}{
-			"component":  "terraform_workspace",
+			"component":  "terraform_vcs_workflow",
 			"depends_on": []string{"hal-tfe", "hal-gitlab"},
 			"workflow":   "prepare gitlab repo + wire TFE workspace VCS",
 			"trigger":    "push commit to main branch",
@@ -1336,9 +1404,9 @@ func componentContext(component string) (map[string]interface{}, []string, error
 			"default_image":     "hashicorp/tfc-agent:1.28",
 			"workflow":          "create/reuse agent pool, mint token, register local tfc-agent",
 		}, []string{"hal terraform agent", "hal terraform agent enable", "hal terraform agent disable", "hal terraform status"}, nil
-	case "terraform_cli":
+	case "terraform_api_workflow", "terraform_cli":
 		return map[string]interface{}{
-			"component":        "terraform_cli",
+			"component":        "terraform_api_workflow",
 			"helper_container": "hal-tfe-api",
 			"default_org":      "hal",
 			"auth_files":       []string{"/root/.tfx.hcl", "/root/.terraform.d/credentials.tfrc.json"},
@@ -1383,6 +1451,38 @@ func buildFeaturePlan(intent string) (map[string]interface{}, bool) {
 			"postchecks":   []string{"hal boundary ssh", "hal boundary status"},
 			"rollback":     []string{"hal boundary ssh disable"},
 			"expectations": []string{"Multipass VM hal-boundary-ssh running", "Boundary target is reachable"},
+		}, true
+	case strings.Contains(lower, "terraform") && (strings.Contains(lower, "obs") || strings.Contains(lower, "observability") || strings.Contains(lower, "grafana") || strings.Contains(lower, "prometheus") || strings.Contains(lower, "monitor")):
+		return map[string]interface{}{
+			"intent":    intent,
+			"action":    "terraform_observability_workflow",
+			"prechecks": []string{"hal terraform status", "hal obs status"},
+			"steps": []map[string]string{
+				{"command": "hal obs create", "reason": "Bring up shared observability stack if it is not running"},
+				{"command": "hal terraform obs create", "reason": "Register Terraform Enterprise observability artifacts (dashboards/targets/rules)"},
+			},
+			"postchecks": []string{"hal terraform obs status", "hal obs status", "hal terraform status"},
+			"next_trigger": []string{
+				"Use hal terraform obs update when TFE topology changes",
+				"Use hal terraform obs delete to remove Terraform-specific observability artifacts",
+			},
+			"rollback": []string{"hal terraform obs delete"},
+		}, true
+	case strings.Contains(lower, "vault") && (strings.Contains(lower, "obs") || strings.Contains(lower, "observability") || strings.Contains(lower, "grafana") || strings.Contains(lower, "prometheus") || strings.Contains(lower, "monitor")):
+		return map[string]interface{}{
+			"intent":    intent,
+			"action":    "vault_observability_workflow",
+			"prechecks": []string{"hal vault status", "hal obs status"},
+			"steps": []map[string]string{
+				{"command": "hal obs create", "reason": "Bring up shared observability stack if it is not running"},
+				{"command": "hal vault obs create", "reason": "Register Vault observability artifacts (dashboards/targets/rules)"},
+			},
+			"postchecks": []string{"hal vault obs status", "hal obs status", "hal vault status"},
+			"next_trigger": []string{
+				"Use hal vault obs update when Vault topology or scraping config changes",
+				"Use hal vault obs delete to remove Vault-specific observability artifacts",
+			},
+			"rollback": []string{"hal vault obs delete"},
 		}, true
 	case strings.Contains(lower, "terraform") && (strings.Contains(lower, "workspace") || strings.Contains(lower, "tfe") || strings.Contains(lower, "vcs")):
 		return map[string]interface{}{
