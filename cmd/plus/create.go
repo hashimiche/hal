@@ -27,7 +27,7 @@ var createCmd = &cobra.Command{
 			fmt.Printf("[DRY RUN] Would verify model availability: %s\n", plusModel)
 			fmt.Printf("[DRY RUN] Would verify local HAL MCP image exists: %s\n", mcpImage)
 			fmt.Println("[DRY RUN] Would ensure hal-net exists")
-			fmt.Printf("[DRY RUN] Would pull HAL Plus image: %s\n", plusImage)
+			fmt.Printf("[DRY RUN] Would use local HAL Plus image if present, otherwise pull: %s\n", plusImage)
 			fmt.Println("[DRY RUN] Would start container hal-mcp on hal-net")
 			fmt.Println("[DRY RUN] Would start container hal-plus on hal-net")
 			fmt.Printf("[DRY RUN] Would set OLLAMA_BASE_URL=%s\n", containerOllamaURL)
@@ -55,9 +55,11 @@ var createCmd = &cobra.Command{
 
 		global.EnsureNetwork(engine)
 
-		if out, err := exec.Command(engine, "pull", plusImage).CombinedOutput(); err != nil {
-			fmt.Printf("❌ Failed to pull HAL Plus image %s: %v\n%s\n", plusImage, err, string(out))
-			return
+		if !imageExists(engine, plusImage) {
+			if out, err := exec.Command(engine, "pull", plusImage).CombinedOutput(); err != nil {
+				fmt.Printf("❌ Failed to pull HAL Plus image %s: %v\n%s\n", plusImage, err, string(out))
+				return
+			}
 		}
 
 		if err := ensureRunningContainer(engine, halMCPContainerName, []string{"--network", "hal-net", mcpImage}); err != nil {

@@ -61,10 +61,24 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 ## Product Notes
 
 - Boundary target setup has version-sensitive API behavior around auth methods, grant strings, target host-source actions, and brokered credential source attachment.
-- HAL MCP command namespace (`hal mcp`) is a stdio-first MVP for external tool integration.
-    - `hal mcp create|serve|status|delete` is the primary operator surface.
-    - Initial MCP tool surface is read-only and should leverage existing HAL command paths (`status`, `capacity`, `<product> status`) instead of reimplementing product logic.
+- HAL MCP command namespace (`hal mcp`) supports two transports:
+    - **stdio** (default, local/dev): `hal mcp serve` — spawned directly by HAL Plus; protocol `2024-11-05`.
+    - **streamable-HTTP** (container): `hal mcp serve --transport streamable-http --http-host 0.0.0.0 --http-port 8080 --http-path /mcp`; protocol `2025-03-26`.
+    - `hal mcp create --http` builds the MCP HTTP container image from source using a Linux multi-stage Docker build (`FROM golang:alpine` + `FROM alpine`). It does **not** copy the host binary — it compiles a fresh Linux binary inside the build stage.
+    - The built image tag is `hashimiche/hal-mcp:local`; it runs as a non-root user (`hal`, uid 10001).
+    - `hal mcp create|serve|status|delete` remains the primary operator surface.
+    - MCP tool surface is read-only and leverages existing HAL command paths (`status`, `capacity`, `<product> status`) instead of reimplementing product logic.
     - Product status tools (for example `get_tfe_status`) should keep product-specific `recommended_commands` first (`hal terraform status`) so AI clients can answer quick health prompts without falling back to generic checks like `hal capacity`.
+    - The `hal-mcp` container does **not** mount the host container engine socket and does not run as root. Tool calls that require engine access (for example `hal_status_baseline`) will return an engine-unavailable error in rootless podman deployments — this is expected; HAL Plus handles it gracefully.
+    - AI clients must treat this engine-unavailable baseline as **runtime unknown**, not as product up/down evidence. For quick status prompts, respond with `Unknown` and recommend the product-specific status command (for example `hal vault status`).
+    - There is no SSH-based MCP transport pattern. Do not introduce or suggest SSH tunnelling for MCP.
+- HAL Plus stack lifecycle is managed via `hal plus create|status|delete`:
+    - `hal plus create` runs preflight checks (Ollama reachability, model availability, local MCP image presence), ensures `hal-net` exists, then starts `hal-mcp` and `hal-plus` containers on `hal-net`.
+    - `hal plus create --image <tag>` uses a local image directly if it exists (no forced pull); pulls from registry only when image is absent.
+    - `hal plus delete` tears down both containers.
+    - `hal plus status` reports image presence, container state, and endpoint health.
+    - Ollama must run on the **host**. HAL Plus contacts it from inside the container via `host.containers.internal:11434` (podman) or `host.docker.internal:11434` (docker). `OLLAMA_BASE_URL` env var overrides the resolved URL.
+    - No socket mounts, no `--user` overrides, no `DOCKER_HOST` injection into `hal-mcp`. Podman stays rootless.
 - Terraform Enterprise local deployment depends on a mocked PostgreSQL, Redis, and MinIO stack and uses local TLS material under `~/.hal/tfe-certs`.
     - Rootless Podman path uses `https://tfe.localhost:8443` through `hal-tfe-proxy`.
     - Twin TFE lifecycle is target-based on product CRUD commands (for example `hal terraform create --target twin`) instead of a dedicated `hal terraform twin` subcommand.
