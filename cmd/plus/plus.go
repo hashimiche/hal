@@ -22,8 +22,10 @@ var (
 	mcpImage           string
 	plusPort           int
 	plusModel          string
+	plusModelConfig    string
 	ollamaHostURL      string
 	ollamaContainerURL string
+	ollamaKeepAlive    string
 )
 
 // Cmd manages HAL Plus container lifecycle.
@@ -140,16 +142,20 @@ func init() {
 	plusImage = "ghcr.io/hashimiche/hal-plus:latest"
 	mcpImage = "hashimiche/hal-mcp:local"
 	plusPort = 9000
-	plusModel = "gemma4"
+	plusModel = "qwen3.5"
+	plusModelConfig = ""
 	ollamaHostURL = "http://127.0.0.1:11434"
 	ollamaContainerURL = ""
+	ollamaKeepAlive = defaultOllamaKeepAlive
 
 	createCmd.Flags().StringVar(&plusImage, "image", plusImage, "HAL Plus image to run")
 	createCmd.Flags().StringVar(&mcpImage, "mcp-image", mcpImage, "HAL MCP image expected to exist locally")
 	createCmd.Flags().IntVar(&plusPort, "port", plusPort, "Host port for HAL Plus UI")
-	createCmd.Flags().StringVar(&plusModel, "model", plusModel, "Ollama model name expected on host")
+	createCmd.Flags().StringVar(&plusModel, "model", plusModel, supportedOllamaModelsHelp())
+	createCmd.Flags().StringVar(&plusModelConfig, "model-config", plusModelConfig, "Optional Modelfile path used to build a HAL-managed Ollama model on the host")
 	createCmd.Flags().StringVar(&ollamaHostURL, "ollama-host-url", ollamaHostURL, "Host-side Ollama URL used for preflight checks")
 	createCmd.Flags().StringVar(&ollamaContainerURL, "ollama-base-url", ollamaContainerURL, "Container-side OLLAMA_BASE_URL override (defaults by engine)")
+	createCmd.Flags().StringVar(&ollamaKeepAlive, "keep-alive", ollamaKeepAlive, "Ollama model keep-alive duration for HAL Plus chat requests (for example 10m or 0)")
 
 	statusCmd.Flags().StringVar(&plusImage, "image", plusImage, "HAL Plus image expected")
 	statusCmd.Flags().StringVar(&mcpImage, "mcp-image", mcpImage, "HAL MCP image expected")

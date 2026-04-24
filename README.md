@@ -330,6 +330,28 @@ hal mcp delete    # remove MCP config, managed binary, and stale PID state
 
 ---
 
+### HAL Plus (`hal plus`)
+
+HAL Plus runs the local web UI container, keeps HAL MCP on the same network, and now handles the common Ollama model UX on the host.
+
+```bash
+hal plus create                      # default preset: gemma4
+hal plus create --model qwen3.5     # build and use the qwen3.5 preset
+hal plus create --model gemma4 --keep-alive 5m
+hal plus create --model qwen3.5 --model-config ./Modelfile
+hal plus status
+hal plus delete
+```
+
+Notes:
+
+- `--model` accepts either a curated preset (`gemma4`, `qwen3.5`) or an existing host Ollama model name.
+- For known presets, HAL creates a HAL-managed Ollama model with balanced defaults instead of requiring a manual `ollama pull` step.
+- `--model-config` lets you point HAL at a custom Ollama `Modelfile`; HAL will build a managed model on the host and then wire HAL Plus to use it.
+- `--keep-alive` controls how long Ollama keeps the model loaded after requests so idle memory can fall back down.
+
+---
+
 ## Configuration
 
 HAL uses environment variables and Docker/Podman networking — there is no config file to edit under normal use.
