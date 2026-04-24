@@ -111,6 +111,13 @@ If guidance here starts duplicating `.github/copilot-instructions.md`, move the 
 
 When lifecycle verbs/flags change (for example replacing force with update), keep all LLM-facing guidance synchronized in the same change set: this file, `.github/copilot/skills/**/*.md`, and MCP-facing docs/contracts (`docs/commands/mcp*.md`, `cmd/mcp/ops_api.go`, MCP test snapshots).
 
+Before making code changes in either `hal` or `hal-plus`, ask the user to create or confirm a working branch first. Once the branch exists, keep code and LLM markdown updates aligned on that branch.
+
+When AI-facing behavior, prompts, routing, skill guidance, docs policy, or UX behavior changes, update the LLM markdown surfaces across both repos in the same work cycle.
+
+- `hal`: `.github/copilot-instructions.md`, `.github/copilot/skills/**/*.md`, `docs/**/*.md`, `LLM_CONTEXT.md`
+- `hal-plus`: `llm/**/*.md`, `design*.md`, `UX_PARITY.md`, `LLM_BEHAVIOR.md`
+
 ## Cross-Repo AI Sync Rule
 
 - When changes affect AI-facing behavior (MCP tools, skills metadata, grounding contracts, prompt/response schemas, or deterministic intent routing), apply coordinated updates in both repos: `hal` (truth/tooling) and `hal-plus` (UX/orchestration).
