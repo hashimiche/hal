@@ -403,9 +403,9 @@ func provisionManagedMCPBinary(targetPath string) (string, error) {
 }
 
 func buildManagedMCPHTTPImage(engine, imageTag string) error {
-	exePath, err := os.Executable()
+	sourceRoot, err := resolveHalSourceRoot()
 	if err != nil {
-		return fmt.Errorf("resolve hal executable: %w", err)
+		return err
 	}
 
 	tmpDir, err := os.MkdirTemp("", "hal-mcp-image-")
@@ -414,31 +414,17 @@ func buildManagedMCPHTTPImage(engine, imageTag string) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	binaryPath := filepath.Join(tmpDir, "hal")
-	src, err := os.Open(exePath)
-	if err != nil {
-		return fmt.Errorf("open executable for image build: %w", err)
-	}
-	defer src.Close()
+	dockerfile := `FROM golang:1.26-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/hal ./main.go
 
-	dst, err := os.Create(binaryPath)
-	if err != nil {
-		return fmt.Errorf("create temp executable: %w", err)
-	}
-	if _, err := io.Copy(dst, src); err != nil {
-		dst.Close()
-		return fmt.Errorf("copy executable into build context: %w", err)
-	}
-	if err := dst.Close(); err != nil {
-		return fmt.Errorf("close temp executable: %w", err)
-	}
-	if err := os.Chmod(binaryPath, 0o755); err != nil {
-		return fmt.Errorf("chmod temp executable: %w", err)
-	}
-
-	dockerfile := `FROM alpine:3.20
+FROM alpine:3.20
+RUN apk add --no-cache docker-cli
 RUN adduser -D -u 10001 hal
-COPY hal /usr/local/bin/hal
+COPY --from=build /out/hal /usr/local/bin/hal
 USER hal
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/hal", "mcp", "serve", "--transport", "streamable-http", "--http-host", "0.0.0.0", "--http-port", "8080", "--http-path", "/mcp"]
@@ -447,13 +433,39 @@ ENTRYPOINT ["/usr/local/bin/hal", "mcp", "serve", "--transport", "streamable-htt
 		return fmt.Errorf("write temporary Dockerfile: %w", err)
 	}
 
-	buildCmd := exec.Command(engine, "build", "-t", imageTag, tmpDir)
+	buildCmd := exec.Command(engine, "build", "-t", imageTag, "-f", filepath.Join(tmpDir, "Dockerfile"), sourceRoot)
 	buildOutput, err := buildCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s build failed: %w\n%s", engine, err, strings.TrimSpace(string(buildOutput)))
 	}
 
 	return nil
+}
+
+func resolveHalSourceRoot() (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory: %w", err)
+	}
+
+	dir := wd
+	for {
+		modPath := filepath.Join(dir, "go.mod")
+		payload, readErr := os.ReadFile(modPath)
+		if readErr == nil {
+			if strings.Contains(string(payload), "module hal") {
+				return dir, nil
+			}
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	return "", fmt.Errorf("cannot locate HAL source root with go.mod (run from hal repo tree)")
 }
 
 func serveStdioMCP(stdin io.Reader, stdout io.Writer) error {

@@ -9,6 +9,7 @@ import (
 	"hal/cmd/mcp"
 	"hal/cmd/nomad"
 	"hal/cmd/observability"
+	"hal/cmd/plus"
 	"hal/cmd/terraform"
 	"hal/cmd/vault"
 
@@ -48,6 +49,7 @@ func init() {
 	rootCmd.AddCommand(boundary.Cmd)
 	rootCmd.AddCommand(consul.Cmd)
 	rootCmd.AddCommand(mcp.Cmd)
+	rootCmd.AddCommand(plus.Cmd)
 	rootCmd.AddCommand(terraform.Cmd)
 	rootCmd.AddCommand(observability.Cmd)
 }
