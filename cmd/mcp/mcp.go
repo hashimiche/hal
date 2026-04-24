@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"hal/internal/global"
+
 	"github.com/spf13/cobra"
 )
 
@@ -55,6 +57,8 @@ var (
 	createCommandName string
 	createBinaryPath  string
 	createJSONOnly    bool
+	createHTTPImage   bool
+	createHTTPTag     string
 	upTransport       string
 	upHTTPHost        string
 	upHTTPPort        int
@@ -78,6 +82,31 @@ var createCmd = &cobra.Command{
 	Short: "Create or replace HAL MCP client config scaffold",
 	Long:  "Create or replace the HAL MCP config and managed binary in place. Existing HAL-managed MCP artifacts are refreshed rather than duplicated.",
 	Run: func(cmd *cobra.Command, args []string) {
+		if createHTTPImage {
+			engine, err := global.DetectEngine()
+			if err != nil {
+				fmt.Printf("❌ Failed to detect container engine for MCP image build: %v\n", err)
+				return
+			}
+
+			imageTag := strings.TrimSpace(createHTTPTag)
+			if imageTag == "" {
+				fmt.Println("❌ Image tag cannot be empty (use --http-tag).")
+				return
+			}
+
+			if err := buildManagedMCPHTTPImage(engine, imageTag); err != nil {
+				fmt.Printf("❌ Failed to build HAL MCP HTTP image: %v\n", err)
+				return
+			}
+
+			fmt.Println("✅ HAL MCP HTTP image created locally.")
+			fmt.Printf("🐳 Engine:      %s\n", engine)
+			fmt.Printf("🐳 Image:       %s\n", imageTag)
+			fmt.Println("🧭 Next:        Start this image on hal-net and point HAL Plus to HAL_MCP_HTTP_URL=http://hal-mcp:8080/mcp")
+			return
+		}
+
 		dir, err := ensureMCPDir()
 		if err != nil {
 			fmt.Printf("❌ Failed to prepare MCP directory: %v\n", err)
@@ -371,6 +400,60 @@ func provisionManagedMCPBinary(targetPath string) (string, error) {
 	}
 
 	return resolved, nil
+}
+
+func buildManagedMCPHTTPImage(engine, imageTag string) error {
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve hal executable: %w", err)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "hal-mcp-image-")
+	if err != nil {
+		return fmt.Errorf("create temp build directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	binaryPath := filepath.Join(tmpDir, "hal")
+	src, err := os.Open(exePath)
+	if err != nil {
+		return fmt.Errorf("open executable for image build: %w", err)
+	}
+	defer src.Close()
+
+	dst, err := os.Create(binaryPath)
+	if err != nil {
+		return fmt.Errorf("create temp executable: %w", err)
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		return fmt.Errorf("copy executable into build context: %w", err)
+	}
+	if err := dst.Close(); err != nil {
+		return fmt.Errorf("close temp executable: %w", err)
+	}
+	if err := os.Chmod(binaryPath, 0o755); err != nil {
+		return fmt.Errorf("chmod temp executable: %w", err)
+	}
+
+	dockerfile := `FROM alpine:3.20
+RUN adduser -D -u 10001 hal
+COPY hal /usr/local/bin/hal
+USER hal
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/hal", "mcp", "serve", "--transport", "streamable-http", "--http-host", "0.0.0.0", "--http-port", "8080", "--http-path", "/mcp"]
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
+		return fmt.Errorf("write temporary Dockerfile: %w", err)
+	}
+
+	buildCmd := exec.Command(engine, "build", "-t", imageTag, tmpDir)
+	buildOutput, err := buildCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s build failed: %w\n%s", engine, err, strings.TrimSpace(string(buildOutput)))
+	}
+
+	return nil
 }
 
 func serveStdioMCP(stdin io.Reader, stdout io.Writer) error {
@@ -969,6 +1052,8 @@ func init() {
 	createCmd.Flags().StringVar(&createCommandName, "command", "hal", "HAL command name/path to use in generated MCP client config")
 	createCmd.Flags().StringVar(&createBinaryPath, "binary-path", "", "Path to write the managed HAL binary used by MCP clients (default ~/.hal/bin/hal-mcp)")
 	createCmd.Flags().BoolVar(&createJSONOnly, "json", false, "Only generate/replace MCP config JSON (skip managed binary provisioning)")
+	createCmd.Flags().BoolVar(&createHTTPImage, "http", false, "Build a local HAL MCP container image for streamable-http transport")
+	createCmd.Flags().StringVar(&createHTTPTag, "http-tag", "hashimiche/hal-mcp:local", "Image tag used when --http is set")
 	upCmd.Flags().StringVar(&upTransport, "transport", transportStdio, "MCP transport to use: stdio or streamable-http")
 	upCmd.Flags().StringVar(&upHTTPHost, "http-host", "0.0.0.0", "Host/interface to bind when --transport=streamable-http")
 	upCmd.Flags().IntVar(&upHTTPPort, "http-port", 8080, "TCP port to listen on when --transport=streamable-http")
