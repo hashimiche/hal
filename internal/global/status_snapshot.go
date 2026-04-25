@@ -11,7 +11,7 @@ import (
 
 // HalStatusImage is the container image used for hal-status.
 // Reuses the hal-mcp image since it already embeds the hal binary.
-const HalStatusImage = "hashimiche/hal-mcp:latest"
+const HalStatusImage = "ghcr.io/hashimiche/hal-mcp:latest"
 
 // ProductFeature represents a single feature of a product.
 type ProductFeature struct {

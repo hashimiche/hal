@@ -1009,7 +1009,7 @@ func init() {
 	createCmd.Flags().StringVar(&createBinaryPath, "binary-path", "", "Path to write the managed HAL binary used by MCP clients (default ~/.hal/bin/hal-mcp)")
 	createCmd.Flags().BoolVar(&createJSONOnly, "json", false, "Only generate/replace MCP config JSON (skip managed binary provisioning)")
 	createCmd.Flags().BoolVar(&createHTTPImage, "http", false, "Build a local HAL MCP container image for streamable-http transport")
-	createCmd.Flags().StringVar(&createHTTPTag, "http-tag", "hashimiche/hal-mcp:latest", "Image tag used when --http is set")
+	createCmd.Flags().StringVar(&createHTTPTag, "http-tag", "ghcr.io/hashimiche/hal-mcp:latest", "Image tag used when --http is set")
 	upCmd.Flags().StringVar(&upTransport, "transport", transportStdio, "MCP transport to use: stdio or streamable-http")
 	upCmd.Flags().StringVar(&upHTTPHost, "http-host", "0.0.0.0", "Host/interface to bind when --transport=streamable-http")
 	upCmd.Flags().IntVar(&upHTTPPort, "http-port", 8080, "TCP port to listen on when --transport=streamable-http")

@@ -140,7 +140,7 @@ func prettyJSON(v interface{}) string {
 
 func init() {
 	plusImage = "ghcr.io/hashimiche/hal-plus:latest"
-	mcpImage = "hashimiche/hal-mcp:latest"
+	mcpImage = "ghcr.io/hashimiche/hal-mcp:latest"
 	plusPort = 9000
 	plusModel = "qwen3.5"
 	plusModelConfig = ""
