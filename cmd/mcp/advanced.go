@@ -781,133 +781,16 @@ func buildStructuredStatus() (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	products := []map[string]interface{}{
-		buildProductState(engine, "consul", []string{"hal-consul"}, map[string]string{"core": boolState(checkContainer(engine, "hal-consul"))}, "http://consul.localhost:8500"),
-		buildProductState(engine, "vault", []string{"hal-vault"}, map[string]string{"audit": resolveVaultAuditFeature(engine), "k8s": boolState(checkContainer(engine, "kind-control-plane")), "jwt": boolState(checkContainer(engine, "hal-gitlab")), "ldap": boolState(checkContainer(engine, "hal-openldap")), "database": boolState(checkContainer(engine, "hal-vault-mariadb")), "oidc": boolState(checkContainer(engine, "hal-keycloak"))}, "http://vault.localhost:8200"),
-		buildProductState(engine, "nomad", []string{"hal-nomad"}, map[string]string{"job": boolState(checkMultipass("hal-nomad"))}, "multipass://hal-nomad"),
-		buildProductState(engine, "boundary", []string{"hal-boundary"}, map[string]string{"mariadb": boolState(checkContainer(engine, "hal-boundary-target-mariadb")), "ssh": boolState(checkMultipass("hal-boundary-ssh"))}, "http://boundary.localhost:9200"),
-		buildProductState(engine, "terraform", []string{"hal-tfe", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio", "hal-tfe-proxy"}, map[string]string{"workspace": boolState(checkContainer(engine, "hal-tfe") && checkContainer(engine, "hal-gitlab"))}, "https://tfe.localhost:8443"),
-		buildProductState(engine, "obs", []string{"hal-grafana", "hal-prometheus", "hal-loki"}, map[string]string{"grafana": boolState(checkContainer(engine, "hal-grafana")), "prometheus": boolState(checkContainer(engine, "hal-prometheus")), "loki": boolState(checkContainer(engine, "hal-loki"))}, "http://grafana.localhost:3000"),
-	}
-
-	return map[string]interface{}{
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-		"engine":    engine,
-		"products":  products,
-		"generated": now,
-	}, nil
-}
-
-func buildProductState(engine, product string, containers []string, features map[string]string, endpoint string) map[string]interface{} {
-	runningCount := 0
-	for _, c := range containers {
-		if c == "hal-nomad" {
-			if checkMultipass("hal-nomad") {
-				runningCount++
-			}
-			continue
-		}
-		if checkContainer(engine, c) {
-			runningCount++
-		}
-	}
-
-	state := "not_deployed"
-	health := "down"
-	reason := "required resources are not running"
-	if runningCount > 0 && runningCount < len(containers) {
-		state = "partial"
-		health = "degraded"
-		reason = "some resources are running"
-	}
-	if runningCount == len(containers) {
-		state = "running"
-		health = "healthy"
-		reason = "all required resources are running"
-	}
-	if len(containers) == 1 && runningCount == 1 {
-		state = "running"
-		health = "healthy"
-		reason = "primary resource is running"
-	}
-
-	featureRows := make([]map[string]string, 0, len(features))
-	for k, v := range features {
-		healthState := "down"
-		reasonState := "feature is disabled"
-		if v == "enabled" {
-			healthState = "healthy"
-			reasonState = "feature is enabled"
-		}
-		featureRows = append(featureRows, map[string]string{
-			"feature": k,
-			"state":   v,
-			"health":  healthState,
-			"reason":  reasonState,
-		})
-	}
-	sort.Slice(featureRows, func(i, j int) bool { return featureRows[i]["feature"] < featureRows[j]["feature"] })
-
-	return map[string]interface{}{
-		"product":    product,
-		"state":      state,
-		"health":     health,
-		"reason":     reason,
-		"endpoint":   endpoint,
-		"containers": containers,
-		"features":   featureRows,
-	}
-}
-
-func resolveVaultAuditFeature(engine string) string {
-	if !checkContainer(engine, "hal-vault") {
-		return "disabled"
-	}
-	out, err := exec.Command(
-		engine,
-		"exec",
-		"-e",
-		"VAULT_ADDR=http://127.0.0.1:8200",
-		"-e",
-		"VAULT_TOKEN=root",
-		"hal-vault",
-		"vault",
-		"audit",
-		"list",
-		"-format=json",
-	).Output()
+	snap, err := global.BuildStatusSnapshot(engine)
 	if err != nil {
-		return "unknown"
+		return nil, err
 	}
-	trimmed := strings.TrimSpace(string(out))
-	if trimmed == "{}" || trimmed == "" {
-		return "disabled"
-	}
-	return "enabled"
-}
 
-func checkContainer(engine, name string) bool {
-	out, err := exec.Command(engine, "ps", "-q", "-f", fmt.Sprintf("name=^%s$", name)).Output()
-	if err != nil {
-		return false
+	var result map[string]interface{}
+	if err := json.Unmarshal(snap, &result); err != nil {
+		return nil, err
 	}
-	return strings.TrimSpace(string(out)) != ""
-}
-
-func checkMultipass(name string) bool {
-	out, err := exec.Command("multipass", "info", name, "--format", "csv").Output()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(out), "Running")
-}
-
-func boolState(enabled bool) string {
-	if enabled {
-		return "enabled"
-	}
-	return "disabled"
+	return result, nil
 }
 
 func buildDiagnostics(product string, tailLines int) (map[string]interface{}, error) {
@@ -934,7 +817,7 @@ func buildDiagnostics(product string, tailLines int) (map[string]interface{}, er
 	reFailure := regexp.MustCompile(`(?i)(error|failed|panic|denied|refused|timeout)`) // safe heuristic
 
 	for _, c := range containers {
-		if !checkContainer(engine, c) {
+		if !global.CheckContainer(engine, c) {
 			logs[c] = "container not running"
 			failureHints[c] = "container not running"
 			continue

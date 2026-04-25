@@ -1,5 +1,6 @@
 # Local build artifacts
 hal
+hal-linux
 bin/
 dist/
 

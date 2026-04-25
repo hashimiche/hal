@@ -64,8 +64,9 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 - HAL MCP command namespace (`hal mcp`) supports two transports:
     - **stdio** (default, local/dev): `hal mcp serve` — spawned directly by HAL Plus; protocol `2024-11-05`.
     - **streamable-HTTP** (container): `hal mcp serve --transport streamable-http --http-host 0.0.0.0 --http-port 8080 --http-path /mcp`; protocol `2025-03-26`.
-    - `hal mcp create --http` builds the MCP HTTP container image from source using a Linux multi-stage Docker build (`FROM golang:alpine` + `FROM alpine`). It does **not** copy the host binary — it compiles a fresh Linux binary inside the build stage.
-    - The built image tag is `hashimiche/hal-mcp:local`; it runs as a non-root user (`hal`, uid 10001).
+    - `hal mcp create --http` pulls `ghcr.io/hashimiche/hal-mcp:latest` from GHCR. No source tree or Go toolchain required on the user machine.
+    - The image is published automatically by the release workflow (`Dockerfile.mcp`) on every version tag as `ghcr.io/hashimiche/hal-mcp:latest` and `ghcr.io/hashimiche/hal-mcp:<version>`. It runs as a non-root user (`hal`, uid 10001).
+    - `--http-tag` flag overrides the pulled image tag (e.g. to pin a specific version).
     - `hal mcp create|serve|status|delete` remains the primary operator surface.
     - MCP tool surface is read-only and leverages existing HAL command paths (`status`, `capacity`, `<product> status`) instead of reimplementing product logic.
     - Product status tools (for example `get_tfe_status`) should keep product-specific `recommended_commands` first (`hal terraform status`) so AI clients can answer quick health prompts without falling back to generic checks like `hal capacity`.
@@ -88,6 +89,17 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - Task worker agent-run config must keep `/tmp/terraform` writable (not read-only) so remote plans can download Terraform binaries.
     - TFE API responses can emit archivist object links without `:8443`; proxy response rewriting keeps UI/raw plan/apply log links host-reachable.
     - `hal terraform vcs-workflow enable` should describe validation in terms of pushing a new commit to `main`; tag creation alone is not a reliable first-run trigger when the tagged SHA was already ingested from branch pushes.
+- `hal status` is a CRUD product that manages the `hal-status` sidecar container:
+    - `hal status create` / `hal status update` / `hal status delete` are the operator surface.
+    - `hal status update` is the manual escape hatch: refreshes the snapshot for the currently running ecosystem (e.g. after deploying a product extension outside the normal lifecycle).
+    - `hal status _serve` is a hidden internal command run inside the `hal-status` container — do not surface it to users.
+    - The `hal-status` container reuses `hashimiche/hal-mcp:latest` (same image as `hal-mcp`) with `--entrypoint /usr/local/bin/hal` and `status _serve` as args.
+    - It reads a frozen `HAL_STATUS_DATA` JSON env var at startup and serves it at `http://hal-status:9001/api/status` on `hal-net`.
+    - The snapshot is built on the **host** (which has engine socket access) by `global.RefreshHalStatus(engine)`, injected as an env var, then the container is recreated. The container itself never touches the engine.
+    - `global.RefreshHalStatus(engine)` is called after every product lifecycle event that changes ecosystem state: all product `create`/`delete` commands, and all vault/boundary extension enable/disable commands (`vault k8s`, `vault oidc`, `vault jwt`, `vault ldap`, `vault database`, `boundary mariadb`, `boundary ssh`).
+    - `RefreshHalStatus` is a no-op if `hal-net` does not exist or the `hashimiche/hal-mcp:latest` image is not present — safe to call unconditionally.
+    - HAL Plus fetches `http://hal-status:9001/api/status` as its primary product state source (via `fetchHalStatusProducts()` in `server/index.mjs`), with `fallbackProductsFromEndpoints()` as a fallback for local dev without containers.
+    - The snapshot shape: `{ timestamp, engine, products: [{ product, state, health, reason, endpoint, containers, features: [{ feature, state, health, reason }] }] }`.
 - Shared runtime helpers live under `internal/global`, especially engine detection and network management.
 - Engine resource advisory helpers live under `internal/global`; reuse them instead of open-coding engine-specific capacity checks in individual commands.
 - Vault k8s demo (`hal vault k8s`) now supports two explicit demo modes behind the same nginx endpoint (`http://web.localhost:8088`):

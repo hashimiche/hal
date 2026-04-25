@@ -212,6 +212,9 @@ func bootstrapBoundaryMariaDB(targetHost string) error {
 	}
 
 	fmt.Println("✅ Boundary Academy Lab Bootstrapped!")
+	if eng, err := global.DetectEngine(); err == nil {
+		global.RefreshHalStatus(eng)
+	}
 	return nil
 }
 

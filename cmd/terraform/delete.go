@@ -173,6 +173,7 @@ var destroyCmd = &cobra.Command{
 
 		if !global.DryRun {
 			fmt.Println("\n✅ TFE environment wiped. You are ready for a clean 'hal terraform create'.")
+			global.RefreshHalStatus(engine)
 		}
 	},
 }

@@ -29,6 +29,7 @@ var deleteCmd = &cobra.Command{
 		for _, c := range []string{halPlusContainerName, halMCPContainerName} {
 			_ = exec.Command(engine, "rm", "-f", c).Run()
 		}
+		global.RemoveHalStatus(engine)
 
 		global.CleanNetworkIfEmpty(engine)
 		fmt.Println("✅ HAL Plus runtime deleted.")

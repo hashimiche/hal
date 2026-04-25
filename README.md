@@ -37,6 +37,7 @@ Install the tooling required by the labs you want to run before installing HAL.
 | Docker **or** Podman | Almost every `hal` flow |
 | KinD + kubectl + helm | `hal vault k8s` |
 | Multipass | `hal nomad`, `hal boundary ssh` |
+| [Ollama](https://ollama.com) | `hal plus` — local AI model backend |
 
 > **Engine detection:** HAL probes `docker info` first, then `podman info`, and uses whichever responds. No alias is required — both engines work natively.
 
@@ -349,6 +350,9 @@ Notes:
 - For known presets, HAL creates a HAL-managed Ollama model with balanced defaults instead of requiring a manual `ollama pull` step.
 - `--model-config` lets you point HAL at a custom Ollama `Modelfile`; HAL will build a managed model on the host and then wire HAL Plus to use it.
 - `--keep-alive` controls how long Ollama keeps the model loaded after requests so idle memory can fall back down.
+- **Qwen3.5** (`--model qwen3.5`) is the recommended preset for HAL Plus — it has a 32k context window and produces concise, grounded answers. HAL Plus uses `think: false` for operational answers to keep latency low.
+- **Gemma4** (`--model gemma4`) is a lighter alternative with faster cold starts, suited for machines with less VRAM.
+- Ollama must be running on the host (`ollama serve`) before `hal plus create` is called. HAL Plus connects to it from inside the container via `host.containers.internal:11434`.
 
 ---
 
