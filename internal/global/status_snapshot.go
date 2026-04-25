@@ -75,7 +75,12 @@ func BuildStatusSnapshot(engine string) ([]byte, error) {
 
 		buildProductStatus(engine, "terraform",
 			[]string{"hal-tfe", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio", "hal-tfe-proxy"},
-			map[string]string{"workspace": BoolState(CheckContainer(engine, "hal-tfe") && CheckContainer(engine, "hal-gitlab"))},
+			map[string]string{
+				"api-workflow": BoolState(CheckContainer(engine, "hal-tfe-api")),
+				"vcs-workflow": BoolState(CheckContainer(engine, "hal-tfe") && CheckContainer(engine, "hal-gitlab")),
+				"agent":        BoolState(CheckContainer(engine, "hal-tfe-agent")),
+				"twin":         BoolState(CheckContainer(engine, "hal-tfe-bis")),
+			},
 			"https://tfe.localhost:8443"),
 
 		buildProductStatus(engine, "obs",
