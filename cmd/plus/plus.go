@@ -20,6 +20,7 @@ const (
 var (
 	plusImage          string
 	mcpImage           string
+	plusPull           bool
 	plusPort           int
 	plusModel          string
 	plusModelConfig    string
@@ -51,6 +52,19 @@ func detectOllamaContainerURL(engine string) string {
 func imageExists(engine, image string) bool {
 	err := exec.Command(engine, "image", "inspect", image).Run()
 	return err == nil
+}
+
+// pullImage pulls the image unconditionally. For localhost/ images it is a no-op.
+func pullImage(engine, image string) error {
+	if strings.HasPrefix(image, "localhost/") {
+		return nil
+	}
+	fmt.Printf("🔄 Pulling %s...\n", image)
+	out, err := exec.Command(engine, "pull", image).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("pull %s: %v (%s)", image, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func containerState(engine, name string) string {
@@ -150,6 +164,7 @@ func init() {
 
 	createCmd.Flags().StringVar(&plusImage, "image", plusImage, "HAL Plus image to run")
 	createCmd.Flags().StringVar(&mcpImage, "mcp-image", mcpImage, "HAL MCP image expected to exist locally")
+	createCmd.Flags().BoolVar(&plusPull, "pull", false, "Force pull latest GHCR images before starting (no-op for localhost/ images)")
 	createCmd.Flags().IntVar(&plusPort, "port", plusPort, "Host port for HAL Plus UI")
 	createCmd.Flags().StringVar(&plusModel, "model", plusModel, supportedOllamaModelsHelp())
 	createCmd.Flags().StringVar(&plusModelConfig, "model-config", plusModelConfig, "Optional Modelfile path used to build a HAL-managed Ollama model on the host")

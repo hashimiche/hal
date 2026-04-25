@@ -82,7 +82,16 @@ var createCmd = &cobra.Command{
 
 		global.EnsureNetwork(engine)
 
-		if !imageExists(engine, plusImage) {
+		if plusPull {
+			if err := pullImage(engine, mcpImage); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return
+			}
+			if err := pullImage(engine, plusImage); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return
+			}
+		} else if !imageExists(engine, plusImage) {
 			if out, err := exec.Command(engine, "pull", plusImage).CombinedOutput(); err != nil {
 				fmt.Printf("❌ Failed to pull HAL Plus image %s: %v\n%s\n", plusImage, err, string(out))
 				return
