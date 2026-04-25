@@ -403,69 +403,13 @@ func provisionManagedMCPBinary(targetPath string) (string, error) {
 }
 
 func buildManagedMCPHTTPImage(engine, imageTag string) error {
-	sourceRoot, err := resolveHalSourceRoot()
-	if err != nil {
-		return err
+	pullCmd := exec.Command(engine, "pull", imageTag)
+	pullCmd.Stdout = os.Stdout
+	pullCmd.Stderr = os.Stderr
+	if err := pullCmd.Run(); err != nil {
+		return fmt.Errorf("pull %s: %w", imageTag, err)
 	}
-
-	tmpDir, err := os.MkdirTemp("", "hal-mcp-image-")
-	if err != nil {
-		return fmt.Errorf("create temp build directory: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	dockerfile := `FROM golang:1.26-alpine AS build
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/hal ./main.go
-
-FROM alpine:3.20
-RUN apk add --no-cache docker-cli
-RUN adduser -D -u 10001 hal
-COPY --from=build /out/hal /usr/local/bin/hal
-USER hal
-EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/hal", "mcp", "serve", "--transport", "streamable-http", "--http-host", "0.0.0.0", "--http-port", "8080", "--http-path", "/mcp"]
-`
-	if err := os.WriteFile(filepath.Join(tmpDir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
-		return fmt.Errorf("write temporary Dockerfile: %w", err)
-	}
-
-	buildCmd := exec.Command(engine, "build", "-t", imageTag, "-f", filepath.Join(tmpDir, "Dockerfile"), sourceRoot)
-	buildOutput, err := buildCmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s build failed: %w\n%s", engine, err, strings.TrimSpace(string(buildOutput)))
-	}
-
 	return nil
-}
-
-func resolveHalSourceRoot() (string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("resolve working directory: %w", err)
-	}
-
-	dir := wd
-	for {
-		modPath := filepath.Join(dir, "go.mod")
-		payload, readErr := os.ReadFile(modPath)
-		if readErr == nil {
-			if strings.Contains(string(payload), "module hal") {
-				return dir, nil
-			}
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-
-	return "", fmt.Errorf("cannot locate HAL source root with go.mod (run from hal repo tree)")
 }
 
 func serveStdioMCP(stdin io.Reader, stdout io.Writer) error {
@@ -1065,7 +1009,7 @@ func init() {
 	createCmd.Flags().StringVar(&createBinaryPath, "binary-path", "", "Path to write the managed HAL binary used by MCP clients (default ~/.hal/bin/hal-mcp)")
 	createCmd.Flags().BoolVar(&createJSONOnly, "json", false, "Only generate/replace MCP config JSON (skip managed binary provisioning)")
 	createCmd.Flags().BoolVar(&createHTTPImage, "http", false, "Build a local HAL MCP container image for streamable-http transport")
-	createCmd.Flags().StringVar(&createHTTPTag, "http-tag", "hashimiche/hal-mcp:local", "Image tag used when --http is set")
+	createCmd.Flags().StringVar(&createHTTPTag, "http-tag", "hashimiche/hal-mcp:latest", "Image tag used when --http is set")
 	upCmd.Flags().StringVar(&upTransport, "transport", transportStdio, "MCP transport to use: stdio or streamable-http")
 	upCmd.Flags().StringVar(&upHTTPHost, "http-host", "0.0.0.0", "Host/interface to bind when --transport=streamable-http")
 	upCmd.Flags().IntVar(&upHTTPPort, "http-port", 8080, "TCP port to listen on when --transport=streamable-http")

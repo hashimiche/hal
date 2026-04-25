@@ -83,6 +83,7 @@ var vaultDestroyCmd = &cobra.Command{
 
 		if !global.DryRun {
 			fmt.Println("\n✅ Vault instance and all extensions destroyed successfully!")
+			global.RefreshHalStatus(engine)
 		}
 	},
 }

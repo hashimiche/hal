@@ -37,6 +37,7 @@ var destroyCmd = &cobra.Command{
 			fmt.Printf("⚠️  Could not remove Consul observability target file: %v\n", err)
 		}
 		fmt.Println("✅ Consul environment destroyed successfully!")
+		global.RefreshHalStatus(engine)
 	},
 }
 

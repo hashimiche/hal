@@ -52,6 +52,7 @@ var destroyCmd = &cobra.Command{
 			fmt.Printf("⚠️  Could not remove Boundary observability target file: %v\n", err)
 		}
 		fmt.Println("✅ Boundary environment destroyed successfully!")
+		global.RefreshHalStatus(engine)
 	},
 }
 

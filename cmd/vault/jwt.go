@@ -133,6 +133,7 @@ var vaultJwtCmd = &cobra.Command{
 				_ = exec.Command(engine, "rm", "-f", "hal-gitlab", "hal-gitlab-runner").Run()
 				_ = global.ClearSharedService("gitlab")
 				fmt.Println("✅ GitLab containers removed and Vault API cleaned up.")
+				global.RefreshHalStatus(engine)
 			}
 
 			if jwtDisable && !global.DryRun {
@@ -187,7 +188,7 @@ var vaultJwtCmd = &cobra.Command{
 				return
 			}
 			fmt.Println("\n✅ GitLab API is online!")
-
+			global.RefreshHalStatus(engine)
 			// 1. Authenticate via OAuth
 			fmt.Println("⚙️  Authenticating root account via API...")
 			apiToken := getGitLabToken("http://127.0.0.1:8080/oauth/token")

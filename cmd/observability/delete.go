@@ -49,6 +49,7 @@ var destroyCmd = &cobra.Command{
 
 		global.CleanNetworkIfEmpty(engine)
 		fmt.Println("✅ Observability environment destroyed successfully!")
+		global.RefreshHalStatus(engine)
 	},
 }
 

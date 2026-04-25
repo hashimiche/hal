@@ -1323,7 +1323,7 @@ func componentContext(component string) (map[string]interface{}, []string, error
 				"sensitive":       true,
 			},
 			"state": map[string]interface{}{
-				"vault_container_running": checkContainer("podman", "hal-vault") || checkContainer("docker", "hal-vault"),
+				"vault_container_running": global.CheckContainer("podman", "hal-vault") || global.CheckContainer("docker", "hal-vault"),
 			},
 		}, []string{"hal vault status", "hal vault create", "hal vault audit"}, nil
 	case "oidc", "vault_oidc":
@@ -1582,7 +1582,7 @@ func buildOIDCOrJWTStatus(mode string) (map[string]interface{}, []string, error)
 	if err != nil {
 		return nil, []string{"hal status"}, err
 	}
-	if !checkContainer(engine, "hal-vault") {
+	if !global.CheckContainer(engine, "hal-vault") {
 		return map[string]interface{}{"enabled": false, "mount_path": mode + "/", "config_complete": false, "missing_fields": []string{"vault_not_running"}}, []string{"hal vault create", "hal vault status"}, fmt.Errorf("vault is not deployed")
 	}
 
@@ -1596,10 +1596,10 @@ func buildOIDCOrJWTStatus(mode string) (map[string]interface{}, []string, error)
 	if !enabled {
 		missing = append(missing, "auth_mount")
 	}
-	if mode == "oidc" && !checkContainer(engine, "hal-keycloak") {
+	if mode == "oidc" && !global.CheckContainer(engine, "hal-keycloak") {
 		missing = append(missing, "keycloak_provider")
 	}
-	if mode == "jwt" && !checkContainer(engine, "hal-gitlab") {
+	if mode == "jwt" && !global.CheckContainer(engine, "hal-gitlab") {
 		missing = append(missing, "gitlab_provider")
 	}
 	status := map[string]interface{}{
@@ -1875,8 +1875,8 @@ func handleTFECLIStatus() mcpToolCallResult {
 	}
 	state, _ := product["state"].(string)
 	reason, _ := product["reason"].(string)
-	newHelperReady := checkContainer(engine, "hal-tfe-api")
-	legacyHelperReady := checkContainer(engine, "hal-tfe-cli")
+	newHelperReady := global.CheckContainer(engine, "hal-tfe-api")
+	legacyHelperReady := global.CheckContainer(engine, "hal-tfe-cli")
 	cliHelperReady := newHelperReady || legacyHelperReady
 	helperContainerName := "hal-tfe-api"
 	if !newHelperReady && legacyHelperReady {
@@ -1888,14 +1888,14 @@ func handleTFECLIStatus() mcpToolCallResult {
 	tokenReady := tokenErr == nil
 	checks := []opCheck{
 		{Name: "terraform_runtime", Status: checkStatusFromState(state), Details: reason},
-		{Name: "terraform_cli_helper", Status: checkStatusFromState(boolState(cliHelperReady)), Details: helperContainerName + " helper availability"},
-		{Name: "terraform_cli_token_cache", Status: checkStatusFromState(boolState(tokenReady)), Details: tokenPath},
+		{Name: "terraform_cli_helper", Status: checkStatusFromState(global.BoolState(cliHelperReady)), Details: helperContainerName + " helper availability"},
+		{Name: "terraform_cli_token_cache", Status: checkStatusFromState(global.BoolState(tokenReady)), Details: tokenPath},
 	}
 	data := map[string]interface{}{
 		"runtime": product,
 		"cli_helper": map[string]interface{}{
 			"container": helperContainerName,
-			"state":     boolState(cliHelperReady),
+			"state":     global.BoolState(cliHelperReady),
 		},
 		"token_cache": map[string]interface{}{
 			"path":    tokenPath,

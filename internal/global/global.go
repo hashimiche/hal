@@ -13,6 +13,11 @@ var (
 	DryRun bool
 )
 
+const (
+	HalStatusContainerName = "hal-status"
+	HalStatusPort          = 9001
+)
+
 func DetectEngine() (string, error) {
 	if err := exec.Command("docker", "info").Run(); err == nil {
 		return "docker", nil
@@ -21,6 +26,32 @@ func DetectEngine() (string, error) {
 		return "podman", nil
 	}
 	return "", fmt.Errorf("no container engine found (make sure Docker or Podman is running)")
+}
+
+// CheckContainer reports whether a container is currently running.
+func CheckContainer(engine, name string) bool {
+	out, err := exec.Command(engine, "ps", "-q", "-f", fmt.Sprintf("name=^%s$", name)).Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) != ""
+}
+
+// CheckMultipass reports whether a Multipass VM is running.
+func CheckMultipass(name string) bool {
+	out, err := exec.Command("multipass", "info", name, "--format", "csv").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "Running")
+}
+
+// BoolState converts a boolean to the "enabled"/"disabled" string used in status snapshots.
+func BoolState(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
 }
 
 // EnsureNetwork creates the global grid if it doesn't exist.

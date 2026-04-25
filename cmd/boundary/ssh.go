@@ -374,6 +374,9 @@ func bootstrapBoundarySSH(targetIP string) error {
 	}
 
 	fmt.Println("✅ Boundary SSH target successfully bootstrapped!")
+	if eng, err := global.DetectEngine(); err == nil {
+		global.RefreshHalStatus(eng)
+	}
 	fmt.Println("\n💡 Test your access:")
 	fmt.Println("   1. Log in to UI (http://boundary.localhost:9200)")
 	fmt.Println("   2. Change Scope to 'hal-academy-ssh'")

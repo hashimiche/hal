@@ -253,6 +253,7 @@ var vaultDatabaseCmd = &cobra.Command{
 			password := secret.Data["password"].(string)
 
 			fmt.Println("\n✅ Enterprise Dynamic Database Credentials Generated!")
+			global.RefreshHalStatus(engine)
 			fmt.Println("---------------------------------------------------------")
 			fmt.Printf("🔗 Database Host: %s:%s\n", hostAlias, containerPort)
 			fmt.Println("👤 JIT Username:  " + username)
