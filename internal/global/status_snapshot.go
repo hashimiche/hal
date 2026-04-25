@@ -132,7 +132,7 @@ func RefreshHalStatus(engine string) {
 		"-e", fmt.Sprintf("HAL_STATUS_DATA=%s", string(data)),
 		"-e", fmt.Sprintf("HAL_STATUS_PORT=%d", HalStatusPort),
 		HalStatusImage,
-		"status", "_serve",
+		"health", "_serve",
 	}
 	if out, err := exec.Command(engine, args...).CombinedOutput(); err != nil {
 		if Debug {

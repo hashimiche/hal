@@ -1,4 +1,4 @@
-package halstatus
+package halhealth
 
 import (
 	"encoding/json"
@@ -14,9 +14,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Cmd is the root cobra command for `hal status`.
+// Cmd is the root cobra command for `hal health`.
 var Cmd = &cobra.Command{
-	Use:   "status",
+	Use:   "health",
 	Short: "Manage the hal-status runtime container",
 	Long:  `Create, update, or delete the hal-status container that serves live ecosystem state to hal-plus and other consumers.`,
 	Run: func(cmd *cobra.Command, args []string) {
