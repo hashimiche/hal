@@ -55,3 +55,11 @@ Whenever CLI behavior, naming, or lifecycle semantics change:
 	- `HAL_MCP_CONTRACT.json` when schema/contracts change
 	- `cmd/mcp/ops_api.go` behavior and command synthesis
 	- `cmd/mcp/testdata/*_help_snapshot.json` fixtures
+
+### Branch naming rule
+
+Every `hal` CLI change must land on a named branch before merging to `main`:
+- New capabilities: `feature/<short-description>`
+- Bug fixes or corrections: `bugfix/<short-description>`
+
+Before writing any code, ask the user to create or confirm the target branch.
