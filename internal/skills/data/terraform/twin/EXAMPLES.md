@@ -7,8 +7,8 @@ User: Spin up a second TFE instance alongside the primary.
 A:
 
     hal terraform status
-    hal terraform twin enable
-    hal terraform twin
+    hal terraform create --target twin
+    hal terraform status --target twin
 
 ## Example 2: Check Twin Status
 
@@ -43,7 +43,7 @@ User: Remove the twin TFE but keep the primary running.
 
 A:
 
-    hal terraform twin disable --auto-approve
+    hal terraform delete --target twin --auto-approve
     hal terraform status
 
 ## Example 6: Recreate A Stale Twin
@@ -52,5 +52,5 @@ User: The twin feels stale. Recreate it cleanly.
 
 A:
 
-    hal terraform twin update
-    hal terraform twin
+    hal terraform update --target twin
+    hal terraform status --target twin

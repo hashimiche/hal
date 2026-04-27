@@ -22,9 +22,9 @@ Assistant: If obs is active, I include the log exploration surfaces:
 
 User: Vault requests started failing after audit updates.
 
-Assistant: I reset safely with a clean force cycle:
+Assistant: I reset safely with an update cycle:
 
-    hal vault audit --update --loki
+    hal vault audit update --loki
 
 ## Example 3: Disable Audit Device
 

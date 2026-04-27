@@ -9,10 +9,11 @@ Use this router when the user asks for Nomad workflows in hal but has not select
 
 ## Routing Rules
 
-- Route deploy requests to the deploy skill.
+- Route create/deploy requests to the create skill.
 - Route workload requests to the job skill.
 - Route health checks to the status skill.
-- Route teardown requests to the destroy skill.
+- Route teardown requests to the delete skill.
+- Route observability requests to the obs skill (`hal nomad obs create|update|delete|status`).
 
 ## Lab Assumptions
 
