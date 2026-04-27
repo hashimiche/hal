@@ -1,11 +1,11 @@
 ---
 name: twin
-description: Manage a second local Terraform Enterprise instance (twin) alongside the primary in hal. Use for `hal terraform twin`, `hal tf twin`, `hal tf bis`, or `--target twin` flags.
+description: Manage a second local Terraform Enterprise instance (twin) alongside the primary in hal. Use for `--target twin` flags or `hal tf bis` aliases on terraform lifecycle commands.
 ---
 
 # Terraform Twin Skill
 
-This skill handles the lifecycle of a second local TFE instance — the "twin" — through `hal terraform twin` and `--target twin` flags on other terraform subcommands.
+This skill handles the lifecycle of a second local TFE instance — the "twin" — through `--target twin` on terraform core lifecycle commands.
 
 ## Intent
 
@@ -19,13 +19,12 @@ Use this skill when the user asks to:
 
 ## Core Commands
 
-- `hal terraform twin` — smart status view (default when no subcommand given)
-- `hal terraform twin enable` — provision the twin TFE instance
-- `hal terraform twin disable` — tear down the twin TFE instance only
-- `hal terraform twin update` — recreate the twin container in-place
-- `hal terraform create --target twin` — alternative deploy entry point
+- `hal terraform create --target twin` — provision the twin TFE instance
+- `hal terraform status --target twin` — smart status view of the twin
+- `hal terraform update --target twin` — recreate the twin container in-place
+- `hal terraform delete --target twin` — tear down the twin TFE instance only
 
-Short aliases: `hal tf twin enable`, `hal tf bis enable`, `hal tf dup enable`
+Short aliases: `hal tf create --target twin`, `hal tf create --target bis`
 
 ## Twin-Aware Sibling Commands
 
@@ -59,13 +58,13 @@ When the user scopes other workflows to the twin, use `--target twin`:
 
 ## Validation
 
-- Confirm primary TFE is running before enable.
-- Confirm twin container state with `hal terraform twin` or `hal terraform status --target twin`.
-- After enable, access twin UI at the configured twin endpoint.
+- Confirm primary TFE is running before create.
+- Confirm twin container state with `hal terraform status --target twin`.
+- After create, access twin UI at the configured twin endpoint.
 - If TLS errors occur, keep HAL-generated cert wiring; do not bypass TLS verification.
 
 ## Troubleshooting Notes
 
 - If twin fails to start, confirm there is no port conflict on the twin HTTPS port.
-- Use `hal terraform twin update` to recreate the container without tearing down the primary.
+- Use `hal terraform update --target twin` to recreate the container without tearing down the primary.
 - Use `hal terraform delete --target twin` to clean up twin resources only.

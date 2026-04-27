@@ -9,9 +9,10 @@ Use this router when the user asks for Consul workflows in hal but has not selec
 
 ## Routing Rules
 
-- Route deploy requests to the deploy skill.
-- Route teardown requests to the destroy skill.
+- Route create/deploy requests to the create skill.
+- Route teardown requests to the delete skill.
 - Route health checks to the status skill.
+- Route observability requests to the obs skill (`hal consul obs create|update|delete|status`).
 
 ## Lab Assumptions
 

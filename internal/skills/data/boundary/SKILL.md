@@ -9,10 +9,11 @@ Use this router when the user asks for Boundary workflows in hal but has not sel
 
 ## Routing Rules
 
-- Route deploy requests to the deploy skill.
-- Route teardown or cleanup requests to the destroy skill.
+- Route create/deploy requests to the create skill.
+- Route teardown or cleanup requests to the delete skill.
 - Route health checks to the status skill.
 - Route feature-specific requests to mariadb, ssh, or setup.
+- Route observability requests to the obs skill (`hal boundary obs create|update|delete|status`).
 
 ## Lab Assumptions
 

@@ -9,13 +9,14 @@ Use this router when the user asks for Terraform workflows in hal but has not se
 
 ## Routing Rules
 
-- Route deploy requests to the deploy skill.
+- Route create/deploy requests to the create skill.
 - Route status checks to the status skill.
-- Route teardown requests to the destroy skill.
+- Route teardown requests to the delete skill.
 - Route twin-instance requests to target-based product lifecycle commands (`hal terraform create|update|status|delete --target twin`).
 - Route workspace wiring requests to `hal terraform vcs-workflow enable`.
 - Route helper-shell, TFX, self-signed cert, or `hal tf api-workflow` requests to the cli skill.
 - Route custom agent pool requests to `hal terraform agent enable` and the agent skill.
+- Route observability requests to the obs skill (`hal terraform obs create|update|delete|status`).
 
 ## Lab Assumptions
 

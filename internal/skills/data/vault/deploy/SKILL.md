@@ -37,5 +37,5 @@ Handle hal vault create requests with a stable lifecycle pattern.
 ## Edge Cases
 
 - If ports are already in use, explain likely conflicts and next actions.
-- If an old broken deployment exists, suggest force or teardown path.
+- If an old broken deployment exists, suggest update (`hal vault update`) or delete (`hal vault delete`) path.
 - If Enterprise is requested without `VAULT_LICENSE`, explain the failure and provide the exact export + redeploy command.
