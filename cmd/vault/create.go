@@ -43,11 +43,29 @@ var deployCmd = &cobra.Command{
 
 		// THE NEW LICENSE CHECK
 		if vaultEdition == "ent" || vaultEdition == "enterprise" {
-			if os.Getenv("VAULT_LICENSE") == "" {
-				fmt.Println("❌ Error: Vault Enterprise requested but VAULT_LICENSE environment variable is not set.")
-				fmt.Println("   💡 Please export your license key first: export VAULT_LICENSE='your_license_string'")
+			license := os.Getenv("VAULT_LICENSE")
+			licensePath := os.Getenv("VAULT_LICENSE_PATH")
+			
+			// If VAULT_LICENSE_PATH is set, read the license from file
+			if license == "" && licensePath != "" {
+				licenseBytes, err := os.ReadFile(licensePath)
+				if err != nil {
+					fmt.Printf("❌ Error: Failed to read license from VAULT_LICENSE_PATH: %v\n", err)
+					return
+				}
+				license = string(licenseBytes)
+			}
+			
+			if license == "" {
+				fmt.Println("❌ Error: Vault Enterprise requested but no license found.")
+				fmt.Println("   💡 Set one of:")
+				fmt.Println("      export VAULT_LICENSE='your_license_string'")
+				fmt.Println("      export VAULT_LICENSE_PATH='/path/to/vault.hclic'")
 				return
 			}
+			
+			// Store in environment for container injection
+			os.Setenv("VAULT_LICENSE", license)
 		}
 
 		if vaultUpdate {
@@ -55,7 +73,8 @@ var deployCmd = &cobra.Command{
 				fmt.Println("[DEBUG] --update detected. Reconciling Vault by replacing runtime artifacts...")
 			}
 			_ = exec.Command(engine, "rm", "-f", "hal-vault").Run()
-			_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-logs").Run() // Purge des anciens logs
+			_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-logs").Run()
+			_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-plugins").Run()
 		}
 
 		// Determine the Image Repository and Version based on Edition
@@ -76,9 +95,10 @@ var deployCmd = &cobra.Command{
 		// 1. Ensure the global HAL network exists
 		global.EnsureNetwork(engine)
 
-		// NOUVEAU : Correction des permissions du volume d'audit pour l'utilisateur Vault (UID 100)
-		fmt.Println("⚙️  Preparing shared audit volume permissions...")
+		// Correction des permissions du volume d'audit pour l'utilisateur Vault (UID 100)
+		fmt.Println("⚙️  Preparing shared volume permissions...")
 		_ = exec.Command(engine, "run", "--rm", "-v", "hal-vault-logs:/vault/logs", vaultHelperImage, "chown", "-R", "100:1000", "/vault/logs").Run()
+		_ = exec.Command(engine, "run", "--rm", "-v", "hal-vault-plugins:/vault/plugins", vaultHelperImage, "sh", "-c", "mkdir -p /vault/plugins && chown -R 100:1000 /vault/plugins").Run()
 
 		// 2. Build the Docker run arguments
 		vaultArgs := []string{
@@ -86,13 +106,19 @@ var deployCmd = &cobra.Command{
 			"--name", "hal-vault",
 			"--network", "hal-net",
 			"--cap-add", "IPC_LOCK",
-			"--cap-add", "SETFCAP",
 			"-p", "8200:8200",
 			"-v", "hal-vault-logs:/vault/logs",
+			"-v", "hal-vault-plugins:/vault/plugins",
 		}
 
-		// Vault 2.x images can require SETFCAP in some runtimes (notably rootless Podman)
-		// to initialize process capabilities cleanly for both CE and Enterprise.
+		// Vault 2.x tries to set SETFCAP capability which fails on Docker Desktop.
+		// Setting SKIP_SETCAP=true tells Vault to skip this step (safe for dev mode).
+		if strings.HasPrefix(actualVersion, "2.") {
+			vaultArgs = append(vaultArgs, "-e", "SKIP_SETCAP=true")
+		}
+		
+		// Set plugin directory for external plugins (like OS secret engine)
+		vaultArgs = append(vaultArgs, "-e", "VAULT_PLUGIN_DIR=/vault/plugins")
 
 		// Inject the Enterprise License (we already know it exists thanks to the pre-flight check)
 		if vaultEdition == "ent" || vaultEdition == "enterprise" {
@@ -109,7 +135,7 @@ var deployCmd = &cobra.Command{
 		// Append the image and the Vault Dev mode commands
 		vaultArgs = append(vaultArgs,
 			fmt.Sprintf("%s:%s", imageRepo, actualVersion),
-			"server", "-dev", "-dev-listen-address=0.0.0.0:8200", "-dev-root-token-id=root",
+			"server", "-dev", "-dev-listen-address=0.0.0.0:8200", "-dev-root-token-id=root", "-dev-plugin-dir=/vault/plugins",
 		)
 
 		if global.DryRun {
