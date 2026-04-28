@@ -22,7 +22,8 @@ var vaultEcosystem = []string{
 }
 
 var vaultVolumes = []string{
-	"hal-vault-logs", // Spun up by Audit/Loki
+	"hal-vault-logs",    // Spun up by Audit/Loki
+	"hal-vault-plugins", // Spun up for external plugins (OS secret engine)
 }
 
 var vaultDestroyCmd = &cobra.Command{
