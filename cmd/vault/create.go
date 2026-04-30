@@ -45,7 +45,7 @@ var deployCmd = &cobra.Command{
 		if vaultEdition == "ent" || vaultEdition == "enterprise" {
 			license := os.Getenv("VAULT_LICENSE")
 			licensePath := os.Getenv("VAULT_LICENSE_PATH")
-			
+
 			// If VAULT_LICENSE_PATH is set, read the license from file
 			if license == "" && licensePath != "" {
 				licenseBytes, err := os.ReadFile(licensePath)
@@ -55,7 +55,7 @@ var deployCmd = &cobra.Command{
 				}
 				license = string(licenseBytes)
 			}
-			
+
 			if license == "" {
 				fmt.Println("❌ Error: Vault Enterprise requested but no license found.")
 				fmt.Println("   💡 Set one of:")
@@ -63,7 +63,7 @@ var deployCmd = &cobra.Command{
 				fmt.Println("      export VAULT_LICENSE_PATH='/path/to/vault.hclic'")
 				return
 			}
-			
+
 			// Store in environment for container injection
 			os.Setenv("VAULT_LICENSE", license)
 		}
@@ -116,7 +116,7 @@ var deployCmd = &cobra.Command{
 		if strings.HasPrefix(actualVersion, "2.") {
 			vaultArgs = append(vaultArgs, "-e", "SKIP_SETCAP=true")
 		}
-		
+
 		// Set plugin directory for external plugins (like OS secret engine)
 		vaultArgs = append(vaultArgs, "-e", "VAULT_PLUGIN_DIR=/vault/plugins")
 
