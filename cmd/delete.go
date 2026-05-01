@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var skipConfirm bool
+var autoApprove bool
 
 var destroyCmd = &cobra.Command{
 	Use:   "delete",
@@ -28,7 +28,7 @@ var destroyCmd = &cobra.Command{
 		}
 
 		// 1. The Confirmation Prompt
-		if !skipConfirm {
+		if !autoApprove {
 			fmt.Print("⚠️  WARNING: This will destroy ALL HAL containers, clusters, and VMs. Are you sure? [y/N]: ")
 			reader := bufio.NewReader(os.Stdin)
 			response, _ := reader.ReadString('\n')
@@ -59,6 +59,6 @@ var destroyCmd = &cobra.Command{
 }
 
 func init() {
-	destroyCmd.Flags().BoolVarP(&skipConfirm, "yes", "y", false, "Skip confirmation prompt")
+	destroyCmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip confirmation prompt")
 	rootCmd.AddCommand(destroyCmd)
 }
