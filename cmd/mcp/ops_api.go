@@ -95,113 +95,9 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
-			"name":        "enable_vault",
-			"description": "Enable Vault deploy flow in dry_run/apply mode.",
-			"inputSchema": modeSchema(),
-		},
-		{
 			"name":        "get_terraform_status",
 			"description": "Return Terraform Enterprise runtime status and checks.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-		},
-		{
-			"name":        "enable_terraform",
-			"description": "Enable Terraform Enterprise deploy flow in dry_run/apply mode.",
-			"inputSchema": modeSchema(),
-		},
-		{
-			"name":        "get_capabilities",
-			"description": "Return supported HAL commands/subcommands/flags, aliases, deprecations, and examples.",
-			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-		},
-		{
-			"name":        "hal_policy_profile",
-			"description": "Return HAL-first runtime policy profile for clients (mandatory checks, fallback behavior, and contract versions).",
-			"inputSchema": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"profile": map[string]interface{}{"type": "string", "enum": []string{"strict", "standard"}},
-				},
-			},
-		},
-		{
-			"name":        "get_help_for_topic",
-			"description": "Input topic like 'vault oidc' or 'vault jwt'; returns usage, flags, and verified command examples.",
-			"inputSchema": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"topic": map[string]interface{}{"type": "string"},
-				},
-				"required": []string{"topic"},
-			},
-		},
-		{
-			"name":        "plan_next_steps",
-			"description": "Given intent and optional context, return ordered validated steps and expected outcomes.",
-			"inputSchema": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"intent":  map[string]interface{}{"type": "string"},
-					"context": map[string]interface{}{"type": "string"},
-				},
-				"required": []string{"intent"},
-			},
-		},
-		{
-			"name":        "hal_plan_deploy",
-			"description": "Alias of plan_next_steps with deploy/setup intent focus.",
-			"inputSchema": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"intent":  map[string]interface{}{"type": "string"},
-					"context": map[string]interface{}{"type": "string"},
-				},
-				"required": []string{"intent"},
-			},
-		},
-		{
-			"name":        "hal_plan_verify",
-			"description": "Return deterministic post-action verification commands for a HAL component/workflow.",
-			"inputSchema": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"component": map[string]interface{}{"type": "string"},
-				},
-				"required": []string{"component"},
-			},
-		},
-		{
-			"name":        "validate_command",
-			"description": "Validate a HAL command string and return valid/invalid with correction if needed.",
-			"inputSchema": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"command": map[string]interface{}{"type": "string"},
-				},
-				"required": []string{"command"},
-			},
-		},
-		{
-			"name":        "get_skill_for_topic",
-			"description": "Return full embedded skill content (lifecycle commands, edge cases, notes) for a given HAL topic such as 'terraform obs', 'vault oidc', or 'boundary ssh'.",
-			"inputSchema": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"topic": map[string]interface{}{"type": "string"},
-				},
-				"required": []string{"topic"},
-			},
-		},
-		{
-			"name":        "get_component_context",
-			"description": "Return endpoint/auth context for a component without exposing secrets.",
-			"inputSchema": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"component": map[string]interface{}{"type": "string", "enum": []string{"vault", "vault_k8s", "vault_vso", "vault_csi", "vault_oidc", "vault_jwt", "vault_ldap", "vault_database", "terraform", "terraform_vcs_workflow", "terraform_api_workflow", "terraform_workspace", "terraform_cli", "consul", "nomad", "boundary", "boundary_ssh", "boundary_mariadb", "obs"}},
-				},
-				"required": []string{"component"},
-			},
 		},
 		{
 			"name":        "get_audit_summary",
@@ -220,33 +116,13 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
-			"name":        "enable_oidc",
-			"description": "Enable OIDC in dry_run/apply mode and return post-check and rollback commands.",
-			"inputSchema": modeSchema(),
-		},
-		{
 			"name":        "get_jwt_status",
-			"description": "Return JWT status, mount path, config completeness and missing fields.",
+			"description": "Return JWT auth mount status, config completeness and missing fields.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-		},
-		{
-			"name":        "enable_jwt",
-			"description": "Enable JWT in dry_run/apply mode and return post-check and rollback commands.",
-			"inputSchema": modeSchema(),
 		},
 		{
 			"name":        "get_boundary_status",
 			"description": "Return Boundary lifecycle status and critical checks.",
-			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-		},
-		{
-			"name":        "enable_boundary",
-			"description": "Enable Boundary deploy flow in dry_run/apply mode and return post-check commands.",
-			"inputSchema": modeSchema(),
-		},
-		{
-			"name":        "get_ssh_flow_status",
-			"description": "Return Boundary SSH target readiness and key checks.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
@@ -260,29 +136,8 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
-			"name":        "enable_tfe_vcs_workflow",
-			"description": "Run Terraform VCS workflow bootstrap in dry_run/apply mode.",
-			"inputSchema": modeSchema(),
-		},
-		{
 			"name":        "get_k8s_integration_status",
 			"description": "Return Vault Kubernetes integration readiness including VSO/CSI checks.",
-			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-		},
-		{
-			"name":        "enable_vault_k8s_integration",
-			"description": "Enable Vault Kubernetes integration in dry_run/apply mode.",
-			"inputSchema": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"mode": map[string]interface{}{"type": "string", "enum": []string{"dry_run", "apply"}},
-					"csi":  map[string]interface{}{"type": "boolean"},
-				},
-			},
-		},
-		{
-			"name":        "get_cross_product_dependencies",
-			"description": "Return deterministic prerequisite graph and execution ordering across products.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
@@ -291,19 +146,9 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
-			"name":        "enable_ldap",
-			"description": "Enable Vault LDAP lab flow in dry_run/apply mode.",
-			"inputSchema": modeSchema(),
-		},
-		{
 			"name":        "get_vault_database_status",
 			"description": "Return Vault database secrets demo readiness and key checks.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-		},
-		{
-			"name":        "enable_vault_database",
-			"description": "Enable Vault database lab flow in dry_run/apply mode.",
-			"inputSchema": modeSchema(),
 		},
 		{
 			"name":        "get_boundary_mariadb_status",
@@ -311,25 +156,9 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
-			"name":        "enable_boundary_mariadb",
-			"description": "Enable Boundary MariaDB target flow in dry_run/apply mode.",
-			"inputSchema": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"mode":       map[string]interface{}{"type": "string", "enum": []string{"dry_run", "apply"}},
-					"with_vault": map[string]interface{}{"type": "boolean"},
-				},
-			},
-		},
-		{
 			"name":        "get_consul_status",
 			"description": "Return Consul runtime status and checks.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-		},
-		{
-			"name":        "enable_consul",
-			"description": "Enable Consul deploy flow in dry_run/apply mode.",
-			"inputSchema": modeSchema(),
 		},
 		{
 			"name":        "get_nomad_status",
@@ -337,28 +166,9 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
-			"name":        "enable_nomad",
-			"description": "Enable Nomad deploy flow in dry_run/apply mode.",
-			"inputSchema": modeSchema(),
-		},
-		{
 			"name":        "get_obs_status",
 			"description": "Return observability stack status and checks.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-		},
-		{
-			"name":        "enable_obs",
-			"description": "Enable observability deploy flow in dry_run/apply mode.",
-			"inputSchema": modeSchema(),
-		},
-	}
-}
-
-func modeSchema() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"mode": map[string]interface{}{"type": "string", "enum": []string{"dry_run", "apply"}},
 		},
 	}
 }
@@ -388,251 +198,11 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		return handleStatusCommandTool("get_vault_status", []string{"vault", "status"}, []string{"hal vault status", "hal vault create"}, []string{"https://developer.hashicorp.com/vault"}), true
 
-	case "enable_vault":
-		return handleEnableScenarioMode("enable_vault", []string{"vault", "create"}, []string{"hal vault status"}, args), true
-
 	case "get_terraform_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
 			return opErrorForTool("get_terraform_status", codeParseError, err.Error(), nil, []string{"hal terraform status"}, nil, nil, nil), true
 		}
 		return handleTerraformRuntimeStatus("get_terraform_status"), true
-
-	case "enable_terraform":
-		return handleEnableScenarioMode("enable_terraform", []string{"terraform", "create"}, []string{"hal terraform status"}, args), true
-
-	case "get_capabilities":
-		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
-			return opError(codeParseError, err.Error(), nil, []string{"hal --help"}, nil), true
-		}
-		specs := allActionSpecs()
-		commands := make([]string, 0, len(specs))
-		for _, s := range specs {
-			if len(s.Command) > 0 {
-				commands = append(commands, "hal "+strings.Join(s.Command, " "))
-			}
-		}
-		sort.Strings(commands)
-		cap := map[string]interface{}{
-			"actions":     specs,
-			"commands":    commands,
-			"tool_names":  collectToolNames(),
-			"error_codes": contractErrorCodes(),
-		}
-		if idx, err := getSkillIndex(); err == nil && idx != nil {
-			// Build a compact index (no Content) for discovery; full content is in get_skill_for_topic.
-			skillMeta := make([]map[string]interface{}, 0, len(idx.Skills))
-			for _, s := range idx.Skills {
-				entry := map[string]interface{}{"path": s.Path}
-				if s.Name != "" {
-					entry["name"] = s.Name
-				}
-				if s.Description != "" {
-					entry["description"] = s.Description
-				}
-				if len(s.Commands) > 0 {
-					entry["commands"] = s.Commands
-				}
-				skillMeta = append(skillMeta, entry)
-			}
-			cap["skills"] = map[string]interface{}{
-				"skills_count":        len(idx.Skills),
-				"commands_count":      len(idx.Commands),
-				"deprecated_commands": idx.DeprecatedCommands,
-				"index":               skillMeta,
-			}
-		}
-		return opSuccess("capabilities collected", cap, []string{"hal --help"}, nil), true
-
-	case "get_skill_for_topic":
-		if err := ensureOnlyKeys(args, map[string]bool{"topic": true}); err != nil {
-			return opError(codeParseError, err.Error(), nil, []string{"get_capabilities"}, nil), true
-		}
-		topic, ok := args["topic"].(string)
-		if !ok || strings.TrimSpace(topic) == "" {
-			return opError(codeParseError, "topic is required", nil, []string{"get_capabilities"}, nil), true
-		}
-		matched, skillErr := findSkillsForTopic(strings.TrimSpace(topic))
-		if skillErr != nil {
-			return opError(codeUnsupportedOp, skillErr.Error(), nil, []string{"get_capabilities"}, nil), true
-		}
-		type skillResult struct {
-			Path        string   `json:"path"`
-			Name        string   `json:"name,omitempty"`
-			Description string   `json:"description,omitempty"`
-			Commands    []string `json:"commands,omitempty"`
-			Content     string   `json:"content"`
-		}
-		results := make([]skillResult, 0, len(matched))
-		recommended := make([]string, 0, 16)
-		for _, s := range matched {
-			results = append(results, skillResult{
-				Path:        s.Path,
-				Name:        s.Name,
-				Description: s.Description,
-				Commands:    s.Commands,
-				Content:     s.Content,
-			})
-			recommended = append(recommended, s.Commands...)
-		}
-		recommended = sortedUnique(recommended)
-		if len(recommended) == 0 {
-			recommended = []string{"get_capabilities"}
-		}
-		return opSuccess(fmt.Sprintf("%d skill(s) matched topic %q", len(results), topic), map[string]interface{}{
-			"topic":  topic,
-			"skills": results,
-			"count":  len(results),
-		}, recommended, nil), true
-
-	case "hal_policy_profile":
-		if err := ensureOnlyKeys(args, map[string]bool{"profile": true}); err != nil {
-			return opErrorForTool("hal_policy_profile", codeParseError, err.Error(), nil, []string{"hal mcp policy --json"}, nil, nil, nil), true
-		}
-		profile := "strict"
-		if raw, ok := args["profile"]; ok {
-			parsed, ok := raw.(string)
-			if !ok {
-				return opErrorForTool("hal_policy_profile", codeParseError, "profile must be a string", nil, []string{"hal mcp policy --json"}, nil, nil, nil), true
-			}
-			if strings.TrimSpace(parsed) != "" {
-				profile = strings.TrimSpace(parsed)
-			}
-		}
-		policy, err := buildPolicyProfile(profile)
-		if err != nil {
-			return opErrorForTool("hal_policy_profile", codeParseError, err.Error(), nil, []string{"hal mcp policy --json"}, nil, nil, nil), true
-		}
-		checks := []opCheck{{Name: "policy", Status: "ok", Details: "runtime policy profile resolved"}}
-		return opSuccessForTool("hal_policy_profile", "policy profile resolved", policy, []string{"hal mcp policy --json", "hal mcp status"}, checks, nil, nil, nil), true
-
-	case "get_help_for_topic":
-		if err := ensureOnlyKeys(args, map[string]bool{"topic": true}); err != nil {
-			return opError(codeParseError, err.Error(), nil, []string{"hal --help"}, nil), true
-		}
-		topic, ok := args["topic"].(string)
-		if !ok || strings.TrimSpace(topic) == "" {
-			return opError(codeParseError, "topic is required", nil, []string{"hal --help"}, nil), true
-		}
-		parts := strings.Fields(strings.TrimSpace(topic))
-		halArgs := append(parts, "--help")
-		execRes := runHAL(halArgs...)
-		if execRes.ExitCode != 0 {
-			return opError(classifyContractError(execRes.Output), "unable to retrieve help for topic", map[string]interface{}{"execution": execRes}, []string{"hal --help"}, nil), true
-		}
-		help := parseHelpOutput(execRes.Output)
-		help["topic"] = strings.Join(parts, " ")
-		helpcmd := "hal " + strings.Join(halArgs, " ")
-		help["recommended_commands"] = sortedUnique(append([]string{helpcmd}, extractCommandsFromHelp(execRes.Output)...))
-		return opSuccess("topic help parsed", help, help["recommended_commands"].([]string), nil), true
-
-	case "plan_next_steps", "hal_plan_deploy":
-		if err := ensureOnlyKeys(args, map[string]bool{"intent": true, "context": true}); err != nil {
-			return opError(codeParseError, err.Error(), nil, []string{"get_capabilities"}, nil), true
-		}
-		intent, ok := args["intent"].(string)
-		if !ok || strings.TrimSpace(intent) == "" {
-			return opError(codeParseError, "intent is required", nil, []string{"get_capabilities"}, nil), true
-		}
-		if featurePlan, featureOK := buildFeaturePlan(strings.TrimSpace(intent)); featureOK {
-			recommended := extractPlanCommands(featurePlan)
-			return opSuccess("plan generated", featurePlan, recommended, nil), true
-		}
-		plan, ok := buildPlan(strings.TrimSpace(intent))
-		if !ok {
-			return opError(codeUnsupportedOp, "unable to generate plan for intent", map[string]interface{}{"intent": intent}, []string{"get_capabilities", "get_help_for_topic"}, nil), true
-		}
-		recommended := extractPlanCommands(plan)
-		return opSuccess("plan generated", plan, recommended, nil), true
-
-	case "hal_plan_verify":
-		if err := ensureOnlyKeys(args, map[string]bool{"component": true}); err != nil {
-			return opErrorForTool("hal_plan_verify", codeParseError, err.Error(), nil, []string{"get_runtime_status"}, nil, nil, nil), true
-		}
-		component, ok := args["component"].(string)
-		if !ok || strings.TrimSpace(component) == "" {
-			return opErrorForTool("hal_plan_verify", codeParseError, "component is required", nil, []string{"get_capabilities"}, nil, nil, nil), true
-		}
-		comp := strings.ToLower(strings.TrimSpace(component))
-		commands := []string{}
-		docs := []string{}
-		checks := []opCheck{{Name: "verification_plan", Status: "ok", Details: "component verification sequence generated"}}
-
-		switch comp {
-		case "vault":
-			commands = []string{"hal vault status", "hal status"}
-			docs = []string{"https://developer.hashicorp.com/vault"}
-		case "vault_k8s", "vault_vso", "vault_csi", "k8s", "vso", "csi":
-			commands = []string{"hal vault k8s", "kubectl get pods -A", "kubectl get svc -A"}
-			docs = []string{"https://developer.hashicorp.com/vault/docs/platform/k8s/vso", "https://developer.hashicorp.com/vault/docs/platform/k8s/csi"}
-		case "consul":
-			commands = []string{"hal consul status", "hal status"}
-			docs = []string{"https://developer.hashicorp.com/consul"}
-		case "nomad":
-			commands = []string{"hal nomad status", "hal status"}
-			docs = []string{"https://developer.hashicorp.com/nomad"}
-		case "boundary", "boundary_ssh", "boundary_mariadb":
-			commands = []string{"hal boundary status", "hal boundary ssh"}
-			docs = []string{"https://developer.hashicorp.com/boundary"}
-		case "terraform", "terraform_vcs_workflow", "terraform_workspace", "tfe":
-			commands = []string{"hal terraform status", "hal terraform vcs-workflow"}
-			docs = []string{"https://developer.hashicorp.com/terraform/enterprise"}
-		case "terraform_agent", "tfe_agent":
-			commands = []string{"hal terraform agent", "hal terraform agent enable", "hal terraform status"}
-			docs = []string{"https://developer.hashicorp.com/terraform/enterprise/agents"}
-		case "terraform_api_workflow", "terraform_cli", "tfe_cli":
-			commands = []string{"hal terraform api-workflow", "hal tf api-workflow enable", "hal terraform status"}
-			docs = []string{"https://developer.hashicorp.com/terraform/enterprise"}
-		case "obs", "observability":
-			commands = []string{"hal obs status", "hal status"}
-			docs = []string{"https://grafana.com/docs/", "https://prometheus.io/docs/", "https://grafana.com/oss/loki/"}
-		default:
-			return opErrorForTool("hal_plan_verify", codeUnsupportedOp, "unsupported component", map[string]interface{}{"component": comp}, []string{"get_capabilities", "get_component_context"}, []opCheck{{Name: "verification_plan", Status: "error", Details: "unsupported component"}}, nil, nil), true
-		}
-
-		data := map[string]interface{}{
-			"component":             comp,
-			"verification_commands": commands,
-			"notes":                 []string{"Run commands in order and confirm expected healthy states before next operations."},
-		}
-		return opSuccessForTool("hal_plan_verify", "verification plan generated", data, commands, checks, nil, nil, docs), true
-
-	case "validate_command":
-		if err := ensureOnlyKeys(args, map[string]bool{"command": true}); err != nil {
-			return opError(codeParseError, err.Error(), nil, []string{"hal --help"}, nil), true
-		}
-		cmdText, ok := args["command"].(string)
-		if !ok || strings.TrimSpace(cmdText) == "" {
-			return opError(codeParseError, "command is required", nil, []string{"hal --help"}, nil), true
-		}
-		res := validateCommand(cmdText)
-		valid, _ := res["valid"].(bool)
-		if valid {
-			normalized, _ := res["normalized_command"].(string)
-			return opSuccess("command is valid", res, []string{normalized}, nil), true
-		}
-		recommended := []string{}
-		if suggestions, ok := res["suggestions"].([]string); ok {
-			recommended = append(recommended, suggestions...)
-		}
-		code := codeCommandNotFound
-		if errs, ok := res["errors"].([]string); ok && len(errs) > 0 {
-			code = classifyContractError(errs[0])
-		}
-		return opError(code, "command is invalid", res, sortedUnique(recommended), nil), true
-
-	case "get_component_context":
-		if err := ensureOnlyKeys(args, map[string]bool{"component": true}); err != nil {
-			return opError(codeParseError, err.Error(), nil, []string{"get_runtime_status"}, nil), true
-		}
-		component, ok := args["component"].(string)
-		if !ok || strings.TrimSpace(component) == "" {
-			return opError(codeParseError, "component is required", nil, []string{"get_runtime_status"}, nil), true
-		}
-		ctx, cmds, err := componentContext(strings.ToLower(strings.TrimSpace(component)))
-		if err != nil {
-			return opError(codeUnsupportedOp, err.Error(), nil, []string{"get_capabilities"}, nil), true
-		}
-		return opSuccess("component context resolved", ctx, cmds, []string{"https://developer.hashicorp.com"}), true
 
 	case "get_audit_summary":
 		if err := ensureOnlyKeys(args, map[string]bool{"timeframe": true, "filter": true}); err != nil {
@@ -663,9 +233,6 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		return opSuccess("oidc status collected", status, rec, []string{"https://developer.hashicorp.com/vault/docs/auth/jwt/oidc-providers"}), true
 
-	case "enable_oidc":
-		return handleEnableAuthMode("oidc", args), true
-
 	case "get_jwt_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
 			return opError(codeParseError, err.Error(), nil, []string{"hal vault jwt --help"}, nil), true
@@ -675,9 +242,6 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 			return opError(classifyContractError(err.Error()), err.Error(), nil, rec, []string{"https://developer.hashicorp.com/vault/docs/auth/jwt"}), true
 		}
 		return opSuccess("jwt status collected", status, rec, []string{"https://developer.hashicorp.com/vault/docs/auth/jwt"}), true
-
-	case "enable_jwt":
-		return handleEnableAuthMode("jwt", args), true
 
 	case "get_boundary_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
@@ -689,20 +253,6 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 			return opErrorForTool("get_boundary_status", classifyContractError(execRes.Output), "boundary status check failed; run recovery commands", map[string]interface{}{"execution": execRes}, []string{"hal boundary create", "hal boundary status"}, checks, nil, []string{"https://developer.hashicorp.com/boundary"}), true
 		}
 		return opSuccessForTool("get_boundary_status", "boundary status collected", map[string]interface{}{"execution": execRes}, []string{"hal boundary status", "hal boundary ssh"}, checks, nil, nil, []string{"https://developer.hashicorp.com/boundary"}), true
-
-	case "enable_boundary":
-		return handleEnableScenarioMode("enable_boundary", []string{"boundary", "create"}, []string{"hal boundary status"}, args), true
-
-	case "get_ssh_flow_status":
-		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
-			return opErrorForTool("get_ssh_flow_status", codeParseError, err.Error(), nil, []string{"hal boundary ssh"}, nil, nil, nil), true
-		}
-		execRes := runHAL("boundary", "ssh")
-		checks := []opCheck{{Name: "boundary_ssh_status", Status: statusFromExecution(execRes), Details: strings.TrimSpace(execRes.Output)}}
-		if execRes.ExitCode != 0 {
-			return opErrorForTool("get_ssh_flow_status", classifyContractError(execRes.Output), "boundary ssh status failed; run recovery commands", map[string]interface{}{"execution": execRes}, []string{"hal boundary ssh enable", "hal boundary status"}, checks, nil, nil), true
-		}
-		return opSuccessForTool("get_ssh_flow_status", "boundary ssh status collected", map[string]interface{}{"execution": execRes}, []string{"hal boundary ssh", "hal boundary ssh enable"}, checks, nil, nil, nil), true
 
 	case "get_tfe_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
@@ -716,9 +266,6 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		return handleTFECLIStatus(), true
 
-	case "enable_tfe_vcs_workflow", "setup_tfe_workspace":
-		return handleEnableScenarioMode("enable_tfe_vcs_workflow", []string{"terraform", "vcs-workflow", "enable"}, []string{"hal terraform vcs-workflow", "hal terraform status"}, args), true
-
 	case "get_k8s_integration_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
 			return opErrorForTool("get_k8s_integration_status", codeParseError, err.Error(), nil, []string{"hal vault k8s"}, nil, nil, nil), true
@@ -730,37 +277,11 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		return opSuccessForTool("get_k8s_integration_status", "vault k8s integration status collected", map[string]interface{}{"execution": execRes}, []string{"hal vault k8s", "hal vault k8s enable", "hal vault k8s enable --csi"}, checks, nil, nil, nil), true
 
-	case "enable_vault_k8s_integration":
-		return handleEnableVaultK8sIntegration(args), true
-
-	case "get_cross_product_dependencies":
-		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
-			return opErrorForTool("get_cross_product_dependencies", codeParseError, err.Error(), nil, []string{"hal status"}, nil, nil, nil), true
-		}
-		deps := map[string]interface{}{
-			"graph": []map[string]interface{}{
-				{"component": "vault", "depends_on": []string{}},
-				{"component": "vault_k8s_vso_csi", "depends_on": []string{"vault"}},
-				{"component": "consul", "depends_on": []string{}},
-				{"component": "nomad", "depends_on": []string{"consul"}},
-				{"component": "boundary", "depends_on": []string{"vault"}},
-				{"component": "boundary_ssh", "depends_on": []string{"boundary"}},
-				{"component": "terraform_vcs_workflow", "depends_on": []string{"terraform", "gitlab"}},
-				{"component": "observability", "depends_on": []string{}},
-			},
-			"recommended_order": []string{"vault", "consul", "nomad", "boundary", "boundary_ssh", "terraform", "terraform_vcs_workflow", "observability", "vault_k8s_vso_csi"},
-		}
-		checks := []opCheck{{Name: "dependency_graph", Status: "ok", Details: "static deterministic graph"}}
-		return opSuccessForTool("get_cross_product_dependencies", "cross-product dependencies resolved", deps, []string{"hal status", "hal vault status", "hal consul status", "hal nomad status", "hal boundary status", "hal terraform status", "hal obs status"}, checks, nil, nil, nil), true
-
 	case "get_ldap_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
 			return opErrorForTool("get_ldap_status", codeParseError, err.Error(), nil, []string{"hal vault ldap"}, nil, nil, nil), true
 		}
 		return handleStatusCommandTool("get_ldap_status", []string{"vault", "ldap"}, []string{"hal vault ldap", "hal vault ldap enable"}, []string{"https://developer.hashicorp.com/vault/docs/auth/ldap"}), true
-
-	case "enable_ldap":
-		return handleEnableScenarioMode("enable_ldap", []string{"vault", "ldap", "enable"}, []string{"hal vault ldap", "hal vault status"}, args), true
 
 	case "get_vault_database_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
@@ -768,17 +289,11 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		return handleStatusCommandTool("get_vault_database_status", []string{"vault", "database"}, []string{"hal vault database", "hal vault database enable --backend mariadb"}, []string{"https://developer.hashicorp.com/vault/docs/secrets/databases"}), true
 
-	case "enable_vault_database":
-		return handleEnableScenarioMode("enable_vault_database", []string{"vault", "database", "enable"}, []string{"hal vault database", "hal vault status"}, args), true
-
 	case "get_boundary_mariadb_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
 			return opErrorForTool("get_boundary_mariadb_status", codeParseError, err.Error(), nil, []string{"hal boundary mariadb"}, nil, nil, nil), true
 		}
 		return handleStatusCommandTool("get_boundary_mariadb_status", []string{"boundary", "mariadb"}, []string{"hal boundary mariadb", "hal boundary mariadb enable"}, []string{"https://developer.hashicorp.com/boundary"}), true
-
-	case "enable_boundary_mariadb":
-		return handleEnableBoundaryMariaDB(args), true
 
 	case "get_consul_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
@@ -786,26 +301,17 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		return handleStatusCommandTool("get_consul_status", []string{"consul", "status"}, []string{"hal consul status", "hal consul create"}, []string{"https://developer.hashicorp.com/consul"}), true
 
-	case "enable_consul":
-		return handleEnableScenarioMode("enable_consul", []string{"consul", "create"}, []string{"hal consul status"}, args), true
-
 	case "get_nomad_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
 			return opErrorForTool("get_nomad_status", codeParseError, err.Error(), nil, []string{"hal nomad status"}, nil, nil, nil), true
 		}
 		return handleStatusCommandTool("get_nomad_status", []string{"nomad", "status"}, []string{"hal nomad status", "hal nomad create"}, []string{"https://developer.hashicorp.com/nomad"}), true
 
-	case "enable_nomad":
-		return handleEnableScenarioMode("enable_nomad", []string{"nomad", "create"}, []string{"hal nomad status"}, args), true
-
 	case "get_obs_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
 			return opErrorForTool("get_obs_status", codeParseError, err.Error(), nil, []string{"hal obs status"}, nil, nil, nil), true
 		}
 		return handleStatusCommandTool("get_obs_status", []string{"obs", "status"}, []string{"hal obs status", "hal obs create"}, []string{"https://grafana.com/docs/", "https://prometheus.io/docs/", "https://grafana.com/oss/loki/"}), true
-
-	case "enable_obs":
-		return handleEnableScenarioMode("enable_obs", []string{"obs", "create"}, []string{"hal obs status"}, args), true
 
 	default:
 		return mcpToolCallResult{}, false
@@ -978,44 +484,6 @@ func defaultGrounding(toolName string) *opGrounding {
 		Profile:    profile,
 		Version:    mcpPolicyVersion,
 	}
-}
-
-func buildPolicyProfile(profile string) (map[string]interface{}, error) {
-	selected := strings.ToLower(strings.TrimSpace(profile))
-	if selected == "" {
-		selected = "strict"
-	}
-	if selected != "strict" && selected != "standard" {
-		return nil, fmt.Errorf("unsupported profile: %s", selected)
-	}
-
-	requiredPrefetch := []string{"hal_status_baseline", "get_capabilities", "hal_policy_profile"}
-	if selected == "strict" {
-		requiredPrefetch = append(requiredPrefetch, "validate_command")
-	}
-
-	return map[string]interface{}{
-		"policy_version":   mcpPolicyVersion,
-		"contract_version": mcpContractVersion,
-		"profile":          selected,
-		"answer_policy": map[string]interface{}{
-			"mode":                           "hal_first",
-			"disallow_unverified_claims":     true,
-			"disallow_non_hal_primary_paths": true,
-			"include_verification_commands":  true,
-			"include_official_docs":          true,
-		},
-		"tool_policy": map[string]interface{}{
-			"required_prefetch_tools": requiredPrefetch,
-			"on_uncertain_then_call":  []string{"validate_command", "get_help_for_topic"},
-			"fallback": map[string]interface{}{
-				"mode":         "fail_closed",
-				"allow_answer": false,
-				"message":      "HAL MCP policy unavailable; run hal mcp status and retry.",
-			},
-		},
-		"recommended_bootstrap": []string{"hal mcp status", "hal status", "hal --help"},
-	}, nil
 }
 
 func validateCommandList(commands []string) error {
@@ -1242,76 +710,6 @@ func buildEngineUsage(engine string) (map[string]interface{}, error) {
 	}, nil
 }
 
-func parseHelpOutput(output string) map[string]interface{} {
-	lines := strings.Split(output, "\n")
-	usage := ""
-	flags := []map[string]string{}
-	inFlags := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "Usage:") {
-			usage = strings.TrimSpace(strings.TrimPrefix(trimmed, "Usage:"))
-		}
-		if trimmed == "Flags:" || trimmed == "Global Flags:" {
-			inFlags = true
-			continue
-		}
-		if inFlags {
-			if trimmed == "" {
-				inFlags = false
-				continue
-			}
-			if strings.HasPrefix(trimmed, "Use \"") {
-				inFlags = false
-				continue
-			}
-			if strings.HasPrefix(trimmed, "-") {
-				parts := strings.SplitN(trimmed, "   ", 2)
-				name := strings.TrimSpace(parts[0])
-				desc := ""
-				if len(parts) > 1 {
-					desc = strings.TrimSpace(parts[1])
-				}
-				flags = append(flags, map[string]string{"name": name, "description": desc})
-			}
-		}
-	}
-	sort.Slice(flags, func(i, j int) bool { return flags[i]["name"] < flags[j]["name"] })
-	return map[string]interface{}{"usage": usage, "flags": flags}
-}
-
-func extractCommandsFromHelp(output string) []string {
-	lines := strings.Split(output, "\n")
-	commands := []string{}
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "Use \"") && strings.Contains(trimmed, "--help\"") {
-			trimmed = strings.TrimPrefix(trimmed, "Use \"")
-			trimmed = strings.TrimSuffix(trimmed, "\" for more information about a command.")
-			commands = append(commands, trimmed)
-		}
-	}
-	return sortedUnique(commands)
-}
-
-func extractPlanCommands(plan map[string]interface{}) []string {
-	out := []string{}
-	if pre, ok := plan["prechecks"].([]string); ok {
-		out = append(out, pre...)
-	}
-	if steps, ok := plan["steps"].([]map[string]string); ok {
-		for _, step := range steps {
-			if cmd, ok := step["command"]; ok {
-				out = append(out, cmd)
-			}
-		}
-	}
-	if post, ok := plan["postchecks"].([]string); ok {
-		out = append(out, post...)
-	}
-	return sortedUnique(out)
-}
-
 func componentContext(component string) (map[string]interface{}, []string, error) {
 	switch component {
 	case "vault":
@@ -1439,119 +837,6 @@ func componentContext(component string) (map[string]interface{}, []string, error
 	}
 }
 
-func buildFeaturePlan(intent string) (map[string]interface{}, bool) {
-	lower := strings.ToLower(strings.TrimSpace(intent))
-	switch {
-	case strings.Contains(lower, "boundary") && strings.Contains(lower, "ssh"):
-		return map[string]interface{}{
-			"intent":       intent,
-			"action":       "boundary_ssh_workflow",
-			"prechecks":    []string{"hal boundary status", "hal boundary ssh"},
-			"steps":        []map[string]string{{"command": "hal boundary ssh enable", "reason": "Deploy SSH target VM and wire Boundary resources"}},
-			"postchecks":   []string{"hal boundary ssh", "hal boundary status"},
-			"rollback":     []string{"hal boundary ssh disable"},
-			"expectations": []string{"Multipass VM hal-boundary-ssh running", "Boundary target is reachable"},
-		}, true
-	case strings.Contains(lower, "terraform") && (strings.Contains(lower, "obs") || strings.Contains(lower, "observability") || strings.Contains(lower, "grafana") || strings.Contains(lower, "prometheus") || strings.Contains(lower, "monitor")):
-		return map[string]interface{}{
-			"intent":    intent,
-			"action":    "terraform_observability_workflow",
-			"prechecks": []string{"hal terraform status", "hal obs status"},
-			"steps": []map[string]string{
-				{"command": "hal obs create", "reason": "Bring up shared observability stack if it is not running"},
-				{"command": "hal terraform obs create", "reason": "Register Terraform Enterprise observability artifacts (dashboards/targets/rules)"},
-			},
-			"postchecks": []string{"hal terraform obs status", "hal obs status", "hal terraform status"},
-			"next_trigger": []string{
-				"Use hal terraform obs update when TFE topology changes",
-				"Use hal terraform obs delete to remove Terraform-specific observability artifacts",
-			},
-			"rollback": []string{"hal terraform obs delete"},
-		}, true
-	case strings.Contains(lower, "vault") && (strings.Contains(lower, "obs") || strings.Contains(lower, "observability") || strings.Contains(lower, "grafana") || strings.Contains(lower, "prometheus") || strings.Contains(lower, "monitor")):
-		return map[string]interface{}{
-			"intent":    intent,
-			"action":    "vault_observability_workflow",
-			"prechecks": []string{"hal vault status", "hal obs status"},
-			"steps": []map[string]string{
-				{"command": "hal obs create", "reason": "Bring up shared observability stack if it is not running"},
-				{"command": "hal vault obs create", "reason": "Register Vault observability artifacts (dashboards/targets/rules)"},
-			},
-			"postchecks": []string{"hal vault obs status", "hal obs status", "hal vault status"},
-			"next_trigger": []string{
-				"Use hal vault obs update when Vault topology or scraping config changes",
-				"Use hal vault obs delete to remove Vault-specific observability artifacts",
-			},
-			"rollback": []string{"hal vault obs delete"},
-		}, true
-	case strings.Contains(lower, "terraform") && (strings.Contains(lower, "workspace") || strings.Contains(lower, "tfe") || strings.Contains(lower, "vcs")):
-		return map[string]interface{}{
-			"intent":       intent,
-			"action":       "terraform_workspace_setup",
-			"prechecks":    []string{"hal terraform status", "hal terraform vcs-workflow"},
-			"steps":        []map[string]string{{"command": "hal terraform vcs-workflow enable", "reason": "Prepare GitLab repo and wire TFE workspace"}},
-			"postchecks":   []string{"hal terraform vcs-workflow", "hal terraform status"},
-			"next_trigger": []string{"Push a commit to main to validate end-to-end VCS run"},
-			"rollback":     []string{"hal terraform delete"},
-		}, true
-	case strings.Contains(lower, "terraform") && (strings.Contains(lower, "cli") || strings.Contains(lower, "tfx") || strings.Contains(lower, "helper")):
-		return map[string]interface{}{
-			"intent":    intent,
-			"action":    "terraform_cli_helper",
-			"prechecks": []string{"hal terraform status", "hal terraform api-workflow"},
-			"steps": []map[string]string{
-				{"command": "hal tf api-workflow enable", "reason": "Build or refresh the Terraform/TFX helper image"},
-			},
-			"postchecks": []string{"hal terraform api-workflow", "hal terraform status"},
-			"notes":      []string{"Use the helper instead of changing the host trust store."},
-		}, true
-	case strings.Contains(lower, "vault") && (strings.Contains(lower, "k8s") || strings.Contains(lower, "vso") || strings.Contains(lower, "csi")):
-		stepCmd := "hal vault k8s enable"
-		reason := "Deploy KinD + VSO workflow"
-		if strings.Contains(lower, "csi") {
-			stepCmd = "hal vault k8s enable --csi"
-			reason = "Deploy KinD + VSO CSI workflow"
-		}
-		return map[string]interface{}{
-			"intent":     intent,
-			"action":     "vault_k8s_workflow",
-			"prechecks":  []string{"hal vault status", "hal vault k8s"},
-			"steps":      []map[string]string{{"command": stepCmd, "reason": reason}},
-			"postchecks": []string{"hal vault k8s", "hal vault status"},
-			"rollback":   []string{"hal vault k8s disable"},
-		}, true
-	case strings.Contains(lower, "vault") && strings.Contains(lower, "ldap"):
-		return map[string]interface{}{
-			"intent":     intent,
-			"action":     "vault_ldap_workflow",
-			"prechecks":  []string{"hal vault status", "hal vault ldap"},
-			"steps":      []map[string]string{{"command": "hal vault ldap enable", "reason": "Enable LDAP auth integration in local lab"}},
-			"postchecks": []string{"hal vault ldap", "hal vault status"},
-			"rollback":   []string{"hal vault ldap disable"},
-		}, true
-	case strings.Contains(lower, "vault") && (strings.Contains(lower, "database") || strings.Contains(lower, " db") || strings.Contains(lower, "db ") || strings.Contains(lower, "mariadb")):
-		return map[string]interface{}{
-			"intent":     intent,
-			"action":     "vault_database_workflow",
-			"prechecks":  []string{"hal vault status", "hal vault database"},
-			"steps":      []map[string]string{{"command": "hal vault database enable --backend mariadb", "reason": "Enable Vault database secrets lab (default backend: MariaDB)"}},
-			"postchecks": []string{"hal vault database", "hal vault status"},
-			"rollback":   []string{"hal vault database disable"},
-		}, true
-	case strings.Contains(lower, "boundary") && strings.Contains(lower, "mariadb"):
-		return map[string]interface{}{
-			"intent":     intent,
-			"action":     "boundary_mariadb_workflow",
-			"prechecks":  []string{"hal boundary status", "hal boundary mariadb"},
-			"steps":      []map[string]string{{"command": "hal boundary mariadb enable", "reason": "Enable Boundary database-backed target workflow"}},
-			"postchecks": []string{"hal boundary mariadb", "hal boundary status"},
-			"rollback":   []string{"hal boundary mariadb disable"},
-		}, true
-	default:
-		return nil, false
-	}
-}
-
 func buildAuditSummary(timeframe, filter string) map[string]interface{} {
 	summary := map[string]interface{}{
 		"timeframe": timeframe,
@@ -1637,132 +922,6 @@ func runVaultAuthList(engine string) string {
 		return ""
 	}
 	return string(out)
-}
-
-func handleEnableAuthMode(mode string, args map[string]interface{}) mcpToolCallResult {
-	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "update": true}); err != nil {
-		return opError(codeParseError, err.Error(), nil, []string{"hal vault " + mode + " enable"}, nil)
-	}
-	runMode := "dry_run"
-	if raw, ok := args["mode"]; ok {
-		parsed, ok := raw.(string)
-		if !ok {
-			return opError(codeParseError, "mode must be string", nil, []string{"hal vault " + mode + " enable"}, nil)
-		}
-		runMode = strings.TrimSpace(strings.ToLower(parsed))
-	}
-	if runMode != "dry_run" && runMode != "apply" {
-		return opError(codeParseError, "mode must be dry_run or apply", nil, []string{"hal vault " + mode + " enable"}, nil)
-	}
-	update := false
-	if raw, ok := args["update"]; ok {
-		parsed, ok := raw.(bool)
-		if !ok {
-			return opError(codeParseError, "update must be boolean", nil, []string{"hal vault " + mode + " enable"}, nil)
-		}
-		update = parsed
-	}
-	baseCmd := []string{"vault", mode, "enable"}
-	if update {
-		baseCmd = append(baseCmd, "--update")
-	}
-	base := "hal " + strings.Join(baseCmd, " ")
-	recommended := []string{base, "hal vault status", "hal vault audit"}
-
-	if runMode == "dry_run" {
-		dryRunCommand := "hal --dry-run " + strings.Join(baseCmd, " ")
-		data := map[string]interface{}{
-			"mode":    runMode,
-			"applied": false,
-			"plan": map[string]interface{}{
-				"command":       base,
-				"dry_run":       dryRunCommand,
-				"post_checks":   []string{"hal vault status", "hal vault " + mode + " --help"},
-				"rollback_hint": "vault auth disable " + mode,
-			},
-		}
-		return opSuccess(mode+" enable plan generated (dry_run)", data, append(recommended, dryRunCommand), []string{"https://developer.hashicorp.com/vault/docs/auth/jwt"})
-	}
-
-	execRes := runHAL(baseCmd...)
-	data := map[string]interface{}{
-		"mode":      runMode,
-		"applied":   execRes.ExitCode == 0,
-		"execution": execRes,
-		"post_checks": []string{
-			"hal vault status",
-			"hal vault " + mode + " --help",
-		},
-		"rollback_hint": "vault auth disable " + mode,
-	}
-
-	if execRes.ExitCode != 0 {
-		return opError(classifyContractError(execRes.Output), "failed to enable "+mode, data, recommended, []string{"https://developer.hashicorp.com/vault/docs/auth/jwt"})
-	}
-
-	return opSuccess(mode+" enabled", data, recommended, []string{"https://developer.hashicorp.com/vault/docs/auth/jwt"})
-}
-
-func handleEnableScenarioMode(toolName string, baseCmd []string, postChecks []string, args map[string]interface{}) mcpToolCallResult {
-	recovery := []string{"hal " + strings.Join(baseCmd, " "), "hal status"}
-	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "update": true}); err != nil {
-		return opErrorForTool(toolName, codeParseError, err.Error(), nil, recovery, nil, nil, nil)
-	}
-	runMode := "dry_run"
-	if raw, ok := args["mode"]; ok {
-		parsed, ok := raw.(string)
-		if !ok {
-			return opErrorForTool(toolName, codeParseError, "mode must be string", nil, recovery, nil, nil, nil)
-		}
-		runMode = strings.TrimSpace(strings.ToLower(parsed))
-	}
-	if runMode != "dry_run" && runMode != "apply" {
-		return opErrorForTool(toolName, codeParseError, "mode must be dry_run or apply", nil, recovery, nil, nil, nil)
-	}
-	update := false
-	if raw, ok := args["update"]; ok {
-		parsed, ok := raw.(bool)
-		if !ok {
-			return opErrorForTool(toolName, codeParseError, "update must be boolean", nil, recovery, nil, nil, nil)
-		}
-		update = parsed
-	}
-	finalCmd := append([]string{}, baseCmd...)
-	if update {
-		finalCmd = append(finalCmd, "--update")
-	}
-	full := "hal " + strings.Join(finalCmd, " ")
-	recommended := append([]string{full}, postChecks...)
-	checks := []opCheck{{Name: "mode", Status: "ok", Details: runMode}}
-	if runMode == "dry_run" {
-		next := []opNextStep{{Order: 1, Title: "Apply scenario", ExpectedOutcome: "Scenario resources are configured", Commands: []string{full}}}
-		data := map[string]interface{}{"mode": runMode, "applied": false, "command": full, "post_checks": postChecks}
-		return opSuccessForTool(toolName, "dry_run plan generated", data, recommended, checks, next, nil, nil)
-	}
-	execRes := runHAL(finalCmd...)
-	checks = append(checks, opCheck{Name: "execution", Status: statusFromExecution(execRes), Details: "command execution result"})
-	data := map[string]interface{}{"mode": runMode, "applied": execRes.ExitCode == 0, "execution": execRes, "post_checks": postChecks}
-	if execRes.ExitCode != 0 {
-		return opErrorForTool(toolName, classifyContractError(execRes.Output), "scenario apply failed; run recovery commands", data, recommended, checks, nil, nil)
-	}
-	return opSuccessForTool(toolName, "scenario applied", data, recommended, checks, nil, nil, nil)
-}
-
-func handleEnableVaultK8sIntegration(args map[string]interface{}) mcpToolCallResult {
-	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "update": true, "csi": true}); err != nil {
-		return opErrorForTool("enable_vault_k8s_integration", codeParseError, err.Error(), nil, []string{"hal vault k8s enable"}, nil, nil, nil)
-	}
-	baseCmd := []string{"vault", "k8s", "enable"}
-	if raw, ok := args["csi"]; ok {
-		parsed, ok := raw.(bool)
-		if !ok {
-			return opErrorForTool("enable_vault_k8s_integration", codeParseError, "csi must be boolean", nil, []string{"hal vault k8s enable"}, nil, nil, nil)
-		}
-		if parsed {
-			baseCmd = append(baseCmd, "--csi")
-		}
-	}
-	return handleEnableScenarioMode("enable_vault_k8s_integration", baseCmd, []string{"hal vault k8s", "hal vault status"}, args)
 }
 
 func handleStatusCommandTool(toolName string, command []string, recommended []string, docs []string) mcpToolCallResult {
@@ -1860,7 +1019,7 @@ func handleTFEStatus() mcpToolCallResult {
 	data := map[string]interface{}{
 		"runtime":         product,
 		"workspace_state": workspaceState,
-		"workspace_hint":  "Use get_help_for_topic(terraform vcs-workflow) and get_component_context(terraform_workspace) for workspace-specific guidance.",
+		"workspace_hint":  "Use hal terraform vcs-workflow for workspace-specific guidance.",
 	}
 	if state != "running" {
 		return opErrorForTool("get_tfe_status", runtimeCodeFromState(state), "tfe runtime not healthy; deploy terraform first", data, []string{"hal terraform create", "hal terraform status"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
@@ -1909,21 +1068,4 @@ func handleTFECLIStatus() mcpToolCallResult {
 		return opErrorForTool("get_tfe_cli_status", codeNotDeployed, "tfe api helper is not ready; run hal terraform api-workflow", data, []string{"hal terraform api-workflow", "hal tf api-workflow enable"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
 	}
 	return opSuccessForTool("get_tfe_cli_status", "tfe api helper status collected", data, []string{"hal terraform api-workflow", "hal tf api-workflow enable"}, checks, nil, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
-}
-
-func handleEnableBoundaryMariaDB(args map[string]interface{}) mcpToolCallResult {
-	if err := ensureOnlyKeys(args, map[string]bool{"mode": true, "update": true, "with_vault": true}); err != nil {
-		return opErrorForTool("enable_boundary_mariadb", codeParseError, err.Error(), nil, []string{"hal boundary mariadb enable"}, nil, nil, nil)
-	}
-	baseCmd := []string{"boundary", "mariadb", "enable"}
-	if raw, ok := args["with_vault"]; ok {
-		parsed, ok := raw.(bool)
-		if !ok {
-			return opErrorForTool("enable_boundary_mariadb", codeParseError, "with_vault must be boolean", nil, []string{"hal boundary mariadb enable"}, nil, nil, nil)
-		}
-		if parsed {
-			baseCmd = append(baseCmd, "--with-vault")
-		}
-	}
-	return handleEnableScenarioMode("enable_boundary_mariadb", baseCmd, []string{"hal boundary mariadb", "hal boundary status"}, args)
 }

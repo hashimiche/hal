@@ -63,8 +63,6 @@ var (
 	upHTTPHost        string
 	upHTTPPort        int
 	upHTTPPath        string
-	policyProfile     string
-	policyJSON        bool
 )
 
 // Cmd is the exported HAL MCP base command.
@@ -268,33 +266,6 @@ var downCmd = &cobra.Command{
 				fmt.Printf("   - %s\n", warning)
 			}
 		}
-	},
-}
-
-var policyCmd = &cobra.Command{
-	Use:   "policy",
-	Short: "Print HAL MCP runtime answer/tool policy",
-	Long:  "Print the HAL MCP runtime policy profile used to guide AI clients and MCP tool orchestration. This is an introspection/export command, not an MCP lifecycle resource.",
-	Run: func(cmd *cobra.Command, args []string) {
-		policy, err := buildPolicyProfile(policyProfile)
-		if err != nil {
-			fmt.Printf("❌ Failed to build policy profile: %v\n", err)
-			return
-		}
-
-		if policyJSON {
-			payload, err := json.MarshalIndent(policy, "", "  ")
-			if err != nil {
-				fmt.Printf("❌ Failed to render policy JSON: %v\n", err)
-				return
-			}
-			fmt.Println(string(payload))
-			return
-		}
-
-		fmt.Printf("HAL MCP Policy (%s)\n", policyProfile)
-		fmt.Println("========================")
-		fmt.Println("Use '--json' for machine-readable output.")
 	},
 }
 
@@ -1014,12 +985,8 @@ func init() {
 	upCmd.Flags().StringVar(&upHTTPHost, "http-host", "0.0.0.0", "Host/interface to bind when --transport=streamable-http")
 	upCmd.Flags().IntVar(&upHTTPPort, "http-port", 8080, "TCP port to listen on when --transport=streamable-http")
 	upCmd.Flags().StringVar(&upHTTPPath, "http-path", "/mcp", "HTTP path to expose when --transport=streamable-http")
-	policyCmd.Flags().StringVar(&policyProfile, "profile", "strict", "Policy profile to emit (strict or standard)")
-	policyCmd.Flags().BoolVar(&policyJSON, "json", true, "Print policy as JSON")
-
 	Cmd.AddCommand(createCmd)
 	Cmd.AddCommand(upCmd)
 	Cmd.AddCommand(statusCmd)
 	Cmd.AddCommand(downCmd)
-	Cmd.AddCommand(policyCmd)
 }
