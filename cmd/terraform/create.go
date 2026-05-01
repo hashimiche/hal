@@ -88,7 +88,7 @@ var deployCmd = &cobra.Command{
 
 		// Keep an unprivileged HTTPS listener for rootless Podman.
 		tfeHostname := "tfe.localhost"
-		healthURL := "https://tfe.localhost:8443/_health_check"
+		healthURL := "https://tfe.localhost:8443/api/v1/health/readiness"
 		uiURL := "https://tfe.localhost:8443"
 		// Stable internal proxy IP on hal-net used to route in-cluster tfe.localhost:443 traffic.
 		proxyInternalIP := "10.89.3.54"

@@ -391,7 +391,7 @@ func buildTFETwinLayout() (tfeTwinLayout, error) {
 		CertDir:        filepath.Join(homeDir, ".hal", trimmedCore+"-certs"),
 		ProxyConfPath:  filepath.Join(homeDir, ".hal", trimmedCore+"-proxy.conf"),
 		UIURL:          fmt.Sprintf("https://%s:%d", hostname, tfeTwinHTTPSPort),
-		HealthURL:      fmt.Sprintf("https://%s:%d/_health_check", hostname, tfeTwinHTTPSPort),
+		HealthURL:      fmt.Sprintf("https://%s:%d/api/v1/health/readiness", hostname, tfeTwinHTTPSPort),
 	}, nil
 }
 

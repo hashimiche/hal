@@ -23,7 +23,7 @@ curl_api() {
 
 # If the default hostname from .tfx.hcl is not reachable from inside the helper
 # network, fall back to the internal TFE service endpoint and recompute resolve args.
-if ! curl_api -o /dev/null "https://${HOST}/_health_check"; then
+if ! curl_api -o /dev/null "https://${HOST}/api/v1/health/readiness"; then
   HOST="hal-tfe:8443"
   API="https://${HOST}/api/v2"
   HOST_NAME="${HOST%%:*}"
