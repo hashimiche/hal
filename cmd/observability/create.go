@@ -14,11 +14,12 @@ import (
 )
 
 var (
-	obsUpdate   bool
-	lokiVer     string
-	grafanaVer  string
-	promVer     string
-	promtailVer string
+	obsUpdate      bool
+	lokiVer        string
+	grafanaVer     string
+	promVer        string
+	promtailVer    string
+	promConfigPath string
 )
 
 var deployCmd = &cobra.Command{
@@ -82,40 +83,55 @@ var deployCmd = &cobra.Command{
 		_ = os.MkdirAll(targetsDir, 0755)
 		_ = os.MkdirAll(dashboardsDir, 0755)
 
-		promConfig := strings.Join([]string{
-			"global:",
-			"  scrape_interval: 15s",
-			"scrape_configs:",
-			"  - job_name: 'vault'",
-			"    metrics_path: '/v1/sys/metrics'",
-			"    params:",
-			"      format: ['prometheus']",
-			"    file_sd_configs:",
-			"      - files: ['/etc/prometheus/targets/vault.json']",
-			"  - job_name: 'consul'",
-			"    metrics_path: '/v1/agent/metrics'",
-			"    params:",
-			"      format: ['prometheus']",
-			"    file_sd_configs:",
-			"      - files: ['/etc/prometheus/targets/consul.json']",
-			"  - job_name: 'nomad'",
-			"    metrics_path: '/v1/metrics'",
-			"    params:",
-			"      format: ['prometheus']",
-			"    file_sd_configs:",
-			"      - files: ['/etc/prometheus/targets/nomad.json']",
-			"  - job_name: 'boundary'",
-			"    metrics_path: '/v1/metrics'",
-			"    file_sd_configs:",
-			"      - files: ['/etc/prometheus/targets/boundary.json']",
-			"  - job_name: 'terraform-enterprise'",
-			"    metrics_path: '/metrics'",
-			"    params:",
-			"      format: ['prometheus']",
-			"    file_sd_configs:",
-			"      - files: ['/etc/prometheus/targets/terraform.json']",
-		}, "\n") + "\n"
-		_ = os.WriteFile(filepath.Join(configDir, "prometheus.yml"), []byte(promConfig), 0644)
+		if promConfigPath != "" {
+			src, err := os.ReadFile(promConfigPath)
+			if err != nil {
+				fmt.Printf("❌ Cannot read --prom-config-path %q: %v\n", promConfigPath, err)
+				return
+			}
+			if err := os.WriteFile(filepath.Join(configDir, "prometheus.yml"), src, 0644); err != nil {
+				fmt.Printf("❌ Failed to write prometheus.yml: %v\n", err)
+				return
+			}
+			fmt.Printf("📄 Using custom Prometheus config: %s\n", promConfigPath)
+		} else {
+
+			promConfig := strings.Join([]string{
+				"global:",
+				"  scrape_interval: 15s",
+				"scrape_configs:",
+				"  - job_name: 'vault'",
+				"    metrics_path: '/v1/sys/metrics'",
+				"    params:",
+				"      format: ['prometheus']",
+				"    file_sd_configs:",
+				"      - files: ['/etc/prometheus/targets/vault.json']",
+				"  - job_name: 'consul'",
+				"    metrics_path: '/v1/agent/metrics'",
+				"    params:",
+				"      format: ['prometheus']",
+				"    file_sd_configs:",
+				"      - files: ['/etc/prometheus/targets/consul.json']",
+				"  - job_name: 'nomad'",
+				"    metrics_path: '/v1/metrics'",
+				"    params:",
+				"      format: ['prometheus']",
+				"    file_sd_configs:",
+				"      - files: ['/etc/prometheus/targets/nomad.json']",
+				"  - job_name: 'boundary'",
+				"    metrics_path: '/v1/metrics'",
+				"    file_sd_configs:",
+				"      - files: ['/etc/prometheus/targets/boundary.json']",
+				"  - job_name: 'terraform-enterprise'",
+				"    metrics_path: '/metrics'",
+				"    params:",
+				"      format: ['prometheus']",
+				"    file_sd_configs:",
+				"      - files: ['/etc/prometheus/targets/terraform.json']",
+			}, "\n") + "\n"
+			_ = os.WriteFile(filepath.Join(configDir, "prometheus.yml"), []byte(promConfig), 0644)
+
+		} // end promConfigPath else
 
 		lokiConfig := `auth_enabled: false
 server:
@@ -306,6 +322,7 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	cmd.Flags().StringVar(&grafanaVer, "grafana-version", "main", "Tag for the grafana/grafana image")
 	cmd.Flags().StringVar(&promVer, "prom-version", "main", "Tag for the prom/prometheus image")
 	cmd.Flags().StringVar(&promtailVer, "promtail-version", "3.6", "Tag for the grafana/promtail image")
+	cmd.Flags().StringVar(&promConfigPath, "prom-config-path", "", "Path to a custom prometheus.yml; skips the generated config when set")
 }
 
 func init() {

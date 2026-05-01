@@ -221,7 +221,7 @@ var deployCmd = &cobra.Command{
 			"hal-tfe",
 			"sh",
 			"-lc",
-			"cp /etc/ssl/tfe/cert.pem /usr/local/share/ca-certificates/tfe-localhost.crt && update-ca-certificates >/dev/null 2>&1 && supervisorctl restart tfe:archivist >/dev/null 2>&1",
+			"cp /etc/ssl/tfe/cert.pem /usr/local/share/ca-certificates/tfe-localhost.crt && update-ca-certificates 2>&1",
 		).CombinedOutput(); trustErr != nil {
 			fmt.Printf("⚠️  Could not refresh TFE trust store automatically: %s\n", strings.TrimSpace(string(trustOut)))
 		}
@@ -237,7 +237,7 @@ var deployCmd = &cobra.Command{
 			"hal-tfe",
 			"sh",
 			"-lc",
-			"sed -i 's/readonly = \"true\"/readonly = \"false\"/' /run/terraform-enterprise/task-worker/config.hcl && supervisorctl restart tfe:task-worker >/dev/null 2>&1",
+			"sed -i 's/readonly = \"true\"/readonly = \"false\"/' /run/terraform-enterprise/task-worker/config.hcl 2>&1",
 		).CombinedOutput(); taskWorkerErr != nil {
 			fmt.Printf("⚠️  Could not patch TFE task-worker cache mount automatically: %s\n", strings.TrimSpace(string(taskWorkerOut)))
 		}

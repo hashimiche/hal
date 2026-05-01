@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -13,6 +14,11 @@ import (
 )
 
 const terraformObsProduct = "terraform"
+
+var (
+	obsCustomJobName     string
+	obsCustomMetricsPath string
+)
 
 // syncTerraformObsTargets keeps the canonical Terraform Prometheus target file in sync
 // with whichever TFE instances are currently running.
@@ -256,6 +262,17 @@ var terraformObsCreateCmd = &cobra.Command{
 		}
 		_ = global.RemoveObsPromTargetFile("terraform-bis")
 		fmt.Println("✅ Terraform observability artifacts configured.")
+
+		if obsCustomJobName != "" {
+			targetsDir := global.ObsTargetsDir()
+			if err := registerCustomTFEJob(engine, obsCustomJobName, obsCustomMetricsPath); err != nil {
+				fmt.Printf("⚠️  Custom Prometheus job registration failed: %v\n", err)
+			} else {
+				fmt.Printf("✅ Custom Prometheus job '%s' registered (metrics path: %s).\n", obsCustomJobName, obsCustomMetricsPath)
+				fmt.Printf("   📄 Drop your target file at: %s\n", filepath.Join(targetsDir, obsCustomJobName+".json"))
+				fmt.Println("   Format: [{\"targets\":[\"host:port\"],\"labels\":{\"job\":\"" + obsCustomJobName + "\"}}]")
+			}
+		}
 	},
 }
 
@@ -372,10 +389,69 @@ func init() {
 	bindTFETargetFlag(terraformObsDeleteCmd)
 	bindTFETargetFlag(terraformObsStatusCmd)
 
+	for _, cmd := range []*cobra.Command{terraformObsCreateCmd, terraformObsUpdateCmd} {
+		cmd.Flags().StringVar(&obsCustomJobName, "job-name", "", "Custom Prometheus job name for a non-standard TFE metrics endpoint")
+		cmd.Flags().StringVar(&obsCustomMetricsPath, "metrics-path", "/metrics", "Metrics path for the custom Prometheus job (only used when --job-name is set)")
+	}
+
 	terraformObsCmd.AddCommand(terraformObsCreateCmd)
 	terraformObsCmd.AddCommand(terraformObsUpdateCmd)
 	terraformObsCmd.AddCommand(terraformObsDeleteCmd)
 	terraformObsCmd.AddCommand(terraformObsStatusCmd)
 
 	Cmd.AddCommand(terraformObsCmd)
+}
+
+func registerCustomTFEJob(engine, jobName, metricsPath string) error {
+	targetsDir := global.ObsTargetsDir()
+	if targetsDir == "" {
+		return fmt.Errorf("could not resolve obs targets directory")
+	}
+
+	targetFile := jobName + ".json"
+	configPath := filepath.Join(filepath.Dir(targetsDir), "prometheus.yml")
+	if err := upsertPromJob(configPath, jobName, metricsPath, targetFile); err != nil {
+		return fmt.Errorf("prometheus config update failed: %w", err)
+	}
+
+	return reloadPrometheus(engine)
+}
+
+func upsertPromJob(configPath, jobName, metricsPath, targetFile string) error {
+	existing, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+
+	jobBlock := strings.Join([]string{
+		fmt.Sprintf("  - job_name: '%s'", jobName),
+		fmt.Sprintf("    metrics_path: '%s'", metricsPath),
+		"    file_sd_configs:",
+		fmt.Sprintf("      - files: ['/etc/prometheus/targets/%s']", targetFile),
+		"        refresh_interval: 15s",
+	}, "\n")
+
+	content := string(existing)
+	jobHeader := fmt.Sprintf("  - job_name: '%s'", jobName)
+	if idx := strings.Index(content, jobHeader); idx != -1 {
+		// Replace existing job block: find start, find where next job begins or EOF
+		rest := content[idx+len(jobHeader):]
+		if nextIdx := strings.Index(rest, "\n  - job_name:"); nextIdx != -1 {
+			content = content[:idx] + rest[nextIdx+1:]
+		} else {
+			content = content[:idx]
+		}
+		content = strings.TrimRight(content, "\n") + "\n"
+	}
+
+	content = strings.TrimRight(content, "\n") + "\n" + jobBlock + "\n"
+	return os.WriteFile(configPath, []byte(content), 0o644)
+}
+
+func reloadPrometheus(engine string) error {
+	out, err := exec.Command(engine, "exec", "hal-prometheus", "kill", "-HUP", "1").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("prometheus reload failed: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
 }
