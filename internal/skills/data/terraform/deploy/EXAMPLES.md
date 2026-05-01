@@ -44,7 +44,7 @@ User: I use Podman rootless and TFE health works but /app keeps looping.
 Assistant:
 
     hal terraform create
-    curl -k -I https://tfe.localhost:8443/_health_check
+    curl -k -I https://tfe.localhost:8443/api/v1/health/readiness
     curl -k -I https://tfe.localhost:8443/app
 
 Assistant: HAL deploy includes a local proxy layer that rewrites TFE canonical redirects for `:8443`, so `/app` should stop self-looping without changing host sysctl settings.

@@ -14,11 +14,16 @@ import (
 )
 
 var (
-	obsUpdate   bool
-	lokiVer     string
-	grafanaVer  string
-	promVer     string
-	promtailVer string
+	obsUpdate       bool
+	lokiVer         string
+	grafanaVer      string
+	promVer         string
+	promtailVer     string
+	promConfigPath  string
+	obsJobName      string
+	obsMetricsPath  string
+	obsMetricsToken string
+	obsScrapeConfig string
 )
 
 var deployCmd = &cobra.Command{
@@ -82,40 +87,55 @@ var deployCmd = &cobra.Command{
 		_ = os.MkdirAll(targetsDir, 0755)
 		_ = os.MkdirAll(dashboardsDir, 0755)
 
-		promConfig := strings.Join([]string{
-			"global:",
-			"  scrape_interval: 15s",
-			"scrape_configs:",
-			"  - job_name: 'vault'",
-			"    metrics_path: '/v1/sys/metrics'",
-			"    params:",
-			"      format: ['prometheus']",
-			"    file_sd_configs:",
-			"      - files: ['/etc/prometheus/targets/vault.json']",
-			"  - job_name: 'consul'",
-			"    metrics_path: '/v1/agent/metrics'",
-			"    params:",
-			"      format: ['prometheus']",
-			"    file_sd_configs:",
-			"      - files: ['/etc/prometheus/targets/consul.json']",
-			"  - job_name: 'nomad'",
-			"    metrics_path: '/v1/metrics'",
-			"    params:",
-			"      format: ['prometheus']",
-			"    file_sd_configs:",
-			"      - files: ['/etc/prometheus/targets/nomad.json']",
-			"  - job_name: 'boundary'",
-			"    metrics_path: '/v1/metrics'",
-			"    file_sd_configs:",
-			"      - files: ['/etc/prometheus/targets/boundary.json']",
-			"  - job_name: 'terraform-enterprise'",
-			"    metrics_path: '/metrics'",
-			"    params:",
-			"      format: ['prometheus']",
-			"    file_sd_configs:",
-			"      - files: ['/etc/prometheus/targets/terraform.json']",
-		}, "\n") + "\n"
-		_ = os.WriteFile(filepath.Join(configDir, "prometheus.yml"), []byte(promConfig), 0644)
+		if promConfigPath != "" {
+			src, err := os.ReadFile(promConfigPath)
+			if err != nil {
+				fmt.Printf("❌ Cannot read --prom-config-path %q: %v\n", promConfigPath, err)
+				return
+			}
+			if err := os.WriteFile(filepath.Join(configDir, "prometheus.yml"), src, 0644); err != nil {
+				fmt.Printf("❌ Failed to write prometheus.yml: %v\n", err)
+				return
+			}
+			fmt.Printf("📄 Using custom Prometheus config: %s\n", promConfigPath)
+		} else {
+
+			promConfig := strings.Join([]string{
+				"global:",
+				"  scrape_interval: 15s",
+				"scrape_configs:",
+				"  - job_name: 'vault'",
+				"    metrics_path: '/v1/sys/metrics'",
+				"    params:",
+				"      format: ['prometheus']",
+				"    file_sd_configs:",
+				"      - files: ['/etc/prometheus/targets/vault.json']",
+				"  - job_name: 'consul'",
+				"    metrics_path: '/v1/agent/metrics'",
+				"    params:",
+				"      format: ['prometheus']",
+				"    file_sd_configs:",
+				"      - files: ['/etc/prometheus/targets/consul.json']",
+				"  - job_name: 'nomad'",
+				"    metrics_path: '/v1/metrics'",
+				"    params:",
+				"      format: ['prometheus']",
+				"    file_sd_configs:",
+				"      - files: ['/etc/prometheus/targets/nomad.json']",
+				"  - job_name: 'boundary'",
+				"    metrics_path: '/v1/metrics'",
+				"    file_sd_configs:",
+				"      - files: ['/etc/prometheus/targets/boundary.json']",
+				"  - job_name: 'terraform-enterprise'",
+				"    metrics_path: '/metrics'",
+				"    params:",
+				"      format: ['prometheus']",
+				"    file_sd_configs:",
+				"      - files: ['/etc/prometheus/targets/terraform.json']",
+			}, "\n") + "\n"
+			_ = os.WriteFile(filepath.Join(configDir, "prometheus.yml"), []byte(promConfig), 0644)
+
+		} // end promConfigPath else
 
 		lokiConfig := `auth_enabled: false
 server:
@@ -222,6 +242,36 @@ providers:
 		fmt.Println("🔗 Prometheus: http://prometheus.localhost:9090")
 		fmt.Println("🔗 Loki API:   http://loki.localhost:3100/ready")
 		fmt.Println("---------------------------------------------------------")
+
+		if obsJobName != "" {
+			configPath := filepath.Join(filepath.Join(homeDir, ".hal", "obs"), "prometheus.yml")
+			targetFile := obsJobName + ".json"
+			if err := global.UpsertObsPromJob(configPath, obsJobName, obsMetricsPath, obsMetricsToken, targetFile); err != nil {
+				fmt.Printf("⚠️  Custom job registration failed: %v\n", err)
+			} else if err := global.ReloadPrometheus(engine); err != nil {
+				fmt.Printf("⚠️  Prometheus reload failed: %v\n", err)
+			} else {
+				targetPath := filepath.Join(targetsDir, targetFile)
+				placeholder := fmt.Sprintf(`[{"targets":["host:port"],"labels":{"job":%q}}]\n`, obsJobName)
+				if _, statErr := os.Stat(targetPath); os.IsNotExist(statErr) {
+					_ = os.WriteFile(targetPath, []byte(placeholder), 0o644)
+				}
+				fmt.Printf("✅ Custom Prometheus job '%s' registered (path: %s).\n", obsJobName, obsMetricsPath)
+				fmt.Printf("   📄 Edit target file: %s\n", targetPath)
+				fmt.Println("   Replace \"host:port\" with your real endpoint.")
+			}
+		}
+
+		if obsJobName == "" && obsScrapeConfig != "" {
+			configPath := filepath.Join(filepath.Join(homeDir, ".hal", "obs"), "prometheus.yml")
+			if err := global.UpsertObsPromJobFromFile(configPath, obsScrapeConfig); err != nil {
+				fmt.Printf("⚠️  Scrape config merge failed: %v\n", err)
+			} else if err := global.ReloadPrometheus(engine); err != nil {
+				fmt.Printf("⚠️  Prometheus reload failed: %v\n", err)
+			} else {
+				fmt.Printf("✅ Scrape config from %s merged into prometheus.yml.\n", obsScrapeConfig)
+			}
+		}
 	},
 }
 
@@ -293,6 +343,48 @@ var updateCmd = &cobra.Command{
 	Short: "Reconcile the PLG observability stack",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		// If only a custom job flag is passed, just edit prometheus.yml and
+		// reload — do NOT tear down or recreate the stack.
+		if obsJobName != "" || obsScrapeConfig != "" {
+			engine, err := global.DetectEngine()
+			if err != nil {
+				fmt.Printf("❌ Error: %v\n", err)
+				return
+			}
+			homeDir, _ := os.UserHomeDir()
+			configPath := filepath.Join(homeDir, ".hal", "obs", "prometheus.yml")
+			targetsDir := filepath.Join(homeDir, ".hal", "obs", "targets")
+
+			if obsJobName != "" {
+				targetFile := obsJobName + ".json"
+				if err := global.UpsertObsPromJob(configPath, obsJobName, obsMetricsPath, obsMetricsToken, targetFile); err != nil {
+					fmt.Printf("⚠️  Custom job registration failed: %v\n", err)
+					return
+				}
+				targetPath := filepath.Join(targetsDir, targetFile)
+				placeholder := fmt.Sprintf("[{\"targets\":[\"host:port\"],\"labels\":{\"job\":%q}}]\n", obsJobName)
+				if _, statErr := os.Stat(targetPath); os.IsNotExist(statErr) {
+					_ = os.WriteFile(targetPath, []byte(placeholder), 0o644)
+				}
+				fmt.Printf("✅ Custom Prometheus job '%s' registered (path: %s).\n", obsJobName, obsMetricsPath)
+				fmt.Printf("   📄 Edit target file: %s\n", targetPath)
+				fmt.Println("   Replace \"host:port\" with your real endpoint.")
+			}
+
+			if obsScrapeConfig != "" {
+				if err := global.UpsertObsPromJobFromFile(configPath, obsScrapeConfig); err != nil {
+					fmt.Printf("⚠️  Scrape config merge failed: %v\n", err)
+					return
+				}
+				fmt.Printf("✅ Scrape config from %s merged into prometheus.yml.\n", obsScrapeConfig)
+			}
+
+			if err := global.ReloadPrometheus(engine); err != nil {
+				fmt.Printf("⚠️  Prometheus reload failed: %v\n", err)
+			}
+			return
+		}
+
 		obsUpdate = true
 		deployCmd.Run(cmd, args)
 	},
@@ -306,6 +398,11 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	cmd.Flags().StringVar(&grafanaVer, "grafana-version", "main", "Tag for the grafana/grafana image")
 	cmd.Flags().StringVar(&promVer, "prom-version", "main", "Tag for the prom/prometheus image")
 	cmd.Flags().StringVar(&promtailVer, "promtail-version", "3.6", "Tag for the grafana/promtail image")
+	cmd.Flags().StringVar(&promConfigPath, "prom-config-path", "", "Path to a custom prometheus.yml; skips the generated config when set")
+	cmd.Flags().StringVar(&obsJobName, "job-name", "", "Register a custom Prometheus scrape job with this name (no local TFE required)")
+	cmd.Flags().StringVar(&obsMetricsPath, "metrics-path", "/metrics", "Metrics path for the custom job (only used when --job-name is set)")
+	cmd.Flags().StringVar(&obsMetricsToken, "metrics-token", "", "Bearer token for authenticated metrics endpoints (only used when --job-name is set)")
+	cmd.Flags().StringVar(&obsScrapeConfig, "scrape-config-path", "", "Path to a JSON/YAML file with a single scrape job config to merge into prometheus.yml")
 }
 
 func init() {

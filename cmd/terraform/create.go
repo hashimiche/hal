@@ -88,7 +88,7 @@ var deployCmd = &cobra.Command{
 
 		// Keep an unprivileged HTTPS listener for rootless Podman.
 		tfeHostname := "tfe.localhost"
-		healthURL := "https://tfe.localhost:8443/_health_check"
+		healthURL := "https://tfe.localhost:8443/api/v1/health/readiness"
 		uiURL := "https://tfe.localhost:8443"
 		// Stable internal proxy IP on hal-net used to route in-cluster tfe.localhost:443 traffic.
 		proxyInternalIP := "10.89.3.54"
@@ -221,7 +221,7 @@ var deployCmd = &cobra.Command{
 			"hal-tfe",
 			"sh",
 			"-lc",
-			"cp /etc/ssl/tfe/cert.pem /usr/local/share/ca-certificates/tfe-localhost.crt && update-ca-certificates >/dev/null 2>&1 && supervisorctl restart tfe:archivist >/dev/null 2>&1",
+			"cp /etc/ssl/tfe/cert.pem /usr/local/share/ca-certificates/tfe-localhost.crt && update-ca-certificates 2>&1",
 		).CombinedOutput(); trustErr != nil {
 			fmt.Printf("⚠️  Could not refresh TFE trust store automatically: %s\n", strings.TrimSpace(string(trustOut)))
 		}
@@ -237,7 +237,7 @@ var deployCmd = &cobra.Command{
 			"hal-tfe",
 			"sh",
 			"-lc",
-			"sed -i 's/readonly = \"true\"/readonly = \"false\"/' /run/terraform-enterprise/task-worker/config.hcl && supervisorctl restart tfe:task-worker >/dev/null 2>&1",
+			"test -f /run/terraform-enterprise/task-worker/config.hcl && sed -i 's/readonly = \"true\"/readonly = \"false\"/' /run/terraform-enterprise/task-worker/config.hcl 2>&1 || true",
 		).CombinedOutput(); taskWorkerErr != nil {
 			fmt.Printf("⚠️  Could not patch TFE task-worker cache mount automatically: %s\n", strings.TrimSpace(string(taskWorkerOut)))
 		}
@@ -300,7 +300,7 @@ http {
 			return
 		}
 
-		fmt.Println("\n✅ Terraform Enterprise 1.x is UP!")
+		fmt.Printf("\n✅ Terraform Enterprise %s is UP!\n", tfeVersion)
 		global.RefreshHalStatus(engine)
 		fmt.Println("---------------------------------------------------------")
 		fmt.Printf("🔗 UI Address:   %s\n", uiURL)

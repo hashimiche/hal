@@ -72,17 +72,38 @@ func TFECreateInitialAdmin(baseURL, iactToken, username, email, password string)
 		return "", nil, 0, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(buf))
+	// TFE 2.x returns a 301 on the IACT endpoint.  Go's http.Client silently downgrades
+	// POST→GET on 301/302, losing the request body.  The hal-tfe-proxy (nginx) already
+	// rewrites the Location port back to :8443 via proxy_redirect, so we only need to
+	// stop Go from auto-following and re-POST to whatever Location the proxy hands back.
+	client := tfeHTTPClient()
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	doPost := func(target string) (*http.Response, error) {
+		req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(buf))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		return client.Do(req)
+	}
+
+	resp, err := doPost(endpoint)
 	if err != nil {
 		return "", nil, 0, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
 
-	client := tfeHTTPClient()
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", nil, 0, err
+	if resp.StatusCode == 301 || resp.StatusCode == 302 || resp.StatusCode == 307 || resp.StatusCode == 308 {
+		resp.Body.Close()
+		if loc := resp.Header.Get("Location"); loc != "" {
+			resp, err = doPost(loc)
+			if err != nil {
+				return "", nil, 0, err
+			}
+		}
 	}
 	defer resp.Body.Close()
 

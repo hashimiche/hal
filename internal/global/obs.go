@@ -159,6 +159,181 @@ func RemoveObsPromTargetFile(product string) error {
 	return nil
 }
 
+// UpsertObsPromJob adds or replaces a named scrape job in prometheus.yml.
+// targetFile is the bare filename (e.g. "hcpt.json") that will be resolved
+// inside the container's /etc/prometheus/targets/ directory.
+// bearerToken is optional; when non-empty a bearer_token line is added to the job.
+func UpsertObsPromJob(configPath, jobName, metricsPath, bearerToken, targetFile string) error {
+	existing, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+
+	lines := []string{
+		fmt.Sprintf("  - job_name: '%s'", jobName),
+		fmt.Sprintf("    metrics_path: '%s'", metricsPath),
+	}
+	if strings.TrimSpace(bearerToken) != "" {
+		lines = append(lines, fmt.Sprintf("    bearer_token: '%s'", strings.TrimSpace(bearerToken)))
+	}
+	lines = append(lines,
+		"    file_sd_configs:",
+		fmt.Sprintf("      - files: ['/etc/prometheus/targets/%s']", targetFile),
+		"        refresh_interval: 15s",
+	)
+	jobBlock := strings.Join(lines, "\n")
+
+	content := string(existing)
+	jobHeader := fmt.Sprintf("  - job_name: '%s'", jobName)
+	if idx := strings.Index(content, jobHeader); idx != -1 {
+		rest := content[idx+len(jobHeader):]
+		if nextIdx := strings.Index(rest, "\n  - job_name:"); nextIdx != -1 {
+			content = content[:idx] + rest[nextIdx+1:]
+		} else {
+			content = content[:idx]
+		}
+		content = strings.TrimRight(content, "\n") + "\n"
+	}
+
+	content = strings.TrimRight(content, "\n") + "\n" + jobBlock + "\n"
+	return os.WriteFile(configPath, []byte(content), 0o644)
+}
+
+// ReloadPrometheus sends SIGHUP to the hal-prometheus container to apply
+// config changes without restarting the container.
+func ReloadPrometheus(engine string) error {
+	out, err := exec.Command(engine, "exec", "hal-prometheus", "kill", "-HUP", "1").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("prometheus reload failed: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// UpsertObsPromJobFromFile reads a JSON file containing either a single scrape
+// job object or a {"scrape_configs":[...]} wrapper and upserts the first job
+// entry into the HAL prometheus.yml.  This handles arbitrary fields (scheme,
+// http_headers, static_configs, etc.) without HAL needing to know about each
+// one — the raw job block is injected verbatim.
+func UpsertObsPromJobFromFile(configPath, jobFilePath string) error {
+	raw, err := os.ReadFile(jobFilePath)
+	if err != nil {
+		return fmt.Errorf("cannot read scrape config file: %w", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return fmt.Errorf("invalid scrape config file (expected JSON): %w", err)
+	}
+
+	// Support both bare job object and {"scrape_configs":[...]} wrapper.
+	jobMap := parsed
+	if sc, ok := parsed["scrape_configs"]; ok {
+		list, ok := sc.([]interface{})
+		if !ok || len(list) == 0 {
+			return fmt.Errorf("scrape_configs must be a non-empty array")
+		}
+		jobMap, ok = list[0].(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("first entry in scrape_configs is not a valid job object")
+		}
+	}
+
+	jobName, _ := jobMap["job_name"].(string)
+	if strings.TrimSpace(jobName) == "" {
+		return fmt.Errorf("scrape config must contain a non-empty job_name")
+	}
+
+	// Render the job map as indented YAML lines (no external dependency).
+	jobLines := mapToYAMLLines(jobMap, 4)
+	// First line gets the list marker; it's already indented at 4 spaces from mapToYAMLLines.
+	// Convert to a properly indented list item under scrape_configs (2-space + "- ").
+	var sb strings.Builder
+	for i, line := range jobLines {
+		stripped := strings.TrimLeft(line, " ")
+		depth := len(line) - len(stripped)
+		if i == 0 {
+			sb.WriteString("  - " + stripped + "\n")
+		} else {
+			sb.WriteString(strings.Repeat(" ", depth) + stripped + "\n")
+		}
+	}
+	jobBlock := strings.TrimRight(sb.String(), "\n")
+
+	existing, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	content := string(existing)
+
+	// Remove existing block for this job name (all quoting variants).
+	for _, variant := range []string{
+		fmt.Sprintf("  - job_name: %s", jobName),
+		fmt.Sprintf("  - job_name: '%s'", jobName),
+		fmt.Sprintf(`  - job_name: "%s"`, jobName),
+	} {
+		if idx := strings.Index(content, variant); idx != -1 {
+			rest := content[idx+len(variant):]
+			if nextIdx := strings.Index(rest, "\n  - job_name:"); nextIdx != -1 {
+				content = content[:idx] + rest[nextIdx+1:]
+			} else {
+				content = content[:idx]
+			}
+			content = strings.TrimRight(content, "\n") + "\n"
+			break
+		}
+	}
+
+	content = strings.TrimRight(content, "\n") + "\n" + jobBlock + "\n"
+	return os.WriteFile(configPath, []byte(content), 0o644)
+}
+
+// mapToYAMLLines renders a map[string]interface{} as YAML lines with the given
+// base indentation.  Handles strings, numbers, bools, slices, and nested maps.
+func mapToYAMLLines(m map[string]interface{}, indent int) []string {
+	pad := strings.Repeat(" ", indent)
+	var lines []string
+	for k, v := range m {
+		lines = append(lines, mapValueToYAMLLines(k, v, pad, indent)...)
+	}
+	return lines
+}
+
+func mapValueToYAMLLines(key string, v interface{}, pad string, indent int) []string {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		lines := []string{pad + key + ":"}
+		for k2, v2 := range val {
+			lines = append(lines, mapValueToYAMLLines(k2, v2, pad+"  ", indent+2)...)
+		}
+		return lines
+	case []interface{}:
+		lines := []string{pad + key + ":"}
+		for _, item := range val {
+			switch iv := item.(type) {
+			case map[string]interface{}:
+				first := true
+				for k2, v2 := range iv {
+					if first {
+						sub := mapValueToYAMLLines(k2, v2, pad+"  ", indent+2)
+						sub[0] = pad + "- " + strings.TrimLeft(sub[0], " ")
+						lines = append(lines, sub...)
+						first = false
+					} else {
+						lines = append(lines, mapValueToYAMLLines(k2, v2, pad+"  ", indent+2)...)
+					}
+				}
+			default:
+				lines = append(lines, fmt.Sprintf("%s- %v", pad, iv))
+			}
+		}
+		return lines
+	case string:
+		return []string{fmt.Sprintf("%s%s: %q", pad, key, val)}
+	default:
+		return []string{fmt.Sprintf("%s%s: %v", pad, key, val)}
+	}
+}
+
 func EnsureGrafanaDashboardIfKnown(product string) error {
 	dashboardIDByProduct := map[string]int{
 		"terraform": 15630,
