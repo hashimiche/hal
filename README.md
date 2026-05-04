@@ -290,16 +290,64 @@ hal terraform obs delete --target primary
 
 ### Standalone observability stack (`hal obs`)
 
+Deploys a PLG stack (Prometheus, Loki, Grafana, Promtail) on `hal-net` with pre-wired datasources and a Vault audit log scraper.
+
 ```bash
+hal obs create                  # deploy with default image tags
 hal obs create \
   --loki-version 3.7 \
   --grafana-version main \
   --prom-version main \
   --promtail-version 3.6
 hal obs status
-hal obs update
+hal obs update                  # full stack reconcile (tear down + redeploy)
 hal obs delete
 ```
+
+**Stack flags**
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--loki-version` | `3.7` | Tag for `grafana/loki` |
+| `--grafana-version` | `main` | Tag for `grafana/grafana` |
+| `--prom-version` | `main` | Tag for `prom/prometheus` |
+| `--promtail-version` | `3.6` | Tag for `grafana/promtail` |
+| `--prom-config-path` | _(generated)_ | Path to a hand-crafted `prometheus.yml`; skips the generated config entirely |
+
+#### Adding a custom metrics endpoint
+
+Two ways to register a custom Prometheus scrape job — both work on `create` and `update` without touching or restarting the rest of the stack:
+
+**Option A — inline flags** (`--job-name`): HAL writes the job block into `prometheus.yml` and creates a target file placeholder at `~/.hal/obs/targets/<job-name>.json`. Edit that file to point at your real endpoint.
+
+```bash
+# Register a job, then edit the target file with the real host:port
+hal obs update \
+  --job-name my-app \
+  --metrics-path /metrics \
+  --metrics-token eyJ...   # optional bearer token
+
+# Target file written to: ~/.hal/obs/targets/my-app.json
+# Default content: [{"targets":["host:port"],"labels":{"job":"my-app"}}]
+```
+
+**Option B — JSON scrape config file** (`--scrape-config-path`): Provide a JSON file with a full job definition. HAL merges it verbatim into `prometheus.yml`, preserving any field Prometheus supports (scheme, TLS config, http_headers, static_configs, etc.).
+
+```bash
+# my-job.json — bare job object:
+# {
+#   "job_name": "hcpt",
+#   "metrics_path": "/v1/sys/metrics",
+#   "params": {"format": ["prometheus"]},
+#   "static_configs": [{"targets": ["hcpt.example.com:8200"]}]
+# }
+
+hal obs update --scrape-config-path ./my-job.json
+
+# Also accepted: {"scrape_configs": [{...}]} wrapper format
+```
+
+After either option, Prometheus receives a live `SIGHUP` reload — no container restart needed.
 
 ---
 

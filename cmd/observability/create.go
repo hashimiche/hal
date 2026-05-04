@@ -236,7 +236,7 @@ providers:
 
 		fmt.Println()
 		fmt.Println("✅ Observability Stack Deployed Successfully!")
-		global.RefreshHalStatus(engine)
+		global.RefreshHalHealth(engine)
 		fmt.Println("---------------------------------------------------------")
 		fmt.Println("🔗 Grafana:    http://grafana.localhost:3000 (Auto-logged in as Admin)")
 		fmt.Println("🔗 Prometheus: http://prometheus.localhost:9090")

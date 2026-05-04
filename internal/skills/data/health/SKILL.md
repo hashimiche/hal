@@ -25,8 +25,8 @@ hal health delete    # remove the hal-health container
 
 - The `hal-health` container reuses `ghcr.io/hashimiche/hal-mcp:latest` with `--entrypoint /usr/local/bin/hal` and `health _serve` as args.
 - The snapshot shape: `{ timestamp, engine, products: [{ product, state, health, reason, endpoint, containers, features: [...] }] }`.
-- The container is a no-op host — it reads the `HAL_STATUS_DATA` env var injected at start time and never touches the container engine socket.
-- `global.RefreshHalStatus` is called automatically after all product `create`/`delete` commands — manual `hal health update` is only needed for out-of-band changes.
+- The container is a no-op host — it reads the `HAL_HEALTH_DATA` env var injected at start time and never touches the container engine socket.
+- `global.RefreshHalHealth` is called automatically after all product `create`/`delete` commands — manual `hal health update` is only needed for out-of-band changes.
 - `hal health` is a no-op if `hal-net` does not exist or `ghcr.io/hashimiche/hal-mcp:latest` is not present locally.
 
 ## Lab Assumptions

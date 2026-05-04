@@ -375,7 +375,7 @@ func bootstrapBoundarySSH(targetIP string) error {
 
 	fmt.Println("✅ Boundary SSH target successfully bootstrapped!")
 	if eng, err := global.DetectEngine(); err == nil {
-		global.RefreshHalStatus(eng)
+		global.RefreshHalHealth(eng)
 	}
 	fmt.Println("\n💡 Test your access:")
 	fmt.Println("   1. Log in to UI (http://boundary.localhost:9200)")

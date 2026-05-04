@@ -234,8 +234,8 @@ var vaultDatabaseCmd = &cobra.Command{
 				"db_name":               containerName,
 				"creation_statements":   createStmt,
 				"revocation_statements": "DROP USER IF EXISTS '{{name}}'@'%';",
-				"default_ttl":           "1h",
-				"max_ttl":               "24h",
+				"default_ttl":           "2m",
+				"max_ttl":               "2h",
 			})
 			if err != nil {
 				fmt.Printf("❌ Failed to create Vault role: %v\n", err)
@@ -256,7 +256,7 @@ var vaultDatabaseCmd = &cobra.Command{
 			password := secret.Data["password"].(string)
 
 			fmt.Println("\n✅ Enterprise Dynamic Database Credentials Generated!")
-			global.RefreshHalStatus(engine)
+			global.RefreshHalHealth(engine)
 			fmt.Println("---------------------------------------------------------")
 			fmt.Printf("🔗 Database Host: %s:%s\n", hostAlias, containerPort)
 			fmt.Println("👤 JIT Username:  " + username)

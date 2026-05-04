@@ -227,7 +227,7 @@ var vaultK8sCmd = &cobra.Command{
 				_ = exec.Command("kind", "delete", "cluster").Run()
 
 				fmt.Println("✅ Kubernetes environment destroyed successfully!")
-				global.RefreshHalStatus(engine)
+				global.RefreshHalHealth(engine)
 			}
 
 			if k8sDisable && !global.DryRun {
@@ -769,7 +769,7 @@ spec:
 			_ = exec.Command("kubectl", "rollout", "status", "deployment/hal-web-proxy", "-n", "app1", "--timeout=180s").Run()
 
 			fmt.Println("\n✅ Kubernetes Secret Zero Environment Ready!")
-			global.RefreshHalStatus(engine)
+			global.RefreshHalHealth(engine)
 			fmt.Println("---------------------------------------------------------")
 			fmt.Printf("🌐 [%s]\n", modeTitle)
 			fmt.Println("   Endpoint: http://web.localhost:8088")
