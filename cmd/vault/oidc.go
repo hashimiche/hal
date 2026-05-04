@@ -134,7 +134,7 @@ var vaultOidcCmd = &cobra.Command{
 
 				if oidcDisable {
 					fmt.Println("✅ OIDC integration, KV engine, and identity data successfully removed!")
-					global.RefreshHalStatus(engine)
+					global.RefreshHalHealth(engine)
 				}
 			}
 
@@ -320,7 +320,7 @@ path "kv-oidc/metadata/team1" { capabilities = ["read", "list"] }
 			setupExternalGroup(client, "user-ro", oidcAccessor, []string{"user-ro"})
 
 			fmt.Println("\n✅ Vault OIDC & KV Integration Complete!")
-			global.RefreshHalStatus(engine)
+			global.RefreshHalHealth(engine)
 			fmt.Println("---------------------------------------------------------")
 			fmt.Println("🔗 UI Login:    http://vault.localhost:8200")
 			fmt.Println("                (Select 'OIDC' and leave the role blank)")

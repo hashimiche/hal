@@ -9,9 +9,9 @@ import (
 	"time"
 )
 
-// HalStatusImage is the container image used for hal-status.
+// HalHealthImage is the container image used for hal-health.
 // Reuses the hal-mcp image since it already embeds the hal binary.
-const HalStatusImage = "ghcr.io/hashimiche/hal-mcp:latest"
+const HalHealthImage = "ghcr.io/hashimiche/hal-mcp:latest"
 
 // ProductFeature represents a single feature of a product.
 type ProductFeature struct {
@@ -32,7 +32,7 @@ type ProductStatus struct {
 	Features   []ProductFeature `json:"features"`
 }
 
-// StatusSnapshot is the full runtime snapshot written into hal-status.
+// StatusSnapshot is the full runtime snapshot served by the hal-health container.
 type StatusSnapshot struct {
 	Timestamp string          `json:"timestamp"`
 	Engine    string          `json:"engine"`
@@ -101,19 +101,19 @@ func BuildStatusSnapshot(engine string) ([]byte, error) {
 	return json.Marshal(snap)
 }
 
-// RefreshHalStatus (re)creates the hal-status container with a fresh snapshot.
+// RefreshHalHealth (re)creates the hal-health container with a fresh snapshot.
 // It is safe to call from any product create/update/delete — it is a no-op when
 // hal-net does not exist yet (hal-plus has not been deployed) and silently skips
 // when the hal-mcp image is not present locally.
-func RefreshHalStatus(engine string) {
+func RefreshHalHealth(engine string) {
 	// Only run when hal-net exists — avoids creating it just for the status container.
 	netOut, _ := exec.Command(engine, "network", "ls", "--format", "{{.Name}}").Output()
 	if !strings.Contains(string(netOut), "hal-net") {
 		return
 	}
 
-	// Only run when the image is available — hal-status is optional.
-	imgOut, _ := exec.Command(engine, "images", "-q", HalStatusImage).Output()
+	// Only run when the image is available — hal-health is optional.
+	imgOut, _ := exec.Command(engine, "images", "-q", HalHealthImage).Output()
 	if strings.TrimSpace(string(imgOut)) == "" {
 		return
 	}
@@ -121,37 +121,37 @@ func RefreshHalStatus(engine string) {
 	data, err := BuildStatusSnapshot(engine)
 	if err != nil {
 		if Debug {
-			fmt.Printf("[DEBUG] hal-status: snapshot build failed: %v\n", err)
+			fmt.Printf("[DEBUG] hal-health: snapshot build failed: %v\n", err)
 		}
 		return
 	}
 
 	// Remove old container (ignore errors) and start fresh with the new snapshot.
-	_ = exec.Command(engine, "rm", "-f", HalStatusContainerName).Run()
+	_ = exec.Command(engine, "rm", "-f", HalHealthContainerName).Run()
 
 	args := []string{
 		"run", "-d",
-		"--name", HalStatusContainerName,
+		"--name", HalHealthContainerName,
 		"--network", "hal-net",
 		"--entrypoint", "/usr/local/bin/hal",
-		"-e", fmt.Sprintf("HAL_STATUS_DATA=%s", string(data)),
-		"-e", fmt.Sprintf("HAL_STATUS_PORT=%d", HalStatusPort),
-		HalStatusImage,
+		"-e", fmt.Sprintf("HAL_HEALTH_DATA=%s", string(data)),
+		"-e", fmt.Sprintf("HAL_HEALTH_PORT=%d", HalHealthPort),
+		HalHealthImage,
 		"health", "_serve",
 	}
 	if out, err := exec.Command(engine, args...).CombinedOutput(); err != nil {
 		if Debug {
-			fmt.Printf("[DEBUG] hal-status: container start failed: %v\n%s\n", err, string(out))
+			fmt.Printf("[DEBUG] hal-health: container start failed: %v\n%s\n", err, string(out))
 		}
 	} else if Debug {
-		fmt.Printf("[DEBUG] hal-status: container refreshed (snapshot ts=%s)\n",
+		fmt.Printf("[DEBUG] hal-health: container refreshed (snapshot ts=%s)\n",
 			time.Now().UTC().Format(time.RFC3339))
 	}
 }
 
-// RemoveHalStatus stops and removes the hal-status container.
-func RemoveHalStatus(engine string) {
-	_ = exec.Command(engine, "rm", "-f", HalStatusContainerName).Run()
+// RemoveHalHealth stops and removes the hal-health container.
+func RemoveHalHealth(engine string) {
+	_ = exec.Command(engine, "rm", "-f", HalHealthContainerName).Run()
 }
 
 func buildProductStatus(engine, product string, containers []string, features map[string]string, endpoint string) ProductStatus {

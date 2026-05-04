@@ -125,7 +125,7 @@ var createCmd = &cobra.Command{
 		}
 
 		fmt.Println("✅ HAL Plus runtime created successfully.")
-		global.RefreshHalStatus(engine)
+		global.RefreshHalHealth(engine)
 		fmt.Printf("🐳 Engine:       %s\n", engine)
 		fmt.Printf("🐳 HAL Plus:     %s\n", plusImage)
 		fmt.Printf("🐳 HAL MCP:      %s\n", mcpImage)

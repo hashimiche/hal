@@ -1,4 +1,4 @@
-package halhealth
+package health
 
 import (
 	"encoding/json"
@@ -17,8 +17,8 @@ import (
 // Cmd is the root cobra command for `hal health`.
 var Cmd = &cobra.Command{
 	Use:   "health",
-	Short: "Manage the hal-status runtime container",
-	Long:  `Create, update, or delete the hal-status container that serves live ecosystem state to hal-plus and other consumers.`,
+	Short: "Manage the hal-health runtime container",
+	Long:  `Create, update, or delete the hal-health container that serves live ecosystem state to hal-plus and other consumers.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
@@ -26,7 +26,7 @@ var Cmd = &cobra.Command{
 
 var createCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create (or recreate) the hal-status container",
+	Short: "Create (or recreate) the hal-health container",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
@@ -36,19 +36,19 @@ var createCmd = &cobra.Command{
 		}
 		if global.DryRun {
 			fmt.Printf("[DRY RUN] Would create %s container on hal-net (port %d)\n",
-				global.HalStatusContainerName, global.HalStatusPort)
+				global.HalHealthContainerName, global.HalHealthPort)
 			return
 		}
 		global.EnsureNetwork(engine)
-		global.RefreshHalStatus(engine)
-		fmt.Println("✅ hal-status container created.")
-		fmt.Printf("   API: http://hal-status:%d/api/status (from hal-net)\n", global.HalStatusPort)
+		global.RefreshHalHealth(engine)
+		fmt.Println("✅ hal-health container created.")
+		fmt.Printf("   API: http://hal-health:%d/api/status (from hal-net)\n", global.HalHealthPort)
 	},
 }
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Refresh the hal-status snapshot (re-inspect the ecosystem and replace the container)",
+	Short: "Refresh the hal-health snapshot (re-inspect the ecosystem and replace the container)",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
@@ -57,17 +57,17 @@ var updateCmd = &cobra.Command{
 			return
 		}
 		if global.DryRun {
-			fmt.Printf("[DRY RUN] Would refresh %s snapshot\n", global.HalStatusContainerName)
+			fmt.Printf("[DRY RUN] Would refresh %s snapshot\n", global.HalHealthContainerName)
 			return
 		}
-		global.RefreshHalStatus(engine)
-		fmt.Println("✅ hal-status snapshot refreshed.")
+		global.RefreshHalHealth(engine)
+		fmt.Println("✅ hal-health snapshot refreshed.")
 	},
 }
 
 var deleteCmd = &cobra.Command{
 	Use:   "delete",
-	Short: "Remove the hal-status container",
+	Short: "Remove the hal-health container",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
@@ -76,36 +76,36 @@ var deleteCmd = &cobra.Command{
 			return
 		}
 		if global.DryRun {
-			fmt.Printf("[DRY RUN] Would remove container %s\n", global.HalStatusContainerName)
+			fmt.Printf("[DRY RUN] Would remove container %s\n", global.HalHealthContainerName)
 			return
 		}
-		global.RemoveHalStatus(engine)
-		fmt.Printf("✅ %s removed.\n", global.HalStatusContainerName)
+		global.RemoveHalHealth(engine)
+		fmt.Printf("✅ %s removed.\n", global.HalHealthContainerName)
 	},
 }
 
 // serveCmd is hidden — called by the container entrypoint, not the user.
-// It reads HAL_STATUS_DATA and serves a minimal JSON + HTML status API.
+// It reads HAL_HEALTH_DATA and serves a minimal JSON + HTML health API.
 var serveCmd = &cobra.Command{
 	Use:    "_serve",
-	Short:  "Internal: serve HAL_STATUS_DATA over HTTP (used by the hal-status container)",
+	Short:  "Internal: serve HAL_HEALTH_DATA over HTTP (used by the hal-health container)",
 	Hidden: true,
 	Args:   cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		raw := os.Getenv("HAL_STATUS_DATA")
+		raw := os.Getenv("HAL_HEALTH_DATA")
 		if raw == "" {
-			fmt.Fprintln(os.Stderr, "HAL_STATUS_DATA not set")
+			fmt.Fprintln(os.Stderr, "HAL_HEALTH_DATA not set")
 			os.Exit(1)
 		}
 
 		var snap global.StatusSnapshot
 		if err := json.Unmarshal([]byte(raw), &snap); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to parse HAL_STATUS_DATA: %v\n", err)
+			fmt.Fprintf(os.Stderr, "failed to parse HAL_HEALTH_DATA: %v\n", err)
 			os.Exit(1)
 		}
 
-		port := global.HalStatusPort
-		if v := os.Getenv("HAL_STATUS_PORT"); v != "" {
+		port := global.HalHealthPort
+		if v := os.Getenv("HAL_HEALTH_PORT"); v != "" {
 			if p, err := strconv.Atoi(v); err == nil {
 				port = p
 			}
@@ -159,11 +159,11 @@ var serveCmd = &cobra.Command{
 				return
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprintf(w, htmlStatusPage(snap))
+			fmt.Fprint(w, htmlHealthPage(snap))
 		})
 
 		addr := fmt.Sprintf(":%d", port)
-		fmt.Printf("hal-status serving on %s (snapshot: %s)\n", addr, snap.Timestamp)
+		fmt.Printf("hal-health serving on %s (snapshot: %s)\n", addr, snap.Timestamp)
 		srv := &http.Server{
 			Addr:         addr,
 			Handler:      mux,
@@ -177,7 +177,7 @@ var serveCmd = &cobra.Command{
 	},
 }
 
-func htmlStatusPage(snap global.StatusSnapshot) string {
+func htmlHealthPage(snap global.StatusSnapshot) string {
 	var rows strings.Builder
 	for _, p := range snap.Products {
 		stateColor := "#e74c3c"
@@ -205,14 +205,14 @@ func htmlStatusPage(snap global.StatusSnapshot) string {
 	}
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>HAL Status</title>
+<head><meta charset="UTF-8"><title>HAL Health</title>
 <style>body{font-family:monospace;background:#111;color:#eee;padding:24px}
 table{border-collapse:collapse;width:100%%}
 th{text-align:left;padding:8px 12px;border-bottom:1px solid #333;color:#aaa;font-size:0.8em;text-transform:uppercase}
 tr:hover{background:#1a1a1a}a{color:#7c3aed}</style>
 </head>
 <body>
-<h2 style="color:#7c3aed">HAL Ecosystem Status</h2>
+<h2 style="color:#7c3aed">HAL Ecosystem Health</h2>
 <p style="color:#aaa;font-size:0.85em">Snapshot: %s &nbsp;·&nbsp; Engine: %s</p>
 <table>
 <thead><tr><th>Product</th><th>State</th><th>Endpoint</th><th>Features</th></tr></thead>

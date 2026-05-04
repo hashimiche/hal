@@ -162,7 +162,7 @@ var deployCmd = &cobra.Command{
 		}
 
 		fmt.Println("✅ Vault is up and running in Dev mode!")
-		global.RefreshHalStatus(engine)
+		global.RefreshHalHealth(engine)
 		fmt.Printf("   🏗️  Edition: %s\n", strings.ToUpper(vaultEdition))
 		fmt.Println("   🔗 UI Address: http://vault.localhost:8200")
 		fmt.Println("   🔑 Root Token: root")

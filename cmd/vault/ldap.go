@@ -138,7 +138,7 @@ var vaultLdapCmd = &cobra.Command{
 
 				if ldapDisable {
 					fmt.Println("✅ LDAP environment destroyed successfully!")
-					global.RefreshHalStatus(engine)
+					global.RefreshHalHealth(engine)
 				}
 			}
 
@@ -283,7 +283,7 @@ userPassword: {{.Password}}`,
 			_, _ = client.Logical().Write("ldap/rotate-root", map[string]interface{}{})
 
 			fmt.Println("\n✅ LDAP Infrastructure & Vault Integration Complete!")
-			global.RefreshHalStatus(engine)
+			global.RefreshHalHealth(engine)
 			fmt.Println("---------------------------------------------------------")
 			fmt.Println("🔗 phpLDAPadmin UI: https://phpldapadmin.localhost:8082")
 			fmt.Println("   Login DN: cn=admin,dc=hal,dc=local")
