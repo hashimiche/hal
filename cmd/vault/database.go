@@ -229,10 +229,11 @@ var vaultDatabaseCmd = &cobra.Command{
 			// 3. Create the Role (Updated for DBA to match Boundary integration)
 			fmt.Println("⚙️  Injecting Dynamic SQL Creation Statements...")
 			_, err = client.Logical().Write("database/roles/dba-role", map[string]interface{}{
-				"db_name":             containerName,
-				"creation_statements": createStmt,
-				"default_ttl":         "1h",
-				"max_ttl":             "24h",
+				"db_name":               containerName,
+				"creation_statements":   createStmt,
+				"revocation_statements": "DROP USER IF EXISTS '{{name}}'@'%';",
+				"default_ttl":           "2m",
+				"max_ttl":               "2h",
 			})
 			if err != nil {
 				fmt.Printf("❌ Failed to create Vault role: %v\n", err)
