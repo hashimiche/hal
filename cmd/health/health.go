@@ -159,7 +159,7 @@ var serveCmd = &cobra.Command{
 				return
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprintf(w, htmlHealthPage(snap))
+			fmt.Fprint(w, htmlHealthPage(snap))
 		})
 
 		addr := fmt.Sprintf(":%d", port)
