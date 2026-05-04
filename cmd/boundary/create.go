@@ -106,7 +106,7 @@ var deployCmd = &cobra.Command{
 
 		fmt.Println()
 		fmt.Println("✅ Boundary Controller & Worker are up!")
-		global.RefreshHalStatus(engine)
+		global.RefreshHalHealth(engine)
 		fmt.Println("---------------------------------------------------------")
 		fmt.Println("   🔗 UI Address: http://boundary.localhost:9200")
 		fmt.Println("   👤 Login:      admin / password")

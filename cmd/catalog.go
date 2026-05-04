@@ -46,7 +46,7 @@ var catalogCmd = &cobra.Command{
 		fmt.Println("🔧 RUNTIME UTILITIES")
 		fmt.Println("   - capacity  Engine capacity view + per-stack footprint estimates")
 		fmt.Println("   - status    Global ecosystem status snapshot across all products")
-		fmt.Println("   - health    hal-status sidecar lifecycle (create / update / delete)")
+		fmt.Println("   - health    hal-health sidecar lifecycle (create / update / delete)")
 		fmt.Println("   - delete    Tear down all HAL infrastructure globally")
 
 		fmt.Println()

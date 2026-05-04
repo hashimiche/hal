@@ -301,7 +301,7 @@ http {
 		}
 
 		fmt.Printf("\n✅ Terraform Enterprise %s is UP!\n", tfeVersion)
-		global.RefreshHalStatus(engine)
+		global.RefreshHalHealth(engine)
 		fmt.Println("---------------------------------------------------------")
 		fmt.Printf("🔗 UI Address:   %s\n", uiURL)
 		fmt.Printf("🗂️  MinIO API:    http://127.0.0.1:%d\n", minioAPIPort)

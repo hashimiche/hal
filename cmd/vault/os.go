@@ -122,7 +122,7 @@ var vaultOSCmd = &cobra.Command{
 
 				if osDisable {
 					fmt.Println("✅ OS secret engine environment destroyed successfully!")
-					global.RefreshHalStatus(engine)
+					global.RefreshHalHealth(engine)
 				}
 			}
 
@@ -348,7 +348,7 @@ var vaultOSCmd = &cobra.Command{
 			password := secret.Data["password"].(string)
 
 			fmt.Println("\n✅ Vault OS Secret Engine Integration Complete!")
-			global.RefreshHalStatus(engine)
+			global.RefreshHalHealth(engine)
 			fmt.Println("---------------------------------------------------------")
 			fmt.Printf("🔗 VM Address  : %s\n", vmIP)
 			fmt.Printf("👤 Users       : mgmt-user (parent), demouser, appadmin\n")

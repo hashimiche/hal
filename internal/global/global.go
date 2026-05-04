@@ -14,8 +14,8 @@ var (
 )
 
 const (
-	HalStatusContainerName = "hal-status"
-	HalStatusPort          = 9001
+	HalHealthContainerName = "hal-health"
+	HalHealthPort          = 9001
 )
 
 func DetectEngine() (string, error) {
