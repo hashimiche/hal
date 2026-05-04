@@ -1,4 +1,4 @@
-package halhealth
+package health
 
 import (
 	"encoding/json"
