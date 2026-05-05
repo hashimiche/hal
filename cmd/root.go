@@ -10,7 +10,6 @@ import (
 	"hal/cmd/mcp"
 	"hal/cmd/nomad"
 	"hal/cmd/observability"
-	"hal/cmd/pki"
 	"hal/cmd/plus"
 	"hal/cmd/terraform"
 	"hal/cmd/vault"
@@ -47,7 +46,6 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&global.DryRun, "dry-run", "", false, "Simulate the execution without changing state")
 
 	rootCmd.AddCommand(vault.Cmd)
-	rootCmd.AddCommand(pki.Cmd)
 	rootCmd.AddCommand(nomad.Cmd)
 	rootCmd.AddCommand(boundary.Cmd)
 	rootCmd.AddCommand(consul.Cmd)

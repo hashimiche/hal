@@ -150,6 +150,12 @@ hal vault k8s enable \
 hal vault k8s update
 hal vault k8s disable
 
+# PKI secrets engine (Root CA + Intermediate CA)
+hal vault pki enable
+hal vault pki enable --k8s   # also deploy cert-manager + web demo on KinD
+hal vault pki update --k8s
+hal vault pki disable
+
 # Audit logging (file-based by default)
 hal vault audit enable
 hal vault audit enable --loki    # also wire into the Promtail/Loki shared volume
