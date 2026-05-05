@@ -95,7 +95,7 @@ var vaultUserpassCmd = &cobra.Command{
 
 				if userpassDisable {
 					fmt.Println("✅ Userpass auth method removed successfully!")
-					global.RefreshHalStatus(engine)
+					global.RefreshHalHealth(engine)
 				}
 			}
 
@@ -161,10 +161,10 @@ path "*" { capabilities = ["create", "read", "update", "delete", "list"] }
 			entitySecret, err := client.Logical().Write("identity/entity", map[string]any{
 				"name": "michaelScott",
 				"metadata": map[string]string{
-					"branch":       "scranton",
-					"company":      "dunder-mifflin",
-					"role":         "regional-manager",
-					"fun_fact":     "thats-what-she-said",
+					"branch":   "scranton",
+					"company":  "dunder-mifflin",
+					"role":     "regional-manager",
+					"fun_fact": "thats-what-she-said",
 				},
 			})
 			if err != nil || entitySecret == nil {
@@ -205,7 +205,7 @@ path "*" { capabilities = ["create", "read", "update", "delete", "list"] }
 			}
 
 			fmt.Println("\n✅ Userpass Auth Method Configured!")
-			global.RefreshHalStatus(engine)
+			global.RefreshHalHealth(engine)
 			fmt.Println("---------------------------------------------------------")
 			fmt.Println("👤 Username    : michaelScott")
 			fmt.Println("🔑 Password    : threat-level-midnight")
