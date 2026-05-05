@@ -170,7 +170,10 @@ var vaultPKICmd = &cobra.Command{
 		// ==========================================
 		// 2. DISABLE
 		// ==========================================
-		if pkiDisable || pkiUpdate {
+		// update --k8s (without --force) skips teardown entirely — it only
+		// reconciles the cert-manager layer on top of the existing PKI engines.
+		// Teardown runs for: explicit disable, plain update, update --k8s --force.
+		if (pkiDisable || pkiUpdate) && !(pkiUpdate && pkiK8s && !pkiForce) {
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would unmount '%s' and '%s' from Vault\n", pkiRootMount, pkiIntMount)
 				fmt.Println("[DRY RUN] Would disable Vault auth mount 'kubernetes-pki' and delete policy 'hal-pki-issuer'")
