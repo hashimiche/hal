@@ -381,6 +381,7 @@ func runVaultPKISetup(client *vault.Client, isUpdate bool) {
 		"allow_subdomains":   true,
 		"allow_bare_domains": false,
 		"allow_ip_sans":      true,
+		"use_csr_common_name": true,
 		"max_ttl":            pkiMaxCertTTL,
 		"key_type":           "rsa",
 		"key_bits":           2048,
@@ -488,14 +489,14 @@ func runPKIK8sEnable(client *vault.Client, engine string, isPodman bool, intMoun
 	// Wait for the webhook rollout. With hostNetwork the webhook is on the
 	// node's IP so reachability is no longer the issue, but TLS cert init
 	// still takes a few seconds.
-	fmt.Println("⏳ Waiting for cert-manager-webhook rollout (up to 120s)...")
+	fmt.Println("⏳ Waiting for cert-manager-webhook rollout (up to 60s)...")
 	_ = exec.Command(
 		"kubectl", "rollout", "status",
 		"deployment/cert-manager-webhook",
-		"-n", "cert-manager", "--timeout=120s",
+		"-n", "cert-manager", "--timeout=60s",
 	).Run()
-	fmt.Println("⏳ Allowing webhook TLS to initialise (10s)...")
-	time.Sleep(10 * time.Second)
+	fmt.Println("⏳ Allowing webhook TLS to initialise (5s)...")
+	time.Sleep(5 * time.Second)
 
 	// ---- Vault kubernetes-pki/ auth mount ----
 	fmt.Println("⚙️  Configuring dedicated Vault Kubernetes auth mount 'kubernetes-pki/'...")
@@ -560,16 +561,46 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 		return
 	}
 
-	fmt.Println("⏳ Waiting for TLS Certificate to be issued (up to 120s)...")
-	_ = exec.Command(
+	fmt.Println("⏳ Waiting for TLS Certificate to be issued (up to 60s)...")
+	certWaitErr := exec.Command(
 		"kubectl", "wait", "--for=condition=Ready",
-		"certificate/hal-web-pki-cert", "-n", "pki-demo", "--timeout=120s",
+		"certificate/hal-web-pki-cert", "-n", "pki-demo", "--timeout=60s",
 	).Run()
+	if certWaitErr != nil {
+		fmt.Println("❌ Certificate was not issued within 60s. Diagnosis:")
+		// Condition message from the Certificate CR
+		condOut, _ := exec.Command(
+			"kubectl", "get", "certificate", "hal-web-pki-cert", "-n", "pki-demo",
+			"-o", `jsonpath={range .status.conditions[*]}  {.type}: {.reason} - {.message}\n{end}`,
+		).Output()
+		if len(condOut) > 0 {
+			fmt.Println(string(condOut))
+		}
+		// Most recent CertificateRequest failure
+		crOut, _ := exec.Command(
+			"kubectl", "get", "certificaterequest", "-n", "pki-demo",
+			"-o", `jsonpath={range .items[*]}  CertificateRequest {.metadata.name}: {range .status.conditions[*]}{.type}={.reason} ({.message})\n{end}{end}`,
+		).Output()
+		if len(crOut) > 0 {
+			fmt.Println(string(crOut))
+		}
+		// Recent events in pki-demo
+		evtOut, _ := exec.Command(
+			"kubectl", "get", "events", "-n", "pki-demo",
+			"--sort-by=.lastTimestamp",
+			"--field-selector=reason!=Scheduled,reason!=Pulled,reason!=Created,reason!=Started",
+		).Output()
+		if len(evtOut) > 0 {
+			fmt.Println(string(evtOut))
+		}
+		fmt.Println("\n💡 Run 'hal vault pki status' to recheck once the issue is resolved.")
+		return
+	}
 
-	fmt.Println("⏳ Waiting for web pod to be Ready (up to 120s)...")
+	fmt.Println("⏳ Waiting for web pod to be Ready (up to 30s)...")
 	_ = exec.Command(
 		"kubectl", "wait", "--for=condition=Ready",
-		"pod", "-l", "app=hal-web-pki", "-n", "pki-demo", "--timeout=120s",
+		"pod", "-l", "app=hal-web-pki", "-n", "pki-demo", "--timeout=30s",
 	).Run()
 
 	fmt.Println("\n✅ PKI Kubernetes demo deployed!")
@@ -757,6 +788,7 @@ spec:
   secretName: hal-web-pki-tls
   duration: 24h
   renewBefore: 1h
+  commonName: hal-web-pki.hal.local
   subject:
     organizations:
       - HAL Lab
