@@ -491,26 +491,42 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 		vaultIP = "hal-vault"
 	}
 
-	// ---- Apply manifests (retry — webhook may still be warming up) ----
-	fmt.Println("⚙️  Applying ClusterIssuer + pki-demo manifests...")
-	manifests := buildPKIK8sManifests(vaultIP, intMount, pkiWebBackendImage)
+	// ---- Apply manifests in two phases ----
+	// Phase 1: Namespace, Deployment, Service — standard K8s resources, no cert-manager
+	// webhook validation. Apply immediately with no retry needed.
+	fmt.Println("⚙️  Applying core manifests (Namespace, Deployment, Service)...")
+	coreManifests := buildPKIK8sCoreManifests(intMount, pkiWebBackendImage)
+	coreCmd := exec.Command("kubectl", "apply", "-f", "-")
+	coreCmd.Stdin = strings.NewReader(coreManifests)
+	coreCmd.Stdout = os.Stdout
+	coreCmd.Stderr = os.Stderr
+	if err := coreCmd.Run(); err != nil {
+		fmt.Printf("❌ Failed to apply core manifests: %v\n", err)
+		return
+	}
+
+	// Phase 2: ClusterIssuer, Certificate — validated by the cert-manager webhook.
+	// The webhook TLS server may still be warming up even after rollout completes,
+	// so retry until it accepts the connection.
+	fmt.Println("⚙️  Applying cert-manager CRDs (ClusterIssuer, Certificate) — retrying if webhook not ready...")
+	crdManifests := buildPKIK8sCRDManifests(vaultIP, intMount)
 	var applyErr error
-	for attempt := 1; attempt <= 5; attempt++ {
+	for attempt := 1; attempt <= 10; attempt++ {
 		applyCmd := exec.Command("kubectl", "apply", "-f", "-")
-		applyCmd.Stdin = strings.NewReader(manifests)
+		applyCmd.Stdin = strings.NewReader(crdManifests)
 		applyCmd.Stdout = os.Stdout
 		applyCmd.Stderr = os.Stderr
 		applyErr = applyCmd.Run()
 		if applyErr == nil {
 			break
 		}
-		if attempt < 5 {
-			fmt.Printf("  ⚠️  Apply attempt %d/5 failed (webhook not ready yet) — retrying in 5s...\n", attempt)
-			time.Sleep(5 * time.Second)
+		if attempt < 10 {
+			fmt.Printf("  ⚠️  Attempt %d/10 failed (webhook warming up) — retrying in 10s...\n", attempt)
+			time.Sleep(10 * time.Second)
 		}
 	}
 	if applyErr != nil {
-		fmt.Printf("❌ Failed to apply manifests after 5 attempts: %v\n", applyErr)
+		fmt.Printf("❌ Failed to apply cert-manager CRDs after 10 attempts: %v\n", applyErr)
 		return
 	}
 
@@ -612,56 +628,14 @@ func configurePKIKubeAuth(client *vault.Client, engine string) error {
 	return nil
 }
 
-// buildPKIK8sManifests returns the complete YAML for the cert-manager PKI demo.
-func buildPKIK8sManifests(vaultIP, intMount, webBackendImage string) string {
+// buildPKIK8sCoreManifests returns Namespace, Deployment, and Service YAML.
+// These are standard K8s resources — no cert-manager webhook validation.
+func buildPKIK8sCoreManifests(intMount, webBackendImage string) string {
 	return fmt.Sprintf(`---
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: vault-pki-issuer
-spec:
-  vault:
-    path: %s/sign/hal-role
-    server: http://%s:8200
-    auth:
-      kubernetes:
-        role: cert-manager-role
-        mountPath: /v1/auth/kubernetes-pki
-        secretRef:
-          name: vault-k8s-token
-          key: token
----
 apiVersion: v1
 kind: Namespace
 metadata:
   name: pki-demo
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: hal-web-pki-cert
-  namespace: pki-demo
-spec:
-  secretName: hal-web-pki-tls
-  duration: 24h
-  renewBefore: 1h
-  subject:
-    organizations:
-      - HAL Lab
-  privateKey:
-    algorithm: RSA
-    encoding: PKCS1
-    size: 2048
-  usages:
-    - server auth
-    - client auth
-  dnsNames:
-    - hal-web-pki.hal.local
-    - hal-web-pki.pki-demo.svc.cluster.local
-  issuerRef:
-    name: vault-pki-issuer
-    kind: ClusterIssuer
-    group: cert-manager.io
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -721,7 +695,57 @@ spec:
     - port: 80
       targetPort: 80
       nodePort: 30082
-`, intMount, vaultIP, webBackendImage, intMount)
+`, webBackendImage, intMount)
+}
+
+// buildPKIK8sCRDManifests returns ClusterIssuer and Certificate YAML.
+// These are cert-manager CRDs validated by the admission webhook — apply only
+// after the webhook TLS server is confirmed to be accepting connections.
+func buildPKIK8sCRDManifests(vaultIP, intMount string) string {
+	return fmt.Sprintf(`---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: vault-pki-issuer
+spec:
+  vault:
+    path: %s/sign/hal-role
+    server: http://%s:8200
+    auth:
+      kubernetes:
+        role: cert-manager-role
+        mountPath: /v1/auth/kubernetes-pki
+        secretRef:
+          name: vault-k8s-token
+          key: token
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hal-web-pki-cert
+  namespace: pki-demo
+spec:
+  secretName: hal-web-pki-tls
+  duration: 24h
+  renewBefore: 1h
+  subject:
+    organizations:
+      - HAL Lab
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - server auth
+    - client auth
+  dnsNames:
+    - hal-web-pki.hal.local
+    - hal-web-pki.pki-demo.svc.cluster.local
+  issuerRef:
+    name: vault-pki-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+`, intMount, vaultIP)
 }
 
 // writePKIKindConfig writes a temporary KinD config exposing port 30082 → host 8089.
