@@ -51,7 +51,7 @@ Private keys are **Vault-internal** — they never appear on disk.
 --k8s                      Also deploy cert-manager + web demo on KinD (see below)
 --force                    With update --k8s: also rebuild Root CA and Intermediate CA from scratch
 --kind-node-image string   KinD node image used only when creating a new cluster (default "kindest/node:v1.31.1")
---cert-manager-version     Bitnami cert-manager Helm chart version (empty = latest)
+--cert-manager-version     Jetstack cert-manager Helm chart version (empty = latest)
 --web-backend-image        Demo backend container image (default "nginx:alpine")
 ```
 
@@ -76,7 +76,7 @@ When `--k8s` is passed to `enable` or `update`, the following additional steps r
 | Step | What happens |
 |------|-------------|
 | 1 | Reuse existing KinD cluster or create a new one (port 30082 → host 8089) |
-| 2 | Deploy cert-manager via Bitnami OCI chart (`oci://registry-1.docker.io/bitnamicharts/cert-manager`) with CRDs |
+| 2 | Deploy cert-manager via Jetstack OCI chart (`oci://quay.io/jetstack/charts/cert-manager`) with CRDs, `webhook.hostNetwork=true`, and `webhook.securePort=10260` |
 | 3 | Enable dedicated Vault Kubernetes auth at `kubernetes-pki/` (always fresh, never shared with `kubernetes/`) |
 | 4 | Configure `vault-reviewer` SA and `cert-manager-vault` SA |
 | 5 | Generate a K8s SA-bound token (8760h) and store it as secret `vault-k8s-token` in `cert-manager` namespace |
@@ -221,7 +221,7 @@ Flags (enable/update):
   --k8s                       Deploy cert-manager + web demo on KinD
   --force                     With update --k8s: also rebuild Root CA and Intermediate CA
   --kind-node-image string    KinD node image (default "kindest/node:v1.31.1")
-  --cert-manager-version      Bitnami chart version (empty = latest)
+  --cert-manager-version      Jetstack chart version (empty = latest)
   --web-backend-image         Demo backend image (default "nginx:alpine")
 
 Global flags: --debug, --dry-run

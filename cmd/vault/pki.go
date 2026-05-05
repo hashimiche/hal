@@ -457,13 +457,21 @@ func runPKIK8sEnable(client *vault.Client, engine string, isPodman bool, intMoun
 		}
 	}
 
-	// ---- cert-manager (Bitnami OCI) ----
-	fmt.Println("⚙️  Deploying cert-manager via Helm (Bitnami OCI)...")
+	// ---- cert-manager (Jetstack OCI chart) ----
+	// Use the official Jetstack OCI chart (no helm repo add required) with
+	// webhook.hostNetwork=true so the API server inside the kind-control-plane
+	// container can reach the webhook pod. Without hostNetwork, kube-proxy
+	// iptables routing is used and the API server gets i/o timeout or
+	// connection refused because it can't route to cluster-internal pod IPs.
+	// securePort=10260 avoids a conflict with the kubelet on port 10250.
+	fmt.Println("⚙️  Deploying cert-manager via Helm (Jetstack OCI, hostNetwork for KinD)...")
 	cmArgs := []string{
 		"upgrade", "--install", "cert-manager",
-		"oci://registry-1.docker.io/bitnamicharts/cert-manager",
+		"oci://quay.io/jetstack/charts/cert-manager",
 		"-n", "cert-manager", "--create-namespace",
 		"--set", "installCRDs=true",
+		"--set", "webhook.hostNetwork=true",
+		"--set", "webhook.securePort=10260",
 	}
 	if strings.TrimSpace(pkiCertManagerVersion) != "" {
 		cmArgs = append(cmArgs, "--version", pkiCertManagerVersion)
@@ -475,18 +483,17 @@ func runPKIK8sEnable(client *vault.Client, engine string, isPodman bool, intMoun
 		fmt.Printf("❌ Failed to install cert-manager: %v\n", err)
 		return
 	}
-	// Wait for the webhook deployment to fully roll out, then add extra buffer
-	// for the webhook TLS server to start accepting connections. A pod showing
-	// Ready does not mean the webhook port is open yet — applying manifests too
-	// early causes "connection refused" from the API server.
+	// Wait for the webhook rollout. With hostNetwork the webhook is on the
+	// node's IP so reachability is no longer the issue, but TLS cert init
+	// still takes a few seconds.
 	fmt.Println("⏳ Waiting for cert-manager-webhook rollout (up to 120s)...")
 	_ = exec.Command(
 		"kubectl", "rollout", "status",
 		"deployment/cert-manager-webhook",
 		"-n", "cert-manager", "--timeout=120s",
 	).Run()
-	fmt.Println("⏳ Allowing webhook TLS to come up (15s)...")
-	time.Sleep(15 * time.Second)
+	fmt.Println("⏳ Allowing webhook TLS to initialise (10s)...")
+	time.Sleep(10 * time.Second)
 
 	// ---- Vault kubernetes-pki/ auth mount ----
 	fmt.Println("⚙️  Configuring dedicated Vault Kubernetes auth mount 'kubernetes-pki/'...")
