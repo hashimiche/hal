@@ -611,7 +611,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	fmt.Println("    - Certificate hal-web-pki-cert (namespace: pki-demo)")
 	fmt.Printf("    - Web pod hal-web-pki (%s, TLS cert mounted at /tls)\n", pkiWebBackendImage)
 	fmt.Println("\n  Access:")
-	fmt.Println("    → http://pki.localhost:8089")
+	fmt.Println("    → https://pki.localhost:8089")
 	fmt.Println("\n  Inspect the certificate:")
 	fmt.Println("    kubectl describe certificate hal-web-pki-cert -n pki-demo")
 	fmt.Println("    kubectl get secret hal-web-pki-tls -n pki-demo -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -text")

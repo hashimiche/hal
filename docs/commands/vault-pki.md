@@ -179,7 +179,7 @@ vault list pki-int/certs
 
 **Access the cert-manager web demo (after --k8s):**
 ```bash
-# → http://pki.localhost:8089  (no port-forward needed)
+# → https://pki.localhost:8089  (no port-forward needed)
 ```
 
 **Inspect the issued TLS certificate:**
@@ -225,3 +225,7 @@ Flags (enable/update):
 
 Global flags: --debug, --dry-run
 ```
+ Vault PKI teardown complete.
+💡 Next Step: hal vault pki enable
+❌ Vault mount 'pki-int' not found. Run 'hal vault pki enable' first.
+   Use 'hal vault pki update --k8s --force' to rebuild everything from scratch.
