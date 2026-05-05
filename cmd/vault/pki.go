@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	pkiEnable bool
+	pkiEnable  bool
 	pkiDisable bool
 	pkiUpdate  bool
 
@@ -454,13 +454,18 @@ func runPKIK8sEnable(client *vault.Client, engine string, isPodman bool, intMoun
 		fmt.Printf("❌ Failed to install cert-manager: %v\n", err)
 		return
 	}
-	fmt.Println("⏳ Waiting for cert-manager webhook (up to 120s)...")
+	// Wait for the webhook deployment to fully roll out, then add extra buffer
+	// for the webhook TLS server to start accepting connections. A pod showing
+	// Ready does not mean the webhook port is open yet — applying manifests too
+	// early causes "connection refused" from the API server.
+	fmt.Println("⏳ Waiting for cert-manager-webhook rollout (up to 120s)...")
 	_ = exec.Command(
-		"kubectl", "wait", "--for=condition=Ready",
-		"pod", "-l", "app.kubernetes.io/component=webhook",
+		"kubectl", "rollout", "status",
+		"deployment/cert-manager-webhook",
 		"-n", "cert-manager", "--timeout=120s",
 	).Run()
-	time.Sleep(5 * time.Second)
+	fmt.Println("⏳ Allowing webhook TLS to come up (15s)...")
+	time.Sleep(15 * time.Second)
 
 	// ---- Vault kubernetes-pki/ auth mount ----
 	fmt.Println("⚙️  Configuring dedicated Vault Kubernetes auth mount 'kubernetes-pki/'...")
@@ -486,15 +491,26 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 		vaultIP = "hal-vault"
 	}
 
-	// ---- Apply manifests ----
+	// ---- Apply manifests (retry — webhook may still be warming up) ----
 	fmt.Println("⚙️  Applying ClusterIssuer + pki-demo manifests...")
 	manifests := buildPKIK8sManifests(vaultIP, intMount, pkiWebBackendImage)
-	applyCmd := exec.Command("kubectl", "apply", "-f", "-")
-	applyCmd.Stdin = strings.NewReader(manifests)
-	applyCmd.Stdout = os.Stdout
-	applyCmd.Stderr = os.Stderr
-	if err := applyCmd.Run(); err != nil {
-		fmt.Printf("❌ Failed to apply manifests: %v\n", err)
+	var applyErr error
+	for attempt := 1; attempt <= 5; attempt++ {
+		applyCmd := exec.Command("kubectl", "apply", "-f", "-")
+		applyCmd.Stdin = strings.NewReader(manifests)
+		applyCmd.Stdout = os.Stdout
+		applyCmd.Stderr = os.Stderr
+		applyErr = applyCmd.Run()
+		if applyErr == nil {
+			break
+		}
+		if attempt < 5 {
+			fmt.Printf("  ⚠️  Apply attempt %d/5 failed (webhook not ready yet) — retrying in 5s...\n", attempt)
+			time.Sleep(5 * time.Second)
+		}
+	}
+	if applyErr != nil {
+		fmt.Printf("❌ Failed to apply manifests after 5 attempts: %v\n", applyErr)
 		return
 	}
 
