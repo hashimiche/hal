@@ -140,7 +140,7 @@ var vaultPKICmd = &cobra.Command{
 					if strings.TrimSpace(string(podOut)) == "Running" {
 						fmt.Println("  ✅ Web Pod       : Running (pki-demo/hal-web-pki)")
 						fmt.Println("\n  Access:")
-						fmt.Println("    → http://pki.localhost:8089")
+						fmt.Println("    → https://pki.localhost:8089")
 					} else {
 						fmt.Println("  ⚠️  Web Pod       : Not running")
 					}
@@ -377,14 +377,14 @@ func runVaultPKISetup(client *vault.Client, isUpdate bool) {
 	// ---- Role ----
 	fmt.Printf("⚙️  Creating role 'hal-role' on '%s'...\n", pkiIntMount)
 	_, _ = client.Logical().Write(pkiIntMount+"/roles/hal-role", map[string]interface{}{
-		"allowed_domains":    pkiAllowedDomains,
-		"allow_subdomains":   true,
-		"allow_bare_domains": false,
-		"allow_ip_sans":      true,
+		"allowed_domains":     pkiAllowedDomains,
+		"allow_subdomains":    true,
+		"allow_bare_domains":  false,
+		"allow_ip_sans":       true,
 		"use_csr_common_name": true,
-		"max_ttl":            pkiMaxCertTTL,
-		"key_type":           "rsa",
-		"key_bits":           2048,
+		"max_ttl":             pkiMaxCertTTL,
+		"key_type":            "rsa",
+		"key_bits":            2048,
 	})
 	fmt.Println("  ✅ Role 'hal-role' created.")
 
@@ -720,7 +720,7 @@ spec:
         - name: app
           image: %s
           ports:
-            - containerPort: 80
+            - containerPort: 443
           volumeMounts:
             - name: tls
               mountPath: /tls
@@ -733,6 +733,15 @@ spec:
               TLS_CERT=$(cat /tls/tls.crt)
               CERT_TEXT=$(openssl x509 -noout -text -in /tls/tls.crt 2>&1)
               mkdir -p /usr/share/nginx/html
+              cat > /etc/nginx/conf.d/default.conf <<'NGINXEOF'
+              server {
+                  listen 443 ssl;
+                  ssl_certificate     /tls/tls.crt;
+                  ssl_certificate_key /tls/tls.key;
+                  root /usr/share/nginx/html;
+                  index index.html;
+              }
+              NGINXEOF
               cat > /usr/share/nginx/html/index.html <<HTMLEOF
               <html>
                 <head>
@@ -768,8 +777,8 @@ spec:
   selector:
     app: hal-web-pki
   ports:
-    - port: 80
-      targetPort: 80
+    - port: 443
+      targetPort: 443
       nodePort: 30082
 `, webBackendImage, intMount)
 }
@@ -826,7 +835,7 @@ spec:
 }
 
 // writePKIKindConfig writes a temporary KinD config exposing NodePort 30082 → host port 8089.
-// This allows http://pki.localhost:8089 to reach the web demo without kubectl port-forward.
+// This allows https://pki.localhost:8089 to reach the web demo without kubectl port-forward.
 func writePKIKindConfig() (string, error) {
 	f, err := os.CreateTemp("", "hal-pki-kind-*.yaml")
 	if err != nil {
