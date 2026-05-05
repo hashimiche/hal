@@ -129,16 +129,19 @@ var pkiK8sCmd = &cobra.Command{
 		// ==========================================
 		if pkiK8sDisable || pkiK8sUpdate {
 			if global.DryRun {
-				fmt.Println("[DRY RUN] Would remove Vault cert-manager-role and pki-demo namespace")
+					fmt.Println("[DRY RUN] Would disable Vault auth mount 'kubernetes-pki' and remove policy 'hal-pki-issuer'")
 				fmt.Println("[DRY RUN] Would delete ClusterIssuer 'vault-pki-issuer' and uninstall cert-manager")
 				fmt.Println("[DRY RUN] Would delete KinD cluster if hal vault k8s is not active")
 			} else {
 				fmt.Println("🛑 Tearing down PKI Kubernetes environment...")
 
-				// Remove the Vault role for cert-manager (best effort — Vault may be offline)
+				// Disable the dedicated PKI Kubernetes auth mount (safe: isolated from hal vault k8s)
 				if vaultErr == nil && client != nil {
-					_, _ = client.Logical().Delete("auth/kubernetes/role/cert-manager-role")
-					fmt.Println("  ✅ Removed Vault role 'cert-manager-role'.")
+					if err := client.Sys().DisableAuth("kubernetes-pki"); err == nil {
+						fmt.Println("  ✅ Disabled Vault auth mount 'kubernetes-pki'.")
+					}
+					_ = client.Sys().DeletePolicy("hal-pki-issuer")
+					fmt.Println("  ✅ Removed Vault policy 'hal-pki-issuer'.")
 				}
 
 				fmt.Println("⚙️  Deleting pki-demo namespace...")
@@ -355,7 +358,7 @@ spec:
     auth:
       kubernetes:
         role: cert-manager-role
-        mountPath: /v1/auth/kubernetes
+        mountPath: /v1/auth/kubernetes-pki
         secretRef:
           name: vault-k8s-token
           key: token
@@ -453,58 +456,55 @@ spec:
 `, intMount, vaultIP, webBackendImage, intMount)
 }
 
-// ensureVaultKubeAuthForPKI configures Vault Kubernetes auth for cert-manager.
-// If the kubernetes auth mount already exists (e.g. from hal vault k8s enable),
-// it is reused and only the cert-manager role is added/updated.
+// ensureVaultKubeAuthForPKI configures a dedicated 'kubernetes-pki/' Vault auth mount
+// for cert-manager. This is always a fresh, isolated mount — never shared with the
+// 'kubernetes/' mount used by hal vault k8s — so disable can cleanly remove it.
 func ensureVaultKubeAuthForPKI(client *vault.Client, engine string) error {
-	authMounts, err := client.Sys().ListAuth()
-	if err != nil {
-		return fmt.Errorf("cannot list Vault auth mounts: %w", err)
+	const pkiAuthMount = "kubernetes-pki"
+
+	// Always (re)configure the dedicated mount. Disable first if it already exists.
+	_ = client.Sys().DisableAuth(pkiAuthMount)
+
+	fmt.Printf("⚙️  Enabling dedicated Vault Kubernetes auth at '%s/'...\n", pkiAuthMount)
+
+	// vault-reviewer SA is shared infrastructure — create only if not present
+	_ = exec.Command("kubectl", "create", "sa", "vault-reviewer", "-n", "default").Run()
+	_ = exec.Command("kubectl", "create", "clusterrolebinding", "vault-reviewer-binding",
+		"--clusterrole=system:auth-delegator",
+		"--serviceaccount=default:vault-reviewer").Run()
+
+	caOut, _ := exec.Command("kubectl", "config", "view", "--raw", "--minify", "--flatten",
+		"-o", "jsonpath={.clusters[].cluster.certificate-authority-data}").Output()
+	decodedCA, _ := base64.StdEncoding.DecodeString(strings.TrimSpace(string(caOut)))
+
+	tokenOut, _ := exec.Command("kubectl", "create", "token", "vault-reviewer",
+		"-n", "default", "--duration=87600h").Output()
+	reviewerToken := strings.TrimSpace(string(tokenOut))
+
+	kindIPOut, _ := exec.Command(engine, "inspect",
+		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+		"kind-control-plane").Output()
+	kindIP := strings.TrimSpace(string(kindIPOut))
+	if kindIP == "" {
+		kindIP = "kind-control-plane"
 	}
 
-	if _, mounted := authMounts["kubernetes/"]; !mounted {
-		fmt.Println("⚙️  Enabling Vault Kubernetes auth method...")
-
-		// Create vault-reviewer SA if it doesn't already exist
-		_ = exec.Command("kubectl", "create", "sa", "vault-reviewer", "-n", "default").Run()
-		_ = exec.Command("kubectl", "create", "clusterrolebinding", "vault-reviewer-binding",
-			"--clusterrole=system:auth-delegator",
-			"--serviceaccount=default:vault-reviewer").Run()
-
-		caOut, _ := exec.Command("kubectl", "config", "view", "--raw", "--minify", "--flatten",
-			"-o", "jsonpath={.clusters[].cluster.certificate-authority-data}").Output()
-		decodedCA, _ := base64.StdEncoding.DecodeString(strings.TrimSpace(string(caOut)))
-
-		tokenOut, _ := exec.Command("kubectl", "create", "token", "vault-reviewer",
-			"-n", "default", "--duration=87600h").Output()
-		reviewerToken := strings.TrimSpace(string(tokenOut))
-
-		kindIPOut, _ := exec.Command(engine, "inspect",
-			"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-			"kind-control-plane").Output()
-		kindIP := strings.TrimSpace(string(kindIPOut))
-		if kindIP == "" {
-			kindIP = "kind-control-plane"
-		}
-
-		_ = client.Sys().EnableAuthWithOptions("kubernetes", &vault.EnableAuthOptions{Type: "kubernetes"})
-		if _, err := client.Logical().Write("auth/kubernetes/config", map[string]interface{}{
-			"kubernetes_host":        fmt.Sprintf("https://%s:6443", kindIP),
-			"kubernetes_ca_cert":     string(decodedCA),
-			"token_reviewer_jwt":     reviewerToken,
-			"disable_iss_validation": true,
-		}); err != nil {
-			return fmt.Errorf("failed to configure Vault Kubernetes auth: %w", err)
-		}
-		fmt.Println("  ✅ Vault Kubernetes auth enabled and configured.")
-	} else {
-		fmt.Println("⚡ Vault Kubernetes auth already configured — reusing it.")
+	if err := client.Sys().EnableAuthWithOptions(pkiAuthMount, &vault.EnableAuthOptions{Type: "kubernetes"}); err != nil {
+		return fmt.Errorf("failed to enable %s auth: %w", pkiAuthMount, err)
 	}
+	if _, err := client.Logical().Write("auth/"+pkiAuthMount+"/config", map[string]interface{}{
+		"kubernetes_host":        fmt.Sprintf("https://%s:6443", kindIP),
+		"kubernetes_ca_cert":     string(decodedCA),
+		"token_reviewer_jwt":     reviewerToken,
+		"disable_iss_validation": true,
+	}); err != nil {
+		return fmt.Errorf("failed to configure %s auth: %w", pkiAuthMount, err)
+	}
+	fmt.Printf("  ✅ Auth mount '%s/' configured.\n", pkiAuthMount)
 
-	// Create dedicated SA for cert-manager → Vault authentication
+	// Dedicated SA in cert-manager namespace
 	_ = exec.Command("kubectl", "create", "sa", "cert-manager-vault", "-n", "cert-manager").Run()
 
-	// Generate a SA-bound token; cert-manager presents it to Vault's kubernetes auth endpoint
 	cmTokenOut, cmErr := exec.Command("kubectl", "create", "token", "cert-manager-vault",
 		"-n", "cert-manager", "--duration=8760h").Output()
 	if cmErr != nil || strings.TrimSpace(string(cmTokenOut)) == "" {
@@ -519,15 +519,15 @@ func ensureVaultKubeAuthForPKI(client *vault.Client, engine string) error {
 		return fmt.Errorf("failed to store K8s token secret: %w", err)
 	}
 
-	// Create Vault role bound to the cert-manager-vault SA
-	_, _ = client.Logical().Write("auth/kubernetes/role/cert-manager-role", map[string]interface{}{
+	// Vault role bound to cert-manager-vault SA
+	_, _ = client.Logical().Write("auth/"+pkiAuthMount+"/role/cert-manager-role", map[string]interface{}{
 		"bound_service_account_names":      "cert-manager-vault",
 		"bound_service_account_namespaces": "cert-manager",
 		"token_policies":                   []string{"hal-pki-issuer"},
 		"token_ttl":                        "1h",
 	})
 
-	fmt.Println("  ✅ Vault role 'cert-manager-role' created (SA: cert-manager-vault).")
+	fmt.Printf("  ✅ Vault role 'cert-manager-role' created on '%s/'.\n", pkiAuthMount)
 	fmt.Println("  ✅ K8s secret 'vault-k8s-token' created in cert-manager namespace.")
 	return nil
 }

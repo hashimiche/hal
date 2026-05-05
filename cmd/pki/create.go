@@ -173,9 +173,11 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	// ==========================================
 	fmt.Println("\n✅ PKI setup complete!")
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Println("  Engine Layout:")
-	fmt.Printf("    Root CA  : %s  (max TTL %s)\n", pkiRootMount, pkiRootTTL)
-	fmt.Printf("    Int  CA  : %s   (max TTL %s)\n", pkiIntMount, pkiIntTTL)
+	fmt.Println("  Key storage: Vault-internal (private keys never leave Vault's backend)")
+	fmt.Println("  To remove everything, run: hal pki delete")
+	fmt.Println("\n  Engine Layout:")
+	fmt.Printf("    Root CA  : %s  (max TTL %s = 5y)\n", pkiRootMount, pkiRootTTL)
+	fmt.Printf("    Int  CA  : %s   (max TTL %s = 2y)\n", pkiIntMount, pkiIntTTL)
 	fmt.Printf("    Role     : %s/roles/hal-role\n", pkiIntMount)
 	fmt.Println("\n  Issue a certificate (root token):")
 	fmt.Printf("    vault write %s/issue/hal-role \\\n", pkiIntMount)
@@ -193,8 +195,8 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 func bindPKICreateFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&pkiRootMount, "root-mount", "pki-root", "Vault mount path for the Root CA")
 	cmd.Flags().StringVar(&pkiIntMount, "int-mount", "pki-int", "Vault mount path for the Intermediate CA")
-	cmd.Flags().StringVar(&pkiRootTTL, "root-ttl", "87600h", "Max lease TTL for the Root CA (10 years)")
-	cmd.Flags().StringVar(&pkiIntTTL, "int-ttl", "43800h", "Max lease TTL for the Intermediate CA (5 years)")
+	cmd.Flags().StringVar(&pkiRootTTL, "root-ttl", "43800h", "Max lease TTL for the Root CA (5 years)")
+	cmd.Flags().StringVar(&pkiIntTTL, "int-ttl", "17520h", "Max lease TTL for the Intermediate CA (2 years)")
 	cmd.Flags().StringVar(&pkiAllowedDomains, "allowed-domains", "hal.local,cluster.local,svc.cluster.local", "Comma-separated list of allowed domains for 'hal-role'")
 	cmd.Flags().StringVar(&pkiMaxCertTTL, "max-cert-ttl", "24h", "Maximum TTL for leaf certificates issued by 'hal-role'")
 }
