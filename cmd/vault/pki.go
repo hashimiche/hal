@@ -728,6 +728,7 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
+              apk add --no-cache openssl >/dev/null 2>&1
               while [ ! -f /tls/tls.crt ]; do sleep 2; done
               TLS_CERT=$(cat /tls/tls.crt)
               CERT_TEXT=$(openssl x509 -noout -text -in /tls/tls.crt 2>&1)
