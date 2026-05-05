@@ -140,7 +140,7 @@ var vaultPKICmd = &cobra.Command{
 					if strings.TrimSpace(string(podOut)) == "Running" {
 						fmt.Println("  ✅ Web Pod       : Running (pki-demo/hal-web-pki)")
 						fmt.Println("\n  Access:")
-						fmt.Println("    → http://pki.localhost")
+						fmt.Println("    → http://pki.localhost:8089")
 					} else {
 						fmt.Println("  ⚠️  Web Pod       : Not running")
 					}
@@ -577,7 +577,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	fmt.Println("    - Certificate hal-web-pki-cert (namespace: pki-demo)")
 	fmt.Printf("    - Web pod hal-web-pki (%s, TLS cert mounted at /tls)\n", pkiWebBackendImage)
 	fmt.Println("\n  Access:")
-	fmt.Println("    → http://pki.localhost")
+	fmt.Println("    → http://pki.localhost:8089")
 	fmt.Println("\n  Inspect the certificate:")
 	fmt.Println("    kubectl describe certificate hal-web-pki-cert -n pki-demo")
 	fmt.Println("    kubectl get secret hal-web-pki-tls -n pki-demo -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -text")
@@ -774,8 +774,8 @@ spec:
 `, intMount, vaultIP)
 }
 
-// writePKIKindConfig writes a temporary KinD config exposing NodePort 30082 → host port 80.
-// This allows http://pki.localhost to reach the web demo without kubectl port-forward.
+// writePKIKindConfig writes a temporary KinD config exposing NodePort 30082 → host port 8089.
+// This allows http://pki.localhost:8089 to reach the web demo without kubectl port-forward.
 func writePKIKindConfig() (string, error) {
 	f, err := os.CreateTemp("", "hal-pki-kind-*.yaml")
 	if err != nil {
@@ -787,7 +787,7 @@ nodes:
 - role: control-plane
   extraPortMappings:
     - containerPort: 30082
-      hostPort: 80
+      hostPort: 8089
       protocol: TCP
 `
 	if _, err := f.WriteString(config); err != nil {

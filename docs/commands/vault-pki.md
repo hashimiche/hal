@@ -179,7 +179,7 @@ vault list pki-int/certs
 
 **Access the cert-manager web demo (after --k8s):**
 ```bash
-# → http://pki.localhost  (no port-forward needed)
+# → http://pki.localhost:8089  (no port-forward needed)
 ```
 
 **Inspect the issued TLS certificate:**
