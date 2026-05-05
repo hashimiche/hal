@@ -730,13 +730,28 @@ spec:
             - |
               while [ ! -f /tls/tls.crt ]; do sleep 2; done
               TLS_CERT=$(cat /tls/tls.crt)
+              CERT_TEXT=$(openssl x509 -noout -text -in /tls/tls.crt 2>&1)
               mkdir -p /usr/share/nginx/html
               cat > /usr/share/nginx/html/index.html <<HTMLEOF
               <html>
-                <body style='font-family:system-ui;background:#f7fafc;color:#111827;padding:24px;'>
+                <head>
+                  <meta charset='utf-8'>
+                  <title>HAL Vault PKI</title>
+                  <style>
+                    body{font-family:system-ui;background:#f7fafc;color:#111827;padding:24px;max-width:960px;margin:0 auto;}
+                    h1{margin-bottom:4px;}
+                    h2{margin-top:28px;margin-bottom:6px;font-size:1rem;color:#374151;}
+                    pre{background:#111827;color:#34d399;padding:14px;border-radius:8px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;}
+                    pre.text{color:#a5f3fc;}
+                  </style>
+                </head>
+                <body>
                   <h1>HAL Vault PKI + cert-manager</h1>
                   <p>TLS certificate issued by cert-manager via Vault <code>%s/sign/hal-role</code>.</p>
-                  <pre style='background:#111827;color:#34d399;padding:12px;border-radius:8px;font-size:11px;word-break:break-all;'>$TLS_CERT</pre>
+                  <h2>openssl x509 -noout -text</h2>
+                  <pre class='text'>$CERT_TEXT</pre>
+                  <h2>PEM (raw)</h2>
+                  <pre>$TLS_CERT</pre>
                 </body>
               </html>
               HTMLEOF
