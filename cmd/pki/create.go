@@ -196,7 +196,7 @@ func bindPKICreateFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&pkiRootTTL, "root-ttl", "87600h", "Max lease TTL for the Root CA (10 years)")
 	cmd.Flags().StringVar(&pkiIntTTL, "int-ttl", "43800h", "Max lease TTL for the Intermediate CA (5 years)")
 	cmd.Flags().StringVar(&pkiAllowedDomains, "allowed-domains", "hal.local,cluster.local,svc.cluster.local", "Comma-separated list of allowed domains for 'hal-role'")
-	cmd.Flags().StringVar(&pkiMaxCertTTL, "max-cert-ttl", "72h", "Maximum TTL for leaf certificates issued by 'hal-role'")
+	cmd.Flags().StringVar(&pkiMaxCertTTL, "max-cert-ttl", "24h", "Maximum TTL for leaf certificates issued by 'hal-role'")
 }
 
 func init() {

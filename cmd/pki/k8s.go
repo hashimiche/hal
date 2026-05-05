@@ -1,6 +1,7 @@
 package pki
 
 import (
+	"encoding/base64"
 	"fmt"
 	"hal/internal/global"
 	"os"
@@ -128,11 +129,17 @@ var pkiK8sCmd = &cobra.Command{
 		// ==========================================
 		if pkiK8sDisable || pkiK8sUpdate {
 			if global.DryRun {
-				fmt.Println("[DRY RUN] Would delete namespace 'pki-demo'")
-				fmt.Println("[DRY RUN] Would delete ClusterIssuer 'vault-pki-issuer'")
-				fmt.Println("[DRY RUN] Would uninstall cert-manager Helm release")
+				fmt.Println("[DRY RUN] Would remove Vault cert-manager-role and pki-demo namespace")
+				fmt.Println("[DRY RUN] Would delete ClusterIssuer 'vault-pki-issuer' and uninstall cert-manager")
+				fmt.Println("[DRY RUN] Would delete KinD cluster if hal vault k8s is not active")
 			} else {
 				fmt.Println("🛑 Tearing down PKI Kubernetes environment...")
+
+				// Remove the Vault role for cert-manager (best effort — Vault may be offline)
+				if vaultErr == nil && client != nil {
+					_, _ = client.Logical().Delete("auth/kubernetes/role/cert-manager-role")
+					fmt.Println("  ✅ Removed Vault role 'cert-manager-role'.")
+				}
 
 				fmt.Println("⚙️  Deleting pki-demo namespace...")
 				_ = exec.Command("kubectl", "delete", "namespace", "pki-demo", "--ignore-not-found").Run()
@@ -140,17 +147,25 @@ var pkiK8sCmd = &cobra.Command{
 				fmt.Println("⚙️  Deleting ClusterIssuer...")
 				_ = exec.Command("kubectl", "delete", "clusterissuer", "vault-pki-issuer", "--ignore-not-found").Run()
 
-				fmt.Println("⚙️  Deleting vault-token secret from cert-manager...")
-				_ = exec.Command("kubectl", "delete", "secret", "vault-token", "-n", "cert-manager", "--ignore-not-found").Run()
-
 				fmt.Println("⚙️  Uninstalling cert-manager Helm release...")
 				_ = exec.Command("helm", "uninstall", "cert-manager", "-n", "cert-manager").Run()
 
 				fmt.Println("⚙️  Deleting cert-manager namespace...")
 				_ = exec.Command("kubectl", "delete", "namespace", "cert-manager", "--ignore-not-found").Run()
 
-				fmt.Println("✅ PKI Kubernetes environment removed.")
-				fmt.Println("ℹ️  KinD cluster preserved. Run 'hal vault k8s disable' to remove it.")
+				// Delete KinD cluster only if hal vault k8s is not still active
+				vsoOut, _ := exec.Command("helm", "list", "-n", "vso", "-q").Output()
+				if strings.Contains(string(vsoOut), "vault-secrets-operator") {
+					fmt.Println("ℹ️  KinD cluster preserved (hal vault k8s scenario is still active).")
+					fmt.Println("   Run 'hal vault k8s disable' to remove it.")
+				} else {
+					fmt.Println("ℹ️  No active VSO deployment — KinD cluster is no longer needed.")
+					fmt.Println("⚙️  Deleting KinD cluster...")
+					_ = exec.Command("kind", "delete", "cluster").Run()
+					fmt.Println("  ✅ KinD cluster deleted.")
+				}
+
+				fmt.Println("\n✅ PKI Kubernetes environment removed.")
 			}
 
 			if pkiK8sDisable && !global.DryRun {
@@ -224,13 +239,11 @@ var pkiK8sCmd = &cobra.Command{
 				}
 			}
 
-			// ---- cert-manager ----
-			fmt.Println("⚙️  Deploying cert-manager via Helm...")
-			_ = exec.Command("helm", "repo", "add", "jetstack", "https://charts.jetstack.io").Run()
-			_ = exec.Command("helm", "repo", "update").Run()
-
+			// ---- cert-manager (Bitnami OCI chart) ----
+			fmt.Println("⚙️  Deploying cert-manager via Helm (Bitnami)...")
 			cmArgs := []string{
-				"upgrade", "--install", "cert-manager", "jetstack/cert-manager",
+				"upgrade", "--install", "cert-manager",
+				"oci://registry-1.docker.io/bitnamicharts/cert-manager",
 				"-n", "cert-manager", "--create-namespace",
 				"--set", "installCRDs=true",
 			}
@@ -248,42 +261,24 @@ var pkiK8sCmd = &cobra.Command{
 			fmt.Println("⏳ Waiting for cert-manager webhook to become Ready (up to 120s)...")
 			_ = exec.Command(
 				"kubectl", "wait", "--for=condition=Ready",
-				"pod", "-l", "app.kubernetes.io/name=webhook",
+				"pod", "-l", "app.kubernetes.io/component=webhook",
 				"-n", "cert-manager", "--timeout=120s",
 			).Run()
 			// Extra buffer for webhook TLS to wire up
 			time.Sleep(5 * time.Second)
 
-			// ---- Vault token for cert-manager ----
-			fmt.Println("⚙️  Creating Vault token for cert-manager...")
-			// Ensure policy exists
+			// ---- Vault Kubernetes auth for cert-manager ----
+			fmt.Println("⚙️  Configuring Vault Kubernetes auth for cert-manager...")
 			pkiPolicy := fmt.Sprintf(`
 path "%s/sign/hal-role"  { capabilities = ["create", "update"] }
 path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 `, intMount, intMount)
 			_ = client.Sys().PutPolicy("hal-pki-issuer", pkiPolicy)
 
-			tokenResp, err := client.Auth().Token().Create(&vault.TokenCreateRequest{
-				Policies:  []string{"hal-pki-issuer"},
-				TTL:       "8760h",
-				Renewable: boolPtr(true),
-			})
-			if err != nil || tokenResp == nil {
-				fmt.Printf("❌ Failed to create Vault token: %v\n", err)
+			if err := ensureVaultKubeAuthForPKI(client, engine); err != nil {
+				fmt.Printf("❌ %v\n", err)
 				return
 			}
-			certManagerToken := tokenResp.Auth.ClientToken
-
-			_ = exec.Command("kubectl", "delete", "secret", "vault-token", "-n", "cert-manager", "--ignore-not-found").Run()
-			if err := exec.Command(
-				"kubectl", "create", "secret", "generic", "vault-token",
-				"--from-literal=token="+certManagerToken,
-				"-n", "cert-manager",
-			).Run(); err != nil {
-				fmt.Printf("❌ Failed to store Vault token as K8s secret: %v\n", err)
-				return
-			}
-			fmt.Println("  ✅ vault-token secret created in cert-manager namespace.")
 
 			// ---- Vault IP on hal-net ----
 			vaultIPOut, _ := exec.Command(
@@ -332,7 +327,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 			fmt.Println("    - cert-manager (namespace: cert-manager)")
 			fmt.Printf("    - ClusterIssuer vault-pki-issuer → Vault %s/sign/hal-role\n", intMount)
 			fmt.Println("    - Certificate hal-web-pki-cert (namespace: pki-demo)")
-			fmt.Println("    - Web pod hal-web-pki (httpd:2.4-alpine, TLS cert mounted at /tls)")
+			fmt.Printf("    - Web pod hal-web-pki (%s, TLS cert mounted at /tls)\n", pkiK8sWebBackendImage)
 			fmt.Println("\n  Access the web pod:")
 			fmt.Println("    kubectl port-forward -n pki-demo svc/hal-web-pki 8089:80")
 			fmt.Println("    → http://localhost:8089   (shows the issued TLS certificate)")
@@ -358,9 +353,12 @@ spec:
     path: %s/sign/hal-role
     server: http://%s:8200
     auth:
-      tokenSecretRef:
-        name: vault-token
-        key: token
+      kubernetes:
+        role: cert-manager-role
+        mountPath: /v1/auth/kubernetes
+        secretRef:
+          name: vault-k8s-token
+          key: token
 ---
 apiVersion: v1
 kind: Namespace
@@ -427,7 +425,8 @@ spec:
             - |
               while [ ! -f /tls/tls.crt ]; do sleep 2; done
               TLS_CERT=$(cat /tls/tls.crt)
-              cat > /usr/local/apache2/htdocs/index.html <<HTMLEOF
+              mkdir -p /usr/share/nginx/html
+              cat > /usr/share/nginx/html/index.html <<HTMLEOF
               <html>
                 <body style='font-family:system-ui;background:#f7fafc;color:#111827;padding:24px;'>
                   <h1>HAL Vault PKI + cert-manager</h1>
@@ -436,7 +435,7 @@ spec:
                 </body>
               </html>
               HTMLEOF
-              exec httpd-foreground
+              exec nginx -g 'daemon off;'
 ---
 apiVersion: v1
 kind: Service
@@ -452,6 +451,85 @@ spec:
       targetPort: 80
       nodePort: 30082
 `, intMount, vaultIP, webBackendImage, intMount)
+}
+
+// ensureVaultKubeAuthForPKI configures Vault Kubernetes auth for cert-manager.
+// If the kubernetes auth mount already exists (e.g. from hal vault k8s enable),
+// it is reused and only the cert-manager role is added/updated.
+func ensureVaultKubeAuthForPKI(client *vault.Client, engine string) error {
+	authMounts, err := client.Sys().ListAuth()
+	if err != nil {
+		return fmt.Errorf("cannot list Vault auth mounts: %w", err)
+	}
+
+	if _, mounted := authMounts["kubernetes/"]; !mounted {
+		fmt.Println("⚙️  Enabling Vault Kubernetes auth method...")
+
+		// Create vault-reviewer SA if it doesn't already exist
+		_ = exec.Command("kubectl", "create", "sa", "vault-reviewer", "-n", "default").Run()
+		_ = exec.Command("kubectl", "create", "clusterrolebinding", "vault-reviewer-binding",
+			"--clusterrole=system:auth-delegator",
+			"--serviceaccount=default:vault-reviewer").Run()
+
+		caOut, _ := exec.Command("kubectl", "config", "view", "--raw", "--minify", "--flatten",
+			"-o", "jsonpath={.clusters[].cluster.certificate-authority-data}").Output()
+		decodedCA, _ := base64.StdEncoding.DecodeString(strings.TrimSpace(string(caOut)))
+
+		tokenOut, _ := exec.Command("kubectl", "create", "token", "vault-reviewer",
+			"-n", "default", "--duration=87600h").Output()
+		reviewerToken := strings.TrimSpace(string(tokenOut))
+
+		kindIPOut, _ := exec.Command(engine, "inspect",
+			"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+			"kind-control-plane").Output()
+		kindIP := strings.TrimSpace(string(kindIPOut))
+		if kindIP == "" {
+			kindIP = "kind-control-plane"
+		}
+
+		_ = client.Sys().EnableAuthWithOptions("kubernetes", &vault.EnableAuthOptions{Type: "kubernetes"})
+		if _, err := client.Logical().Write("auth/kubernetes/config", map[string]interface{}{
+			"kubernetes_host":        fmt.Sprintf("https://%s:6443", kindIP),
+			"kubernetes_ca_cert":     string(decodedCA),
+			"token_reviewer_jwt":     reviewerToken,
+			"disable_iss_validation": true,
+		}); err != nil {
+			return fmt.Errorf("failed to configure Vault Kubernetes auth: %w", err)
+		}
+		fmt.Println("  ✅ Vault Kubernetes auth enabled and configured.")
+	} else {
+		fmt.Println("⚡ Vault Kubernetes auth already configured — reusing it.")
+	}
+
+	// Create dedicated SA for cert-manager → Vault authentication
+	_ = exec.Command("kubectl", "create", "sa", "cert-manager-vault", "-n", "cert-manager").Run()
+
+	// Generate a SA-bound token; cert-manager presents it to Vault's kubernetes auth endpoint
+	cmTokenOut, cmErr := exec.Command("kubectl", "create", "token", "cert-manager-vault",
+		"-n", "cert-manager", "--duration=8760h").Output()
+	if cmErr != nil || strings.TrimSpace(string(cmTokenOut)) == "" {
+		return fmt.Errorf("failed to generate cert-manager Vault SA token: %v", cmErr)
+	}
+
+	_ = exec.Command("kubectl", "delete", "secret", "vault-k8s-token",
+		"-n", "cert-manager", "--ignore-not-found").Run()
+	if err := exec.Command("kubectl", "create", "secret", "generic", "vault-k8s-token",
+		"--from-literal=token="+strings.TrimSpace(string(cmTokenOut)),
+		"-n", "cert-manager").Run(); err != nil {
+		return fmt.Errorf("failed to store K8s token secret: %w", err)
+	}
+
+	// Create Vault role bound to the cert-manager-vault SA
+	_, _ = client.Logical().Write("auth/kubernetes/role/cert-manager-role", map[string]interface{}{
+		"bound_service_account_names":      "cert-manager-vault",
+		"bound_service_account_namespaces": "cert-manager",
+		"token_policies":                   []string{"hal-pki-issuer"},
+		"token_ttl":                        "1h",
+	})
+
+	fmt.Println("  ✅ Vault role 'cert-manager-role' created (SA: cert-manager-vault).")
+	fmt.Println("  ✅ K8s secret 'vault-k8s-token' created in cert-manager namespace.")
+	return nil
 }
 
 // writePKIKindConfig writes a temporary KinD cluster config with port 30082→8089.
@@ -479,8 +557,6 @@ nodes:
 	return f.Name(), nil
 }
 
-func boolPtr(b bool) *bool { return &b }
-
 func init() {
 	pkiK8sCmd.Flags().BoolVarP(&pkiK8sEnable, "enable", "e", false, "Deploy cert-manager and PKI web demo")
 	pkiK8sCmd.Flags().BoolVarP(&pkiK8sDisable, "disable", "d", false, "Remove cert-manager and pki-demo namespace")
@@ -491,7 +567,7 @@ func init() {
 
 	pkiK8sCmd.Flags().StringVar(&pkiK8sKindNodeImage, "kind-node-image", "kindest/node:v1.31.1", "KinD node image (used only when creating a new cluster)")
 	pkiK8sCmd.Flags().StringVar(&pkiK8sCertManagerVersion, "cert-manager-version", "", "cert-manager Helm chart version (empty = latest)")
-	pkiK8sCmd.Flags().StringVar(&pkiK8sWebBackendImage, "web-backend-image", "httpd:2.4-alpine", "Demo backend container image")
+	pkiK8sCmd.Flags().StringVar(&pkiK8sWebBackendImage, "web-backend-image", "nginx:alpine", "Demo backend container image")
 	pkiK8sCmd.Flags().StringVar(&pkiK8sIntMount, "int-mount", "pki-int", "Vault mount path for the Intermediate CA (must match hal pki create)")
 
 	Cmd.AddCommand(pkiK8sCmd)
