@@ -49,6 +49,7 @@ Private keys are **Vault-internal** — they never appear on disk.
 --allowed-domains string   Allowed domains for hal-role (default "hal.local,cluster.local,svc.cluster.local")
 --max-cert-ttl string      Maximum TTL for issued leaf certs (default "24h")
 --k8s                      Also deploy cert-manager + web demo on KinD (see below)
+--force                    With update --k8s: also rebuild Root CA and Intermediate CA from scratch
 --kind-node-image string   KinD node image used only when creating a new cluster (default "kindest/node:v1.31.1")
 --cert-manager-version     Bitnami cert-manager Helm chart version (empty = latest)
 --web-backend-image        Demo backend container image (default "nginx:alpine")
@@ -95,11 +96,22 @@ The `kubernetes-pki/` auth mount is always separate from the `kubernetes/` mount
 
 ## Lifecycle: `hal vault pki update`
 
-Equivalent to `enable` but first unmounts `pki-root` and `pki-int`, then rebuilds from scratch. Add `--k8s` to also redeploy cert-manager.
+`update` behavior depends on which flags are present:
+
+| Command | CA engines | cert-manager |
+|---|---|---|
+| `update` | ♻️ Rebuilt from scratch | — |
+| `update --k8s` | ✅ Preserved as-is | ♻️ Reconciled |
+| `update --k8s --force` | ♻️ Rebuilt from scratch | ♻️ Reconciled |
+
+- **`update`** (no flags): unmounts `pki-root`/`pki-int` and fully rebuilds the CA chain. Use when you need fresh root/intermediate keys.
+- **`update --k8s`**: leaves the PKI engines untouched — only reconciles the cert-manager Helm release, re-configures the `kubernetes-pki/` auth mount, and re-applies all K8s resources. Fails fast if `pki-int` is not mounted (run `enable` first).
+- **`update --k8s --force`**: full teardown and rebuild — CAs, cert-manager, and all K8s resources from scratch.
 
 ```bash
-hal vault pki update
-hal vault pki update --k8s
+hal vault pki update                  # rebuild CAs only
+hal vault pki update --k8s            # reconcile cert-manager, preserve CAs
+hal vault pki update --k8s --force    # rebuild everything
 ```
 
 ---
@@ -207,6 +219,7 @@ Flags (enable/update):
   --allowed-domains string    Allowed domains for hal-role
   --max-cert-ttl string       Max TTL for leaf certs (default "24h")
   --k8s                       Deploy cert-manager + web demo on KinD
+  --force                     With update --k8s: also rebuild Root CA and Intermediate CA
   --kind-node-image string    KinD node image (default "kindest/node:v1.31.1")
   --cert-manager-version      Bitnami chart version (empty = latest)
   --web-backend-image         Demo backend image (default "nginx:alpine")

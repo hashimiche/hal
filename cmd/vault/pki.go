@@ -29,6 +29,7 @@ var (
 
 	// K8s / cert-manager integration
 	pkiK8s                bool
+	pkiForce              bool
 	pkiKindNodeImage      string
 	pkiCertManagerVersion string
 	pkiWebBackendImage    string
@@ -252,15 +253,35 @@ var vaultPKICmd = &cobra.Command{
 			}
 
 			if global.DryRun {
-				fmt.Printf("[DRY RUN] Would enable PKI engines at '%s' (5y) and '%s' (2y)\n", pkiRootMount, pkiIntMount)
-				fmt.Printf("[DRY RUN] Would generate Root CA (TTL %s) and Intermediate CA (TTL %s)\n", pkiRootTTL, pkiIntTTL)
-				fmt.Printf("[DRY RUN] Would create role 'hal-role' (domains: %s, max TTL: %s)\n", pkiAllowedDomains, pkiMaxCertTTL)
-				if pkiK8s {
-					fmt.Println("[DRY RUN] Would deploy cert-manager (Bitnami) + ClusterIssuer + web demo pod")
+				if pkiUpdate && pkiK8s && !pkiForce {
+					fmt.Println("[DRY RUN] Would reconcile cert-manager layer only (PKI engines left intact)")
+					fmt.Println("[DRY RUN] Use --force to also rebuild Root CA and Intermediate CA")
+				} else {
+					fmt.Printf("[DRY RUN] Would enable PKI engines at '%s' (5y) and '%s' (2y)\n", pkiRootMount, pkiIntMount)
+					fmt.Printf("[DRY RUN] Would generate Root CA (TTL %s) and Intermediate CA (TTL %s)\n", pkiRootTTL, pkiIntTTL)
+					fmt.Printf("[DRY RUN] Would create role 'hal-role' (domains: %s, max TTL: %s)\n", pkiAllowedDomains, pkiMaxCertTTL)
+					if pkiK8s {
+						fmt.Println("[DRY RUN] Would deploy cert-manager (Bitnami) + ClusterIssuer + web demo pod")
+					}
 				}
 				return
 			}
 
+			// update --k8s (without --force): only reconcile the cert-manager layer.
+			// The PKI engines are left completely intact — no CA rebuild.
+			if pkiUpdate && pkiK8s && !pkiForce {
+				mounts, _ := client.Sys().ListMounts()
+				if mounts == nil || mounts[pkiIntMount+"/"] == nil {
+					fmt.Printf("❌ Vault mount '%s' not found. Run 'hal vault pki enable' first.\n", pkiIntMount)
+					fmt.Println("   Use 'hal vault pki update --k8s --force' to rebuild everything from scratch.")
+					return
+				}
+				fmt.Println("♻️  Reconciling cert-manager layer (PKI engines preserved)...")
+				runPKIK8sEnable(client, engine, isPodman, pkiIntMount)
+				return
+			}
+
+			// enable, plain update, or update --k8s --force: full CA rebuild.
 			runVaultPKISetup(client, pkiUpdate)
 
 			if pkiK8s {
@@ -791,6 +812,7 @@ func init() {
 
 	// K8s / cert-manager flags
 	vaultPKICmd.Flags().BoolVar(&pkiK8s, "k8s", false, "Also deploy cert-manager + web demo pod on KinD (enable/update only)")
+	vaultPKICmd.Flags().BoolVar(&pkiForce, "force", false, "With --k8s update: also rebuild Root CA and Intermediate CA from scratch")
 	vaultPKICmd.Flags().StringVar(&pkiKindNodeImage, "kind-node-image", "kindest/node:v1.31.1", "KinD node image (used only when creating a new cluster)")
 	vaultPKICmd.Flags().StringVar(&pkiCertManagerVersion, "cert-manager-version", "", "Bitnami cert-manager Helm chart version (empty = latest)")
 	vaultPKICmd.Flags().StringVar(&pkiWebBackendImage, "web-backend-image", "nginx:alpine", "Demo backend container image")
