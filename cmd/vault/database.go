@@ -13,11 +13,12 @@ import (
 )
 
 var (
-	databaseEnable  bool
-	databaseDisable bool
-	databaseUpdate  bool
-	databaseBackend string
-	mariadbVersion  string
+	databaseEnable       bool
+	databaseDisable      bool
+	databaseUpdate       bool
+	databaseBackend      string
+	mariadbVersion       string
+	dbUsernamePrefix     string
 )
 
 var vaultDatabaseCmd = &cobra.Command{
@@ -207,11 +208,12 @@ var vaultDatabaseCmd = &cobra.Command{
 			// 2. Configure Vault Connection
 			fmt.Printf("⚙️  Wiring Vault to %s via the 'vaultadmin' account...\n", backendLabel)
 			_, err = client.Logical().Write("database/config/"+containerName, map[string]interface{}{
-				"plugin_name":    pluginName,
-				"connection_url": connectionURL,
-				"allowed_roles":  "dba-role",
-				"username":       "vaultadmin",
-				"password":       "temp-vault-pass",
+				"plugin_name":       pluginName,
+				"connection_url":    connectionURL,
+				"allowed_roles":     "dba-role",
+				"username":          "vaultadmin",
+				"password":          "temp-vault-pass",
+				"username_template": fmt.Sprintf("%s-{{random 10}}", dbUsernamePrefix),
 			})
 			if err != nil {
 				fmt.Printf("❌ Failed to configure database connection: %v\n", err)
@@ -298,6 +300,7 @@ func init() {
 	// Backend selection and version pinning
 	vaultDatabaseCmd.Flags().StringVarP(&databaseBackend, "backend", "b", "mariadb", "Database backend to use (mariadb; pgsql planned, postgres alias accepted)")
 	vaultDatabaseCmd.Flags().StringVar(&mariadbVersion, "mariadb-version", "11.4", "Version of the MariaDB container image to deploy")
+	vaultDatabaseCmd.Flags().StringVar(&dbUsernamePrefix, "username-prefix", "v", "Prefix for dynamically generated database usernames (e.g. 'myapp' → 'myapp-AbCdEfGhIj')")
 
 	Cmd.AddCommand(vaultDatabaseCmd)
 }
