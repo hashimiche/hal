@@ -75,7 +75,7 @@ When `--k8s` is passed to `enable` or `update`, the following additional steps r
 
 | Step | What happens |
 |------|-------------|
-| 1 | Reuse existing KinD cluster or create a new one (port 30082 → host 8089) |
+| 1 | Reuse existing KinD cluster or create a new one (NodePort 30082 → host port 80) |
 | 2 | Deploy cert-manager via Jetstack OCI chart (`oci://quay.io/jetstack/charts/cert-manager`) with CRDs, `webhook.hostNetwork=true`, and `webhook.securePort=10260` |
 | 3 | Enable dedicated Vault Kubernetes auth at `kubernetes-pki/` (always fresh, never shared with `kubernetes/`) |
 | 4 | Configure `vault-reviewer` SA and `cert-manager-vault` SA |
@@ -179,8 +179,7 @@ vault list pki-int/certs
 
 **Access the cert-manager web demo (after --k8s):**
 ```bash
-kubectl port-forward -n pki-demo svc/hal-web-pki 8089:80
-# → http://localhost:8089
+# → http://pki.localhost  (no port-forward needed)
 ```
 
 **Inspect the issued TLS certificate:**

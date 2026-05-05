@@ -140,8 +140,7 @@ var vaultPKICmd = &cobra.Command{
 					if strings.TrimSpace(string(podOut)) == "Running" {
 						fmt.Println("  ✅ Web Pod       : Running (pki-demo/hal-web-pki)")
 						fmt.Println("\n  Access:")
-						fmt.Println("    kubectl port-forward -n pki-demo svc/hal-web-pki 8089:80")
-						fmt.Println("    → http://localhost:8089")
+						fmt.Println("    → http://pki.localhost")
 					} else {
 						fmt.Println("  ⚠️  Web Pod       : Not running")
 					}
@@ -261,7 +260,7 @@ var vaultPKICmd = &cobra.Command{
 					fmt.Printf("[DRY RUN] Would generate Root CA (TTL %s) and Intermediate CA (TTL %s)\n", pkiRootTTL, pkiIntTTL)
 					fmt.Printf("[DRY RUN] Would create role 'hal-role' (domains: %s, max TTL: %s)\n", pkiAllowedDomains, pkiMaxCertTTL)
 					if pkiK8s {
-						fmt.Println("[DRY RUN] Would deploy cert-manager (Bitnami) + ClusterIssuer + web demo pod")
+						fmt.Println("[DRY RUN] Would deploy cert-manager (Jetstack) + ClusterIssuer + web demo pod")
 					}
 				}
 				return
@@ -417,7 +416,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	}
 }
 
-// runPKIK8sEnable deploys cert-manager (Bitnami) + ClusterIssuer + web demo pod.
+// runPKIK8sEnable deploys cert-manager (Jetstack) + ClusterIssuer + web demo pod.
 func runPKIK8sEnable(client *vault.Client, engine string, isPodman bool, intMount string) {
 	// Verify role exists before continuing
 	roleResp, err := client.Logical().Read(intMount + "/roles/hal-role")
@@ -573,13 +572,12 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	fmt.Println("\n✅ PKI Kubernetes demo deployed!")
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("  What was deployed:")
-	fmt.Println("    - cert-manager (namespace: cert-manager, Bitnami chart)")
+	fmt.Println("    - cert-manager (namespace: cert-manager, Jetstack chart)")
 	fmt.Printf("    - ClusterIssuer vault-pki-issuer → %s/sign/hal-role\n", intMount)
 	fmt.Println("    - Certificate hal-web-pki-cert (namespace: pki-demo)")
 	fmt.Printf("    - Web pod hal-web-pki (%s, TLS cert mounted at /tls)\n", pkiWebBackendImage)
 	fmt.Println("\n  Access:")
-	fmt.Println("    kubectl port-forward -n pki-demo svc/hal-web-pki 8089:80")
-	fmt.Println("    → http://localhost:8089")
+	fmt.Println("    → http://pki.localhost")
 	fmt.Println("\n  Inspect the certificate:")
 	fmt.Println("    kubectl describe certificate hal-web-pki-cert -n pki-demo")
 	fmt.Println("    kubectl get secret hal-web-pki-tls -n pki-demo -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -text")
@@ -776,7 +774,8 @@ spec:
 `, intMount, vaultIP)
 }
 
-// writePKIKindConfig writes a temporary KinD config exposing port 30082 → host 8089.
+// writePKIKindConfig writes a temporary KinD config exposing NodePort 30082 → host port 80.
+// This allows http://pki.localhost to reach the web demo without kubectl port-forward.
 func writePKIKindConfig() (string, error) {
 	f, err := os.CreateTemp("", "hal-pki-kind-*.yaml")
 	if err != nil {
@@ -788,7 +787,7 @@ nodes:
 - role: control-plane
   extraPortMappings:
     - containerPort: 30082
-      hostPort: 8089
+      hostPort: 80
       protocol: TCP
 `
 	if _, err := f.WriteString(config); err != nil {
@@ -821,7 +820,7 @@ func init() {
 	vaultPKICmd.Flags().BoolVar(&pkiK8s, "k8s", false, "Also deploy cert-manager + web demo pod on KinD (enable/update only)")
 	vaultPKICmd.Flags().BoolVar(&pkiForce, "force", false, "With --k8s update: also rebuild Root CA and Intermediate CA from scratch")
 	vaultPKICmd.Flags().StringVar(&pkiKindNodeImage, "kind-node-image", "kindest/node:v1.31.1", "KinD node image (used only when creating a new cluster)")
-	vaultPKICmd.Flags().StringVar(&pkiCertManagerVersion, "cert-manager-version", "", "Bitnami cert-manager Helm chart version (empty = latest)")
+	vaultPKICmd.Flags().StringVar(&pkiCertManagerVersion, "cert-manager-version", "", "Jetstack cert-manager Helm chart version (empty = latest)")
 	vaultPKICmd.Flags().StringVar(&pkiWebBackendImage, "web-backend-image", "nginx:alpine", "Demo backend container image")
 
 	Cmd.AddCommand(vaultPKICmd)
