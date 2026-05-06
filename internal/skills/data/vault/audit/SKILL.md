@@ -9,7 +9,7 @@ Use this skill to manage Vault audit devices in the local HAL lab.
 
 ## Lab Assumptions
 
-- Vault runs locally at `http://127.0.0.1:8200`
+- Vault runs locally at `http://vault.localhost:8200`
 - The default root token is `root`
 - Prefer `hal` commands for lifecycle actions
 - For day-2 inspection after deployment, provide exact `vault read` or `docker exec` commands rather than telling the user to edit Go code
@@ -48,7 +48,7 @@ If Vault MCP is available, inspect:
 
 If MCP is not available, use CLI verification commands:
 
-    export VAULT_ADDR='http://127.0.0.1:8200'
+    export VAULT_ADDR='http://vault.localhost:8200'
     export VAULT_TOKEN='root'
 
     vault read sys/audit
@@ -85,7 +85,7 @@ Include the real mounted path and file target when available:
 **Tier 3 — Actionable Insights & Testing**
 Provide at least one of these commands:
 
-    export VAULT_ADDR='http://127.0.0.1:8200'
+    export VAULT_ADDR='http://vault.localhost:8200'
     export VAULT_TOKEN='root'
 
     vault read sys/audit

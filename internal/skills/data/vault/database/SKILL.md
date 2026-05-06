@@ -9,7 +9,7 @@ This skill covers the local Vault database secrets engine lab implemented by `ha
 
 ## Lab Assumptions
 
-- Vault runs locally at `http://127.0.0.1:8200`
+- Vault runs locally at `http://vault.localhost:8200`
 - Root token defaults to `root`
 - Backend defaults to MariaDB (`--backend mariadb`); Postgres is planned but not implemented yet.
 - Prefer `hal` for deployment and cleanup, then use `vault read/write` for day-2 operations
@@ -62,7 +62,7 @@ Provide a brief confirmation that the database is running and the engine is moun
 
 **Tier 3 — Actionable Testing Commands**
 
-    export VAULT_ADDR='http://127.0.0.1:8200'
+    export VAULT_ADDR='http://vault.localhost:8200'
     export VAULT_TOKEN='root'
 
     vault read database/creds/dba-role

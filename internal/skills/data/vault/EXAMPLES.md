@@ -52,3 +52,31 @@ Assistant: Then verify surfaces:
 
     hal obs status
     hal vault status
+
+## Example 6: PKI — Two-Tier CA with cert-manager K8s Demo
+
+User: Set up a Vault PKI CA chain and show cert-manager issuing a cert in Kubernetes.
+
+A:
+
+    hal vault pki enable --k8s
+
+A: Access the nginx web page (cert info rendered by the pod itself):
+
+    https://pki.localhost:8089
+
+## Example 7: PKI — Vault ACME + Caddy Live Auto-Renewal Demo
+
+User: I want to see Caddy auto-renewing a cert every few minutes via Vault ACME.
+
+A:
+
+    hal vault pki enable --acme --acme-cert-ttl 5m
+
+A: Access the live countdown page:
+
+    https://acme.localhost:8090
+
+A: Change TTL on a running demo (restarts Caddy, forces fresh ACME exchange):
+
+    hal vault pki update --acme --acme-cert-ttl 2m

@@ -28,6 +28,7 @@ If obs comes after Vault, prefer `hal vault obs create` to backfill metrics/dash
 - Use k8s when the user asks about Kubernetes auth, KinD, VSO, secret refresh demos, or CSI projection.
 - Use mariadb when the user asks about database secrets, dynamic DB credentials, or root rotation.
 - Use ldap when the user asks about LDAP auth, LDAP secrets engine, dynamic users, static creds, or credential libraries.
+- Use pki when the user asks about PKI engines, Root CA, Intermediate CA, certificate issuance, cert-manager, ACME, Caddy auto-renewal, or `hal vault pki`.
 - Use create when the user asks for initial Vault bring-up, CE vs Enterprise selection, or obs backfill.
 - Use delete when the user asks for full Vault ecosystem teardown.
 - Use obs when the user asks to wire Vault metrics into Grafana or Prometheus, or manage Vault observability artifacts.

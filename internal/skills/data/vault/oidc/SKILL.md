@@ -9,7 +9,7 @@ This skill covers the Keycloak-backed OIDC demo implemented by `hal vault oidc`.
 
 ## Lab Assumptions
 
-- Vault runs locally at `http://127.0.0.1:8200`
+- Vault runs locally at `http://vault.localhost:8200`
 - Root token defaults to `root`
 - Keycloak is exposed locally on port `8081`
 - Prefer `hal` for lifecycle actions and `vault read/write` for post-deploy tuning
@@ -66,7 +66,7 @@ Provide a brief confirmation that the OIDC auth method is enabled.
 
 **Tier 3 — Actionable Testing Commands**
 
-    export VAULT_ADDR='http://127.0.0.1:8200'
+    export VAULT_ADDR='http://vault.localhost:8200'
     export VAULT_TOKEN='root'
 
     vault login -method=oidc

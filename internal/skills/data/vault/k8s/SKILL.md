@@ -9,7 +9,7 @@ This skill covers the KinD + Vault Secrets Operator lab implemented by `hal vaul
 
 ## Lab Assumptions
 
-- Vault runs locally at `http://127.0.0.1:8200`
+- Vault runs locally at `http://vault.localhost:8200`
 - Root token defaults to `root`
 - The lab uses KinD, `kubectl`, and `helm`
 - Native mode mounts `kubernetes/`
@@ -83,7 +83,7 @@ Provide a brief confirmation that KinD, VSO, and Vault auth are configured, incl
 
 **Tier 3 — Actionable Testing Commands**
 
-    export VAULT_ADDR='http://127.0.0.1:8200'
+    export VAULT_ADDR='http://vault.localhost:8200'
     export VAULT_TOKEN='root'
 
     vault read auth/kubernetes/config
