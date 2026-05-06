@@ -465,11 +465,11 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	_, _ = client.Logical().Write(pkiIntMount+"/config/acme", map[string]interface{}{
 		"enabled": true,
 	})
-	// Vault 1.16+ supports acme_min_cert_ttl to override the hardcoded 12h ACME minimum.
-	// The error is silently ignored on older Vault versions; enabled is already set above.
+	// config/acme max_ttl caps the TTL of all certs issued via ACME on this mount.
+	// Without this, Vault imposes a high default (2160h) which overrides the role TTL.
 	_, _ = client.Logical().Write(pkiIntMount+"/config/acme", map[string]interface{}{
-		"enabled":           true,
-		"acme_min_cert_ttl": pkiACMECertTTL,
+		"enabled": true,
+		"max_ttl": pkiACMECertTTL,
 	})
 	_, _ = client.Logical().Write(pkiIntMount+"/config/cluster", map[string]interface{}{
 		"path": "http://127.0.0.1:8200/v1/" + pkiIntMount,
@@ -956,10 +956,11 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 		"key_bits":            2048,
 		"no_store":            false,
 	})
-	// Vault 1.16+ only; silently ignored on older versions.
+	// Vault 2.x: config/acme max_ttl caps ALL certs issued via ACME on this mount.
+	// Without this, Vault defaults to 2160h regardless of the role TTL.
 	_, _ = client.Logical().Write(intMount+"/config/acme", map[string]interface{}{
-		"enabled":           true,
-		"acme_min_cert_ttl": pkiACMECertTTL,
+		"enabled": true,
+		"max_ttl": pkiACMECertTTL,
 	})
 	fmt.Printf("⚙️  Role 'acme-demo' TTL set to %s.\n", pkiACMECertTTL)
 
