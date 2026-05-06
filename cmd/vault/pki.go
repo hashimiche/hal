@@ -1048,14 +1048,10 @@ data:
   Caddyfile: |
     {
       email lab@hal.local
+      acme_ca %s
+      acme_ca_root /etc/caddy/vault-ca.pem
     }
     acme.localhost {
-			tls {
-				issuer acme {
-					dir %s
-					trusted_roots /etc/caddy/vault-ca.pem
-				}
-			}
       root * /srv
       file_server
     }
