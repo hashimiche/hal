@@ -934,9 +934,24 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 		return
 	}
 
-	// ---- KinD cluster (reuse if already running) ----
+	// ---- KinD cluster (reuse if already running, but verify port 8090 is mapped) ----
 	clusterOut, _ := exec.Command("kind", "get", "clusters").Output()
 	if strings.Contains(string(clusterOut), "kind") {
+		// Check that NodePort 30083 → host 8090 is actually mapped.
+		// kind-control-plane may have been created before the dual-port config was added.
+		portOut, _ := exec.Command(engine, "port", "kind-control-plane", "30083/tcp").Output()
+		if strings.TrimSpace(string(portOut)) == "" {
+			fmt.Println("❌ KinD cluster is running but port 8090 (NodePort 30083) is not mapped.")
+			fmt.Println("   The cluster was created before --acme support was added.")
+			fmt.Println()
+			fmt.Println("   To fix, recreate the cluster:")
+			fmt.Println("     kind delete cluster")
+			fmt.Println("     hal vault pki enable --acme")
+			fmt.Println()
+			fmt.Println("   ⚠️  If --k8s is also active, re-enable it afterwards:")
+			fmt.Println("     hal vault pki update --k8s")
+			return
+		}
 		fmt.Println("⚡ KinD cluster already running — reusing it.")
 	} else {
 		fmt.Println("🚀 Booting KinD cluster (attached to hal-net)...")
