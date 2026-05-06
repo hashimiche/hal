@@ -1004,6 +1004,14 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 		return
 	}
 
+	// Force a pod restart so /data/caddy (emptyDir) is cleared.
+	// Without this, kubectl apply is idempotent — the existing pod keeps its
+	// cached cert (potentially with the old TTL) and Caddy won't renew until
+	// ~1/3 of the original lifetime remains (could be hours for a 24h cert).
+	fmt.Println("♻️  Restarting Caddy pod to clear cert cache (forces fresh ACME exchange)...")
+	_ = exec.Command("kubectl", "rollout", "restart",
+		"deployment/hal-caddy-acme", "-n", "pki-acme-demo").Run()
+
 	fmt.Println("⏳ Waiting for Caddy pod to be Ready (up to 90s — first ACME exchange takes time)...")
 	podWaitErr := exec.Command(
 		"kubectl", "wait", "--for=condition=Ready",
