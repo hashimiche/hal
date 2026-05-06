@@ -1086,15 +1086,15 @@ data:
   Caddyfile: |
     {
       email lab@hal.local
-      acme_ca %s
-      acme_ca_root /etc/caddy/vault-ca.pem
     }
     acme.localhost {
       root * /srv
       file_server
       tls {
-        ca %s
-        ca_root /etc/caddy/vault-ca.pem
+        issuer acme {
+          ca %s
+          trusted_roots /etc/caddy/vault-ca.pem
+        }
       }
     }
 ---
@@ -1331,7 +1331,7 @@ spec:
     - port: 443
       targetPort: 443
       nodePort: 30083
-`, acmeDir, acmeDir, vaultIP, intMount, acmePublicDir, caddyImage)
+`, acmeDir, vaultIP, intMount, acmePublicDir, caddyImage)
 }
 
 func init() {
