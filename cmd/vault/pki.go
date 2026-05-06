@@ -1054,7 +1054,7 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("  What was deployed:")
 	fmt.Println("    - Caddy pod (namespace: pki-acme-demo) speaking ACME directly to Vault")
-	fmt.Printf("    - ACME directory: http://%s:8200/v1/%s/acme/directory\n", vaultIP, intMount)
+	fmt.Printf("    - ACME directory: http://vault.localhost:8200/v1/%s/roles/acme-demo/acme/directory\n", intMount)
 	fmt.Printf("    - Caddy image: %s\n", pkiCaddyImage)
 	fmt.Println("\n  Access (ACME):")
 	fmt.Println("    → https://acme.localhost:8090")
