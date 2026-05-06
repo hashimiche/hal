@@ -29,15 +29,17 @@ var (
 
 	// K8s / cert-manager integration
 	pkiK8s                bool
+	pkiACME               bool
 	pkiForce              bool
 	pkiKindNodeImage      string
 	pkiCertManagerVersion string
 	pkiWebBackendImage    string
+	pkiCaddyImage         string
 )
 
 var vaultPKICmd = &cobra.Command{
 	Use:   "pki [status|enable|disable|update]",
-	Short: "Manage Vault PKI engines (Root CA, Intermediate CA, cert-manager K8s integration)",
+	Short: "Manage Vault PKI engines (Root CA, Intermediate CA, cert-manager K8s or ACME/Caddy demo)",
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := parseLifecycleAction(args, &pkiEnable, &pkiDisable, &pkiUpdate); err != nil {
@@ -101,7 +103,7 @@ var vaultPKICmd = &cobra.Command{
 				fmt.Printf("  ❌ %-14s : Not mounted\n", pkiIntMount)
 			}
 
-			// K8s / cert-manager layer (always check, shown when relevant)
+			// K8s / cert-manager layer
 			clusterOut, _ := exec.Command("kind", "get", "clusters").Output()
 			clusterRunning := strings.Contains(string(clusterOut), "kind")
 
@@ -139,7 +141,7 @@ var vaultPKICmd = &cobra.Command{
 					).Output()
 					if strings.TrimSpace(string(podOut)) == "Running" {
 						fmt.Println("  ✅ Web Pod       : Running (pki-demo/hal-web-pki)")
-						fmt.Println("\n  Access:")
+						fmt.Println("\n  Access (cert-manager):")
 						fmt.Println("    → https://pki.localhost:8089")
 					} else {
 						fmt.Println("  ⚠️  Web Pod       : Not running")
@@ -147,21 +149,46 @@ var vaultPKICmd = &cobra.Command{
 				} else {
 					fmt.Println("  ⚪ cert-manager  : Not installed (hal vault pki enable --k8s)")
 				}
+
+				// ACME / Caddy layer
+				fmt.Println("\n  [ ACME / Caddy ]")
+				acmeNsOut, _ := exec.Command("kubectl", "get", "namespace", "pki-acme-demo", "--ignore-not-found").Output()
+				if strings.Contains(string(acmeNsOut), "pki-acme-demo") {
+					acmePodOut, _ := exec.Command(
+						"kubectl", "get", "pods", "-n", "pki-acme-demo",
+						"-l", "app=hal-caddy-acme", "-o", "jsonpath={.items[0].status.phase}",
+					).Output()
+					if strings.TrimSpace(string(acmePodOut)) == "Running" {
+						fmt.Println("  ✅ Caddy Pod     : Running (pki-acme-demo/hal-caddy-acme)")
+						fmt.Println("\n  Access (ACME):")
+						fmt.Println("    → https://acme.localhost:8090")
+					} else {
+						fmt.Println("  ⚠️  Caddy Pod     : Not running")
+					}
+				} else {
+					fmt.Println("  ⚪ ACME/Caddy    : Not installed (hal vault pki enable --acme)")
+				}
 			}
 
 			fmt.Println("\n💡 Next Step:")
 			if !rootMounted || !intMounted {
 				fmt.Println("   hal vault pki enable")
-				fmt.Println("   hal vault pki enable --k8s   → also deploy cert-manager + web demo")
+				fmt.Println("   hal vault pki enable --k8s    → also deploy cert-manager + web demo")
+				fmt.Println("   hal vault pki enable --acme   → also deploy Vault ACME + Caddy demo")
 			} else {
 				fmt.Println("   vault write " + pkiIntMount + "/issue/hal-role common_name=\"test.hal.local\" ttl=\"24h\"")
 				if clusterRunning {
 					cmOut, _ := exec.Command("helm", "list", "-n", "cert-manager", "-q").Output()
 					if !strings.Contains(string(cmOut), "cert-manager") {
-						fmt.Println("   hal vault pki enable --k8s   → add cert-manager integration")
+						fmt.Println("   hal vault pki enable --k8s    → add cert-manager integration")
+					}
+					acmeNsOut, _ := exec.Command("kubectl", "get", "namespace", "pki-acme-demo", "--ignore-not-found").Output()
+					if !strings.Contains(string(acmeNsOut), "pki-acme-demo") {
+						fmt.Println("   hal vault pki enable --acme   → add ACME/Caddy integration")
 					}
 				} else {
-					fmt.Println("   hal vault pki enable --k8s   → add cert-manager integration")
+					fmt.Println("   hal vault pki enable --k8s    → add cert-manager integration")
+					fmt.Println("   hal vault pki enable --acme   → add ACME/Caddy integration")
 				}
 			}
 			return
@@ -170,14 +197,16 @@ var vaultPKICmd = &cobra.Command{
 		// ==========================================
 		// 2. DISABLE
 		// ==========================================
-		// update --k8s (without --force) skips teardown entirely — it only
-		// reconciles the cert-manager layer on top of the existing PKI engines.
-		// Teardown runs for: explicit disable, plain update, update --k8s --force.
-		if (pkiDisable || pkiUpdate) && !(pkiUpdate && pkiK8s && !pkiForce) {
+		// update --k8s/--acme (without --force) skips PKI teardown entirely —
+		// they only reconcile the demo layer on top of existing engines.
+		// Teardown runs for: explicit disable, plain update, update --k8s/--acme --force.
+		skipTeardown := pkiUpdate && (pkiK8s || pkiACME) && !pkiForce
+		if (pkiDisable || pkiUpdate) && !skipTeardown {
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would unmount '%s' and '%s' from Vault\n", pkiRootMount, pkiIntMount)
-				fmt.Println("[DRY RUN] Would disable Vault auth mount 'kubernetes-pki' and delete policy 'hal-pki-issuer'")
+				fmt.Println("[DRY RUN] Would disable Vault auth mounts 'kubernetes-pki' and 'kubernetes-acme' and delete policy 'hal-pki-issuer'")
 				fmt.Println("[DRY RUN] Would uninstall cert-manager and delete pki-demo namespace (if deployed)")
+				fmt.Println("[DRY RUN] Would delete pki-acme-demo namespace (if deployed)")
 				fmt.Println("[DRY RUN] Would delete KinD cluster if hal vault k8s is not active")
 			} else {
 				fmt.Println("🛑 Tearing down Vault PKI...")
@@ -196,13 +225,16 @@ var vaultPKICmd = &cobra.Command{
 					if err := client.Sys().DisableAuth("kubernetes-pki"); err == nil {
 						fmt.Println("  ✅ Disabled auth mount 'kubernetes-pki'.")
 					}
+					if err := client.Sys().DisableAuth("kubernetes-acme"); err == nil {
+						fmt.Println("  ✅ Disabled auth mount 'kubernetes-acme'.")
+					}
 					_ = client.Sys().DeletePolicy("hal-pki-issuer")
 					fmt.Println("  ✅ Policy 'hal-pki-issuer' removed.")
 				} else {
 					fmt.Println("  ⚠️  Vault unreachable — skipping Vault-side cleanup.")
 				}
 
-				// Always clean up cert-manager if it was deployed
+				// cert-manager demo
 				cmOut, _ := exec.Command("helm", "list", "-n", "cert-manager", "-q").Output()
 				if strings.Contains(string(cmOut), "cert-manager") {
 					fmt.Println("⚙️  Removing cert-manager (detected from previous --k8s enable)...")
@@ -211,6 +243,14 @@ var vaultPKICmd = &cobra.Command{
 					_ = exec.Command("helm", "uninstall", "cert-manager", "-n", "cert-manager").Run()
 					_ = exec.Command("kubectl", "delete", "namespace", "cert-manager", "--ignore-not-found").Run()
 					fmt.Println("  ✅ cert-manager and pki-demo namespace removed.")
+				}
+
+				// ACME/Caddy demo
+				acmeNsOut, _ := exec.Command("kubectl", "get", "namespace", "pki-acme-demo", "--ignore-not-found").Output()
+				if strings.Contains(string(acmeNsOut), "pki-acme-demo") {
+					fmt.Println("⚙️  Removing ACME/Caddy demo...")
+					_ = exec.Command("kubectl", "delete", "namespace", "pki-acme-demo", "--ignore-not-found").Run()
+					fmt.Println("  ✅ pki-acme-demo namespace removed.")
 				}
 
 				// Conditionally delete KinD cluster
@@ -245,49 +285,68 @@ var vaultPKICmd = &cobra.Command{
 				return
 			}
 
-			if pkiK8s {
+			if pkiK8s || pkiACME {
 				for _, bin := range []string{"kind", "kubectl", "helm"} {
 					if _, err := exec.LookPath(bin); err != nil {
-						fmt.Printf("❌ '%s' not found in PATH (required for --k8s).\n", bin)
+						fmt.Printf("❌ '%s' not found in PATH (required for --k8s / --acme).\n", bin)
 						return
 					}
 				}
 			}
 
 			if global.DryRun {
-				if pkiUpdate && pkiK8s && !pkiForce {
-					fmt.Println("[DRY RUN] Would reconcile cert-manager layer only (PKI engines left intact)")
+				if pkiUpdate && (pkiK8s || pkiACME) && !pkiForce {
+					if pkiK8s {
+						fmt.Println("[DRY RUN] Would reconcile cert-manager layer only (PKI engines left intact)")
+					}
+					if pkiACME {
+						fmt.Println("[DRY RUN] Would reconcile ACME/Caddy layer only (PKI engines left intact)")
+					}
 					fmt.Println("[DRY RUN] Use --force to also rebuild Root CA and Intermediate CA")
 				} else {
 					fmt.Printf("[DRY RUN] Would enable PKI engines at '%s' (5y) and '%s' (2y)\n", pkiRootMount, pkiIntMount)
 					fmt.Printf("[DRY RUN] Would generate Root CA (TTL %s) and Intermediate CA (TTL %s)\n", pkiRootTTL, pkiIntTTL)
 					fmt.Printf("[DRY RUN] Would create role 'hal-role' (domains: %s, max TTL: %s)\n", pkiAllowedDomains, pkiMaxCertTTL)
 					if pkiK8s {
-						fmt.Println("[DRY RUN] Would deploy cert-manager (Jetstack) + ClusterIssuer + web demo pod")
+						fmt.Println("[DRY RUN] Would deploy cert-manager (Jetstack) + ClusterIssuer + nginx web demo pod")
+					}
+					if pkiACME {
+						fmt.Println("[DRY RUN] Would enable Vault ACME endpoint on pki-int + deploy Caddy demo pod")
 					}
 				}
 				return
 			}
 
-			// update --k8s (without --force): only reconcile the cert-manager layer.
+			// update --k8s/--acme (without --force): only reconcile the demo layer.
 			// The PKI engines are left completely intact — no CA rebuild.
-			if pkiUpdate && pkiK8s && !pkiForce {
-				mounts, _ := client.Sys().ListMounts()
-				if mounts == nil || mounts[pkiIntMount+"/"] == nil {
-					fmt.Printf("❌ Vault mount '%s' not found. Run 'hal vault pki enable' first.\n", pkiIntMount)
-					fmt.Println("   Use 'hal vault pki update --k8s --force' to rebuild everything from scratch.")
+			if pkiUpdate && !pkiForce {
+				if pkiK8s || pkiACME {
+					mounts, _ := client.Sys().ListMounts()
+					if mounts == nil || mounts[pkiIntMount+"/"] == nil {
+						fmt.Printf("❌ Vault mount '%s' not found. Run 'hal vault pki enable' first.\n", pkiIntMount)
+						fmt.Println("   Use 'hal vault pki update --force' to rebuild everything from scratch.")
+						return
+					}
+					if pkiK8s {
+						fmt.Println("♻️  Reconciling cert-manager layer (PKI engines preserved)...")
+						runPKIK8sEnable(client, engine, isPodman, pkiIntMount)
+					}
+					if pkiACME {
+						fmt.Println("♻️  Reconciling ACME/Caddy layer (PKI engines preserved)...")
+						runPKIACMEEnable(client, engine, isPodman, pkiIntMount)
+					}
 					return
 				}
-				fmt.Println("♻️  Reconciling cert-manager layer (PKI engines preserved)...")
-				runPKIK8sEnable(client, engine, isPodman, pkiIntMount)
-				return
 			}
 
-			// enable, plain update, or update --k8s --force: full CA rebuild.
+			// enable, plain update, or update --force: full CA rebuild.
 			runVaultPKISetup(client, pkiUpdate)
 
 			if pkiK8s {
 				runPKIK8sEnable(client, engine, isPodman, pkiIntMount)
+			}
+			if pkiACME {
+				runPKIACMEEnable(client, engine, isPodman, pkiIntMount)
 			}
 		}
 	},
@@ -396,6 +455,19 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	_ = client.Sys().PutPolicy("hal-pki-issuer", pkiPolicy)
 	fmt.Println("  ✅ Policy 'hal-pki-issuer' written.")
 
+	// ---- ACME endpoint ----
+	// Enable the built-in Vault ACME directory on pki-int so Caddy (or any
+	// ACME client) can request certs directly from Vault without cert-manager.
+	fmt.Printf("⚙️  Enabling ACME endpoint on '%s'...\n", pkiIntMount)
+	_, _ = client.Logical().Write(pkiIntMount+"/config/acme", map[string]interface{}{
+		"enabled": true,
+	})
+	_, _ = client.Logical().Write(pkiIntMount+"/config/cluster", map[string]interface{}{
+		"path": "http://127.0.0.1:8200/v1/" + pkiIntMount,
+	})
+	fmt.Println("  ✅ ACME directory enabled.")
+	fmt.Printf("     http://127.0.0.1:8200/v1/%s/acme/directory\n", pkiIntMount)
+
 	fmt.Println("\n✅ Vault PKI setup complete!")
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("  Key storage: Vault-internal (private keys never leave Vault)")
@@ -414,9 +486,10 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	fmt.Printf("    vault read -field=certificate %s/cert/ca\n", pkiIntMount)
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	if !pkiK8s {
+	if !pkiK8s && !pkiACME {
 		fmt.Println("\n💡 Next Step:")
-		fmt.Println("   hal vault pki enable --k8s   → deploy cert-manager + web demo")
+		fmt.Println("   hal vault pki enable --k8s    → deploy cert-manager + web demo")
+		fmt.Println("   hal vault pki enable --acme   → deploy Vault ACME + Caddy demo")
 	}
 }
 
@@ -834,8 +907,278 @@ spec:
 `, intMount, vaultIP)
 }
 
-// writePKIKindConfig writes a temporary KinD config exposing NodePort 30082 → host port 8089.
-// This allows https://pki.localhost:8089 to reach the web demo without kubectl port-forward.
+// runPKIACMEEnable deploys a Caddy pod that uses Vault's built-in ACME endpoint
+// to obtain its TLS certificate — no cert-manager, no Kubernetes CRDs.
+// Caddy speaks the ACME protocol directly to Vault's pki-int/acme/directory.
+func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMount string) {
+	// Verify ACME endpoint is live
+	acmeResp, err := client.Logical().Read(intMount + "/config/acme")
+	if err != nil || acmeResp == nil {
+		fmt.Printf("❌ ACME config not readable on '%s'. Run 'hal vault pki enable' first.\n", intMount)
+		return
+	}
+
+	// ---- KinD cluster (reuse if already running) ----
+	clusterOut, _ := exec.Command("kind", "get", "clusters").Output()
+	if strings.Contains(string(clusterOut), "kind") {
+		fmt.Println("⚡ KinD cluster already running — reusing it.")
+	} else {
+		fmt.Println("🚀 Booting KinD cluster (attached to hal-net)...")
+		kindConfigPath, err := writePKIKindConfig()
+		if err != nil {
+			fmt.Printf("❌ Failed to prepare KinD config: %v\n", err)
+			return
+		}
+		defer os.Remove(kindConfigPath)
+
+		startCmd := exec.Command("kind", "create", "cluster", "--config", kindConfigPath)
+		if strings.TrimSpace(pkiKindNodeImage) != "" {
+			startCmd.Args = append(startCmd.Args, "--image", pkiKindNodeImage)
+		}
+		env := os.Environ()
+		if isPodman {
+			env = append(env, "KIND_EXPERIMENTAL_PROVIDER=podman")
+		}
+		env = append(env, "KIND_EXPERIMENTAL_DOCKER_NETWORK=hal-net")
+		startCmd.Env = env
+		startCmd.Stdout = os.Stdout
+		startCmd.Stderr = os.Stderr
+		if err := startCmd.Run(); err != nil {
+			fmt.Printf("❌ Failed to start KinD: %v\n", err)
+			return
+		}
+	}
+
+	// ---- Vault IP reachable from within the cluster ----
+	vaultIPOut, _ := exec.Command(
+		engine, "inspect",
+		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+		"hal-vault",
+	).Output()
+	vaultIP := strings.TrimSpace(string(vaultIPOut))
+	if vaultIP == "" {
+		vaultIP = "hal-vault"
+	}
+
+	// ---- Apply Caddy manifests ----
+	fmt.Println("⚙️  Applying ACME/Caddy manifests (Namespace, ConfigMap, Deployment, Service)...")
+	manifests := buildPKIACMEManifests(vaultIP, intMount, pkiCaddyImage)
+	applyCmd := exec.Command("kubectl", "apply", "-f", "-")
+	applyCmd.Stdin = strings.NewReader(manifests)
+	applyCmd.Stdout = os.Stdout
+	applyCmd.Stderr = os.Stderr
+	if err := applyCmd.Run(); err != nil {
+		fmt.Printf("❌ Failed to apply ACME manifests: %v\n", err)
+		return
+	}
+
+	fmt.Println("⏳ Waiting for Caddy pod to be Ready (up to 90s — first ACME exchange takes time)...")
+	podWaitErr := exec.Command(
+		"kubectl", "wait", "--for=condition=Ready",
+		"pod", "-l", "app=hal-caddy-acme", "-n", "pki-acme-demo", "--timeout=90s",
+	).Run()
+	if podWaitErr != nil {
+		fmt.Println("❌ Caddy pod not Ready within 90s. Diagnosis:")
+		logOut, _ := exec.Command(
+			"kubectl", "logs", "-l", "app=hal-caddy-acme",
+			"-n", "pki-acme-demo", "--tail=40",
+		).Output()
+		if len(logOut) > 0 {
+			fmt.Println(string(logOut))
+		}
+		evtOut, _ := exec.Command(
+			"kubectl", "get", "events", "-n", "pki-acme-demo", "--sort-by=.lastTimestamp",
+		).Output()
+		if len(evtOut) > 0 {
+			fmt.Println(string(evtOut))
+		}
+		fmt.Println("\n💡 Run 'hal vault pki status' to recheck once the issue is resolved.")
+		return
+	}
+
+	fmt.Println("\n✅ ACME/Caddy demo deployed!")
+	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("  What was deployed:")
+	fmt.Println("    - Caddy pod (namespace: pki-acme-demo) speaking ACME directly to Vault")
+	fmt.Printf("    - ACME directory: http://%s:8200/v1/%s/acme/directory\n", vaultIP, intMount)
+	fmt.Printf("    - Caddy image: %s\n", pkiCaddyImage)
+	fmt.Println("\n  Access (ACME):")
+	fmt.Println("    → https://acme.localhost:8090")
+	fmt.Println("\n  Inspect the certificate:")
+	fmt.Println("    kubectl exec -n pki-acme-demo deploy/hal-caddy-acme -- caddy environ")
+	fmt.Println("    kubectl exec -n pki-acme-demo deploy/hal-caddy-acme -- ls /data/caddy/certificates/")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+}
+
+// buildPKIACMEManifests returns Namespace, ConfigMap (Caddyfile), Deployment, and Service YAML.
+// Caddy uses its native ACME client to request a cert from Vault's pki-int ACME directory.
+// The web page shows the cert details (openssl decode + raw PEM) identical to the cert-manager demo.
+func buildPKIACMEManifests(vaultIP, intMount, caddyImage string) string {
+	acmeDir := fmt.Sprintf("http://%s:8200/v1/%s/acme/directory", vaultIP, intMount)
+	return fmt.Sprintf(`---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pki-acme-demo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: caddy-config
+  namespace: pki-acme-demo
+data:
+  Caddyfile: |
+    {
+      acme_ca %s
+      acme_ca_root /etc/caddy/vault-ca.pem
+      email lab@hal.local
+    }
+    acme.localhost {
+      root * /srv
+      file_server
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hal-caddy-acme
+  namespace: pki-acme-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hal-caddy-acme
+  template:
+    metadata:
+      labels:
+        app: hal-caddy-acme
+    spec:
+      initContainers:
+        - name: fetch-ca
+          image: curlimages/curl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - curl -sS http://%s:8200/v1/%s/ca/pem -o /shared/vault-ca.pem
+          volumeMounts:
+            - name: shared-ca
+              mountPath: /shared
+        - name: build-page
+          image: alpine:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              mkdir -p /srv
+              cat > /srv/index.html <<'HTMLEOF'
+              <html>
+                <head>
+                  <meta charset='utf-8'>
+                  <title>HAL Vault ACME + Caddy</title>
+                  <style>
+                    body{font-family:system-ui;background:#0f172a;color:#e2e8f0;padding:24px;max-width:960px;margin:0 auto;}
+                    h1{margin-bottom:4px;color:#f8fafc;}
+                    h2{margin-top:28px;margin-bottom:6px;font-size:1rem;color:#94a3b8;}
+                    p a{color:#60a5fa;}
+                    pre{background:#1e293b;padding:14px;border-radius:8px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;}
+                    pre.info{color:#a5f3fc;}
+                    pre.pem{color:#34d399;}
+                    button{margin-top:12px;padding:8px 16px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;}
+                  </style>
+                  <script>
+                    async function loadCert() {
+                      try {
+                        const r = await fetch('/cert-info.txt');
+                        document.getElementById('info').textContent = r.ok ? await r.text() : 'Not yet available — cert may still be issuing.';
+                      } catch(e) { document.getElementById('info').textContent = String(e); }
+                      try {
+                        const r = await fetch('/cert-pem.txt');
+                        document.getElementById('pem').textContent = r.ok ? await r.text() : 'Not yet available.';
+                      } catch(e) { document.getElementById('pem').textContent = String(e); }
+                    }
+                    window.onload = loadCert;
+                  </script>
+                </head>
+                <body>
+                  <h1>HAL Vault ACME + Caddy</h1>
+                  <p>TLS certificate obtained by Caddy via <a href='%s'>Vault ACME directory</a>.</p>
+                  <button onclick='loadCert()'>Refresh cert</button>
+                  <h2>openssl x509 -noout -text</h2>
+                  <pre class='info' id='info'>Loading...</pre>
+                  <h2>PEM (raw)</h2>
+                  <pre class='pem' id='pem'>Loading...</pre>
+                </body>
+              </html>
+              HTMLEOF
+          volumeMounts:
+            - name: web-root
+              mountPath: /srv
+      containers:
+        - name: caddy
+          image: %s
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Start Caddy in background, then poll until the cert appears
+              # and write the decoded output for the web page.
+              caddy start --config /etc/caddy/Caddyfile &
+              CADDY_PID=$!
+              echo "Waiting for ACME cert to be issued..."
+              for i in $(seq 1 30); do
+                certfile=$(find /data/caddy/certificates -name '*.crt' 2>/dev/null | grep -v '.issuer' | head -1)
+                if [ -n "$certfile" ]; then
+                  openssl x509 -noout -text -in "$certfile" > /srv/cert-info.txt 2>&1 || true
+                  cat "$certfile" > /srv/cert-pem.txt 2>&1 || true
+                  echo "Cert dumped to /srv."
+                  break
+                fi
+                sleep 3
+              done
+              wait $CADDY_PID
+          ports:
+            - containerPort: 443
+          volumeMounts:
+            - name: caddy-config
+              mountPath: /etc/caddy/Caddyfile
+              subPath: Caddyfile
+            - name: shared-ca
+              mountPath: /etc/caddy/vault-ca.pem
+              subPath: vault-ca.pem
+            - name: caddy-data
+              mountPath: /data
+            - name: web-root
+              mountPath: /srv
+      volumes:
+        - name: caddy-config
+          configMap:
+            name: caddy-config
+        - name: shared-ca
+          emptyDir: {}
+        - name: caddy-data
+          emptyDir: {}
+        - name: web-root
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hal-caddy-acme
+  namespace: pki-acme-demo
+spec:
+  type: NodePort
+  selector:
+    app: hal-caddy-acme
+  ports:
+    - port: 443
+      targetPort: 443
+      nodePort: 30083
+`, acmeDir, vaultIP, intMount, acmeDir, caddyImage)
+}
+
+// writePKIKindConfig writes a temporary KinD config exposing:
+//   - NodePort 30082 → host port 8089 (cert-manager / nginx demo)
+//   - NodePort 30083 → host port 8090 (ACME / Caddy demo)
+//
+// Both ports are always declared so the cluster can host either or both
+// demos without needing to be recreated.
 func writePKIKindConfig() (string, error) {
 	f, err := os.CreateTemp("", "hal-pki-kind-*.yaml")
 	if err != nil {
@@ -848,6 +1191,9 @@ nodes:
   extraPortMappings:
     - containerPort: 30082
       hostPort: 8089
+      protocol: TCP
+    - containerPort: 30083
+      hostPort: 8090
       protocol: TCP
 `
 	if _, err := f.WriteString(config); err != nil {
@@ -877,11 +1223,13 @@ func init() {
 	vaultPKICmd.Flags().StringVar(&pkiMaxCertTTL, "max-cert-ttl", "24h", "Maximum TTL for leaf certificates issued by 'hal-role'")
 
 	// K8s / cert-manager flags
-	vaultPKICmd.Flags().BoolVar(&pkiK8s, "k8s", false, "Also deploy cert-manager + web demo pod on KinD (enable/update only)")
-	vaultPKICmd.Flags().BoolVar(&pkiForce, "force", false, "With --k8s update: also rebuild Root CA and Intermediate CA from scratch")
+	vaultPKICmd.Flags().BoolVar(&pkiK8s, "k8s", false, "Deploy cert-manager + nginx web demo on KinD (enable/update only)")
+	vaultPKICmd.Flags().BoolVar(&pkiACME, "acme", false, "Deploy Vault ACME endpoint + Caddy demo on KinD (enable/update only)")
+	vaultPKICmd.Flags().BoolVar(&pkiForce, "force", false, "With --k8s/--acme update: also rebuild Root CA and Intermediate CA from scratch")
 	vaultPKICmd.Flags().StringVar(&pkiKindNodeImage, "kind-node-image", "kindest/node:v1.31.1", "KinD node image (used only when creating a new cluster)")
 	vaultPKICmd.Flags().StringVar(&pkiCertManagerVersion, "cert-manager-version", "", "Jetstack cert-manager Helm chart version (empty = latest)")
-	vaultPKICmd.Flags().StringVar(&pkiWebBackendImage, "web-backend-image", "nginx:alpine", "Demo backend container image")
+	vaultPKICmd.Flags().StringVar(&pkiWebBackendImage, "web-backend-image", "nginx:alpine", "Demo backend container image (cert-manager/--k8s demo)")
+	vaultPKICmd.Flags().StringVar(&pkiCaddyImage, "caddy-image", "caddy:alpine", "Caddy container image (ACME/--acme demo)")
 
 	Cmd.AddCommand(vaultPKICmd)
 }
