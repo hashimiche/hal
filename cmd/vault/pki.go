@@ -524,7 +524,7 @@ func runPKIK8sEnable(client *vault.Client, engine string, isPodman bool, intMoun
 		fmt.Println("⚡ KinD cluster already running — reusing it.")
 	} else {
 		fmt.Println("🚀 Booting KinD cluster (attached to hal-net)...")
-		kindConfigPath, err := writePKIKindConfig()
+		kindConfigPath, err := writeHALKindConfig()
 		if err != nil {
 			fmt.Printf("❌ Failed to prepare KinD config: %v\n", err)
 			return
@@ -934,28 +934,13 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 		return
 	}
 
-	// ---- KinD cluster (reuse if already running, but verify port 8090 is mapped) ----
+	// ---- KinD cluster (reuse if already running) ----
 	clusterOut, _ := exec.Command("kind", "get", "clusters").Output()
 	if strings.Contains(string(clusterOut), "kind") {
-		// Check that NodePort 30083 → host 8090 is actually mapped.
-		// kind-control-plane may have been created before the dual-port config was added.
-		portOut, _ := exec.Command(engine, "port", "kind-control-plane", "30083/tcp").Output()
-		if strings.TrimSpace(string(portOut)) == "" {
-			fmt.Println("❌ KinD cluster is running but port 8090 (NodePort 30083) is not mapped.")
-			fmt.Println("   The cluster was created before --acme support was added.")
-			fmt.Println()
-			fmt.Println("   To fix, recreate the cluster:")
-			fmt.Println("     kind delete cluster")
-			fmt.Println("     hal vault pki enable --acme")
-			fmt.Println()
-			fmt.Println("   ⚠️  If --k8s is also active, re-enable it afterwards:")
-			fmt.Println("     hal vault pki update --k8s")
-			return
-		}
 		fmt.Println("⚡ KinD cluster already running — reusing it.")
 	} else {
 		fmt.Println("🚀 Booting KinD cluster (attached to hal-net)...")
-		kindConfigPath, err := writePKIKindConfig()
+		kindConfigPath, err := writeHALKindConfig()
 		if err != nil {
 			fmt.Printf("❌ Failed to prepare KinD config: %v\n", err)
 			return
@@ -1295,39 +1280,6 @@ spec:
       targetPort: 443
       nodePort: 30083
 `, acmeDir, vaultIP, intMount, acmeDir, caddyImage)
-}
-
-// writePKIKindConfig writes a temporary KinD config exposing:
-//   - NodePort 30082 → host port 8089 (cert-manager / nginx demo)
-//   - NodePort 30083 → host port 8090 (ACME / Caddy demo)
-//
-// Both ports are always declared so the cluster can host either or both
-// demos without needing to be recreated.
-func writePKIKindConfig() (string, error) {
-	f, err := os.CreateTemp("", "hal-pki-kind-*.yaml")
-	if err != nil {
-		return "", err
-	}
-	config := `kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-  extraPortMappings:
-    - containerPort: 30082
-      hostPort: 8089
-      protocol: TCP
-    - containerPort: 30083
-      hostPort: 8090
-      protocol: TCP
-`
-	if _, err := f.WriteString(config); err != nil {
-		_ = f.Close()
-		return "", err
-	}
-	if err := f.Close(); err != nil {
-		return "", err
-	}
-	return f.Name(), nil
 }
 
 func init() {
