@@ -934,6 +934,22 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 		return
 	}
 
+	// Always sync the acme-demo role TTL with the current flag value so that
+	// 'update --acme --acme-cert-ttl X' takes effect without --force.
+	_, _ = client.Logical().Write(intMount+"/roles/acme-demo", map[string]interface{}{
+		"allowed_domains":     pkiAllowedDomains,
+		"allow_subdomains":    true,
+		"allow_bare_domains":  false,
+		"allow_ip_sans":       true,
+		"use_csr_common_name": true,
+		"ttl":                 pkiACMECertTTL,
+		"max_ttl":             pkiACMECertTTL,
+		"key_type":            "rsa",
+		"key_bits":            2048,
+		"no_store":            false,
+	})
+	fmt.Printf("⚙️  Role 'acme-demo' TTL set to %s.\n", pkiACMECertTTL)
+
 	// ---- KinD cluster (reuse if already running) ----
 	clusterOut, _ := exec.Command("kind", "get", "clusters").Output()
 	if strings.Contains(string(clusterOut), "kind") {
@@ -1316,7 +1332,7 @@ func init() {
 	vaultPKICmd.Flags().StringVar(&pkiCertManagerVersion, "cert-manager-version", "", "Jetstack cert-manager Helm chart version (empty = latest)")
 	vaultPKICmd.Flags().StringVar(&pkiWebBackendImage, "web-backend-image", "nginx:alpine", "Demo backend container image (cert-manager/--k8s demo)")
 	vaultPKICmd.Flags().StringVar(&pkiCaddyImage, "caddy-image", "caddy:alpine", "Caddy container image (ACME/--acme demo)")
-	vaultPKICmd.Flags().StringVar(&pkiACMECertTTL, "acme-cert-ttl", "2m", "TTL for certs issued to Caddy via ACME (short = visible auto-renewal in the web page)")
+	vaultPKICmd.Flags().StringVar(&pkiACMECertTTL, "acme-cert-ttl", "5m", "TTL for certs issued to Caddy via ACME (short = visible auto-renewal in the web page)")
 
 	Cmd.AddCommand(vaultPKICmd)
 }
