@@ -1092,6 +1092,10 @@ data:
     acme.localhost {
       root * /srv
       file_server
+      tls {
+        ca %s
+        ca_root /etc/caddy/vault-ca.pem
+      }
     }
 ---
 apiVersion: apps/v1
@@ -1327,7 +1331,7 @@ spec:
     - port: 443
       targetPort: 443
       nodePort: 30083
-`, acmeDir, vaultIP, intMount, acmePublicDir, caddyImage)
+`, acmeDir, acmeDir, vaultIP, intMount, acmePublicDir, caddyImage)
 }
 
 func init() {
