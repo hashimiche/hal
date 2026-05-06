@@ -1229,9 +1229,10 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # Start Caddy, then continuously watch for cert changes and
-              # write updated cert-info.txt / cert-pem.txt to /srv so the
-              # web page can reflect each auto-renewal in real time.
+              # Install openssl (not bundled in caddy:alpine) then start Caddy.
+              # Continuously watch for cert changes and write updated
+              # cert-info.txt / cert-pem.txt to /srv for the live web page.
+              apk add --no-cache openssl >/dev/null 2>&1
               caddy start --config /etc/caddy/Caddyfile
               LAST_CERT=""
               while true; do
