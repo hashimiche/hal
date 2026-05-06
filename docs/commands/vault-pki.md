@@ -12,7 +12,7 @@ PKI is a Vault feature, not a standalone product. It lives under `hal vault pki`
 ## Related
 - Vault must be running: `hal vault create`
 - KinD cluster (shared with or independent of `hal vault k8s`): used only when `--k8s` is passed
-- `--acme` flag (future): ACME HTTP challenge integration — not yet implemented
+- `--acme` flag: enables Vault's built-in ACME endpoint, deploys Caddy on KinD, live cert-renewal web page
 
 ## Prerequisites
 - HAL CLI is available in your local environment.
@@ -37,6 +37,7 @@ Enables two Vault PKI secrets engines and builds a two-tier CA chain:
 | 8 | Configure CRL/issuing URLs for `pki-int` |
 | 9 | Create role `hal-role` on `pki-int` (domains: `hal.local`, `cluster.local`, `svc.cluster.local`, max TTL 24h) |
 | 10 | Write policy `hal-pki-issuer` (allows signing/issuing via `pki-int/sign/hal-role` and `pki-int/issue/hal-role`) |
+| 11 | Enable Vault ACME endpoint (`pki-int/config/acme`), set `max_ttl` = `acme-cert-ttl`, create role `acme-demo` (`allow_any_name`, `ttl`/`max_ttl` = `acme-cert-ttl`) |
 
 Private keys are **Vault-internal** — they never appear on disk.
 
@@ -53,6 +54,9 @@ Private keys are **Vault-internal** — they never appear on disk.
 --kind-node-image string   KinD node image used only when creating a new cluster (default "kindest/node:v1.31.1")
 --cert-manager-version     Jetstack cert-manager Helm chart version (empty = latest)
 --web-backend-image        Demo backend container image (default "nginx:alpine")
+--acme                     Deploy Vault ACME endpoint + Caddy demo on KinD (enable/update only)
+--acme-cert-ttl string     TTL for certs issued to Caddy via ACME (default "5m")
+--caddy-image string       Caddy container image (default "caddy:alpine")
 ```
 
 ### Examples
@@ -98,20 +102,25 @@ The `kubernetes-pki/` auth mount is always separate from the `kubernetes/` mount
 
 `update` behavior depends on which flags are present:
 
-| Command | CA engines | cert-manager |
-|---|---|---|
-| `update` | ♻️ Rebuilt from scratch | — |
-| `update --k8s` | ✅ Preserved as-is | ♻️ Reconciled |
-| `update --k8s --force` | ♻️ Rebuilt from scratch | ♻️ Reconciled |
+| Command | CA engines | cert-manager | Caddy/ACME |
+|---|---|---|---|
+| `update` | ♻️ Rebuilt from scratch | — | — |
+| `update --k8s` | ✅ Preserved as-is | ♻️ Reconciled | — |
+| `update --acme` | ✅ Preserved as-is | — | ♻️ Role TTL synced + pod restarted |
+| `update --k8s --force` | ♻️ Rebuilt from scratch | ♻️ Reconciled | — |
+| `update --acme --force` | ♻️ Rebuilt from scratch | — | ♻️ Full rebuild |
 
 - **`update`** (no flags): unmounts `pki-root`/`pki-int` and fully rebuilds the CA chain. Use when you need fresh root/intermediate keys.
 - **`update --k8s`**: leaves the PKI engines untouched — only reconciles the cert-manager Helm release, re-configures the `kubernetes-pki/` auth mount, and re-applies all K8s resources. Fails fast if `pki-int` is not mounted (run `enable` first).
 - **`update --k8s --force`**: full teardown and rebuild — CAs, cert-manager, and all K8s resources from scratch.
 
 ```bash
-hal vault pki update                  # rebuild CAs only
-hal vault pki update --k8s            # reconcile cert-manager, preserve CAs
-hal vault pki update --k8s --force    # rebuild everything
+hal vault pki update                       # rebuild CAs only
+hal vault pki update --k8s                 # reconcile cert-manager, preserve CAs
+hal vault pki update --k8s --force         # rebuild everything
+hal vault pki update --acme                # re-sync role TTL, restart Caddy
+hal vault pki update --acme --acme-cert-ttl 2m   # change TTL to 2m
+hal vault pki update --acme --force        # full CA rebuild + redeploy Caddy
 ```
 
 ---
@@ -191,9 +200,54 @@ kubectl get secret hal-web-pki-tls -n pki-demo \
 
 ---
 
-## Future: `--acme` flag
+## `--acme` flag (enable / update)
 
-A future `--acme` flag will enable ACME HTTP-01 challenge support through Vault's PKI engine. Not implemented yet — reserved for a future work cycle.
+When `--acme` is passed, the following additional steps run after PKI CA setup:
+
+| Step | What happens |
+|------|--------------|
+| 1 | Vault ACME endpoint enabled (`pki-int/config/acme`, `max_ttl` = `acme-cert-ttl`) |
+| 2 | Role `acme-demo` created/updated: `allow_any_name=true`, `ttl`/`max_ttl` = `acme-cert-ttl` |
+| 3 | Reuse existing KinD cluster or create a new one (all 3 port mappings declared upfront via shared `writeHALKindConfig()`) |
+| 4 | `fetch-ca` init container downloads Vault Root CA PEM from `pki-int/ca/pem` |
+| 5 | `build-page` init container writes live countdown HTML page to `/srv` |
+| 6 | Caddy main container: `apk add openssl`, `caddy start`, then watches `/data/caddy/certificates` for cert changes, writes `cert-info.txt` + `cert-pem.txt` to `/srv` |
+| 7 | Caddy uses global `acme_ca` + `acme_ca_root` Caddyfile directives to force Vault ACME (overrides Caddy's local CA fallback for `.localhost` domains) |
+| 8 | `kubectl rollout restart` forces fresh pod on every `update --acme` (clears cert cache, forces new ACME exchange) |
+| 9 | Wait up to 90s for Caddy pod Ready (ACME exchange on first start) |
+
+### Web page
+The page at `https://acme.localhost:8090` shows:
+- Live countdown to cert expiry (updates every 500ms)
+- Progress bar (blue → amber → red as cert ages)
+- `🔄 Renewed!` badge flashes for 8s when Caddy auto-renews (serial change detection)
+- Full `openssl x509 -noout -text` output
+- Raw PEM
+
+### TTL behaviour (Vault 2.x)
+Vault's ACME layer has a `config/acme max_ttl` that defaults to `2160h` and overrides the role TTL. Both `config/acme max_ttl` **and** the role `ttl`/`max_ttl` must be set to the desired value — `--acme-cert-ttl` controls both.
+
+```bash
+# default 5m TTL
+hal vault pki enable --acme
+
+# custom TTL
+hal vault pki enable --acme --acme-cert-ttl 2m
+
+# change TTL on running demo (restarts Caddy to force fresh cert)
+hal vault pki update --acme --acme-cert-ttl 3m
+```
+
+### Access
+```
+https://acme.localhost:8090
+```
+
+### Inspect
+```bash
+kubectl exec -n pki-acme-demo deploy/hal-caddy-acme -- ls /data/caddy/certificates/
+kubectl logs -n pki-acme-demo deploy/hal-caddy-acme
+```
 
 ---
 
@@ -202,6 +256,7 @@ A future `--acme` flag will enable ACME HTTP-01 challenge support through Vault'
 - Writes policy `hal-pki-issuer` to Vault.
 - `--k8s`: enables dedicated `kubernetes-pki/` auth mount, deploys cert-manager, creates cluster-scoped `ClusterIssuer`.
 - `--k8s`: stores a K8s SA-bound token as a Kubernetes secret in `cert-manager` namespace.
+- `--acme`: enables `pki-int/config/acme`, creates `acme-demo` role, deploys Caddy pod in `pki-acme-demo` namespace.
 - `disable` tears down all of the above automatically.
 
 ---
@@ -222,10 +277,13 @@ Flags (enable/update):
   --kind-node-image string    KinD node image (default "kindest/node:v1.31.1")
   --cert-manager-version      Jetstack chart version (empty = latest)
   --web-backend-image         Demo backend image (default "nginx:alpine")
+  --acme                      Deploy Vault ACME endpoint + Caddy demo on KinD
+  --acme-cert-ttl string      TTL for ACME certs (default "5m", sets both config/acme max_ttl and role TTL)
+  --caddy-image string        Caddy container image (default "caddy:alpine")
 
 Global flags: --debug, --dry-run
 ```
  Vault PKI teardown complete.
 💡 Next Step: hal vault pki enable
 ❌ Vault mount 'pki-int' not found. Run 'hal vault pki enable' first.
-   Use 'hal vault pki update --k8s --force' to rebuild everything from scratch.
+   Use 'hal vault pki update --k8s --force' to rebuild everything from scratch.   

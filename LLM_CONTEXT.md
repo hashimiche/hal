@@ -105,6 +105,13 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 - Vault k8s demo (`hal vault k8s`) now supports two explicit demo modes behind the same nginx endpoint (`http://web.localhost:8088`):
     - Native mode: `VaultStaticSecret` sync to Kubernetes secret, injected as env var, HTML rendered in-pod.
     - CSI mode (`--csi`, Enterprise): `CSISecrets` projection via `csi.vso.hashicorp.com`, HTML rendered from mounted file.
+- `hal vault pki` manages a two-tier Vault PKI CA chain (Root CA `pki-root` + Intermediate CA `pki-int`, RSA-4096) and two optional K8s demo modes:
+    - `--k8s`: deploys Jetstack cert-manager to a shared KinD cluster, configures a dedicated `kubernetes-pki/` Vault auth mount (always independent of `kubernetes/`), creates `ClusterIssuer vault-pki-issuer`, issues cert `hal-web-pki-cert`, exposes nginx web pod at `https://pki.localhost:8089` (NodePort 30082). The nginx pod installs openssl at startup to decode the cert into the page.
+    - `--acme`: enables Vault's built-in ACME endpoint (`pki-int/config/acme`), creates role `acme-demo` with short TTL (default `5m`), deploys a Caddy pod that obtains its cert via ACME directly from Vault (no cert-manager), exposes a live web page at `https://acme.localhost:8090` (NodePort 30083) showing a countdown to cert expiry and a renewal badge when Caddy auto-renews.
+    - Both modes share the same KinD cluster (via `writeHALKindConfig()` in `helper.go`) with all 3 port mappings declared upfront (30080→8088, 30082→8089, 30083→8090).
+    - `update --acme` (without `--force`) preserves PKI engines, re-syncs `acme-demo` role TTL and `config/acme max_ttl` in Vault, and does a `kubectl rollout restart` on the Caddy deployment to clear its cert cache and force a fresh ACME exchange with the new TTL.
+    - Vault 2.x ACME TTL control: `config/acme max_ttl` caps all ACME-issued certs on the mount — it **must** be set to the desired TTL because Vault defaults to `2160h` regardless of the role TTL. The role `acme-demo` also sets `ttl`/`max_ttl` and `allow_any_name: true` (needed for `acme.localhost` domain).
+    - `--acme-cert-ttl` flag (default `5m`) controls both `config/acme max_ttl` and the role TTL.
 - Observability product integration is centralized through shared artifact registration in `internal/global/obs.go`.
     - Product create commands no longer auto-register Prometheus targets/dashboards.
     - Observability onboarding is explicit and opt-in via `hal <product> obs <create|update|delete|status>`.
