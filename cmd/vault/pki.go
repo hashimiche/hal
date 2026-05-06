@@ -1009,29 +1009,9 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 		vaultIP = "hal-vault"
 	}
 
-	// ---- Register acme.localhost in Vault's /etc/hosts ----
-	// The Caddy pod uses hostNetwork=true, so it listens on ports 80+443
-	// directly on the KinD node's hal-net IP. Vault needs to resolve
-	// acme.localhost to that IP to complete the ACME HTTP-01/TLS-ALPN-01
-	// challenge (CertMagic short-circuits *.localhost to internal CA;
-	// forcing an external ACME issuer requires the challenge to succeed).
-	kindIPOut, _ := exec.Command(
-		engine, "inspect",
-		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-		"kind-control-plane",
-	).Output()
-	kindIP := strings.TrimSpace(string(kindIPOut))
-	if kindIP != "" {
-		// Idempotent: remove any stale entry, then add the current one.
-		_ = exec.Command(engine, "exec", "hal-vault", "sh", "-c",
-			"sed -i '/acme.localhost/d' /etc/hosts && echo '"+kindIP+" acme.localhost' >> /etc/hosts",
-		).Run()
-		fmt.Printf("⚙️  Registered acme.localhost → %s in Vault /etc/hosts (ACME challenge routing).\n", kindIP)
-	}
-
 	// ---- Apply Caddy manifests ----
 	fmt.Println("⚙️  Applying ACME/Caddy manifests (Namespace, ConfigMap, Deployment, Service)...")
-	manifests := buildPKIACMEManifests(vaultIP, intMount, pkiCaddyImage)
+	manifests := buildPKIACMEManifests(vaultIP, intMount, pkiACMECertTTL, pkiCaddyImage)
 	applyCmd := exec.Command("kubectl", "apply", "-f", "-")
 	applyCmd.Stdin = strings.NewReader(manifests)
 	applyCmd.Stdout = os.Stdout
@@ -1073,27 +1053,31 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 		return
 	}
 
-	fmt.Println("\n✅ ACME/Caddy demo deployed!")
+	fmt.Println("\n✅ Vault PKI + Caddy demo deployed!")
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("  What was deployed:")
-	fmt.Println("    - Caddy pod (namespace: pki-acme-demo) speaking ACME directly to Vault")
-	fmt.Printf("    - ACME directory: http://vault.localhost:8200/v1/%s/roles/acme-demo/acme/directory\n", intMount)
+	fmt.Println("    - Caddy pod (namespace: pki-acme-demo) using cert from Vault PKI direct issuance")
+	fmt.Println("    - Renewal sidecar re-issues from Vault at 2/3 of cert TTL, reloads Caddy via admin API")
+	fmt.Printf("    - Cert TTL: %s (Vault role: pki-int/roles/acme-demo)\n", pkiACMECertTTL)
 	fmt.Printf("    - Caddy image: %s\n", pkiCaddyImage)
-	fmt.Println("\n  Access (ACME):")
+	fmt.Println("\n  Access:")
 	fmt.Println("    → https://acme.localhost:8090")
 	fmt.Println("\n  Inspect the certificate:")
-	fmt.Println("    kubectl exec -n pki-acme-demo deploy/hal-caddy-acme -- caddy environ")
-	fmt.Println("    kubectl exec -n pki-acme-demo deploy/hal-caddy-acme -- ls /data/caddy/certificates/")
+	fmt.Println("    kubectl exec -n pki-acme-demo deploy/hal-caddy-acme -c caddy -- openssl x509 -noout -text -in /certs/cert.pem")
+	fmt.Println("    kubectl logs -n pki-acme-demo deploy/hal-caddy-acme -c renewer")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
 
 // buildPKIACMEManifests returns Namespace, ConfigMap (Caddyfile), Deployment, and Service YAML.
-// Caddy uses its native ACME client to request a cert from Vault's role-scoped ACME directory
-// (pki-int/roles/acme-demo/acme/directory) which issues certs with pkiACMECertTTL (default 2m).
-// The web page shows a live countdown to expiry and flashes when Caddy auto-renews the cert.
-func buildPKIACMEManifests(vaultIP, intMount, caddyImage string) string {
-	acmeDir := fmt.Sprintf("http://%s:8200/v1/%s/roles/acme-demo/acme/directory", vaultIP, intMount)
-	acmePublicDir := fmt.Sprintf("http://vault.localhost:8200/v1/%s/roles/acme-demo/acme/directory", intMount)
+// Instead of ACME protocol (which requires Vault to HTTP-callback the pod — broken on macOS/rootless),
+// we use Vault PKI direct issuance: an init container issues the initial cert via the Vault API,
+// Caddy serves it via tls /certs/cert.pem /certs/key.pem, and a renewal sidecar re-issues at 2/3
+// of the cert TTL and reloads Caddy via its admin API. Same renewal countdown demo, no challenge drama.
+func buildPKIACMEManifests(vaultIP, intMount, certTTL, caddyImage string) string {
+	renewSecs := parseCertTTLToSeconds(certTTL) * 2 / 3
+	if renewSecs < 10 {
+		renewSecs = 10
+	}
 	return fmt.Sprintf(`---
 apiVersion: v1
 kind: Namespace
@@ -1108,17 +1092,13 @@ metadata:
 data:
   Caddyfile: |
     {
-      email lab@hal.local
+      admin 0.0.0.0:2019
+      auto_https off
     }
-    acme.localhost {
+    https://acme.localhost:443 {
       root * /srv
       file_server
-      tls {
-        issuer acme {
-          ca %s
-          trusted_roots /etc/caddy/vault-ca.pem
-        }
-      }
+      tls /certs/cert.pem /certs/key.pem
     }
 ---
 apiVersion: apps/v1
@@ -1136,18 +1116,28 @@ spec:
       labels:
         app: hal-caddy-acme
     spec:
-      # hostNetwork gives Caddy direct access to the KinD node's network
-      # interface so Vault can reach ports 80 (HTTP-01) and 443 (TLS-ALPN-01)
-      # for ACME challenge validation without iptables NodePort indirection.
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
       initContainers:
-        - name: fetch-ca
-          image: curlimages/curl:latest
+        - name: issue-cert
+          image: alpine:latest
           command: ["/bin/sh", "-c"]
           args:
-            - curl -sS http://%s:8200/v1/%s/ca/pem -o /shared/vault-ca.pem
+            - |
+              apk add --no-cache curl jq >/dev/null 2>&1
+              echo "Issuing initial cert from Vault PKI..."
+              RESPONSE=$(curl -sf -X POST "http://%s:8200/v1/%s/issue/acme-demo" \
+                -H "X-Vault-Token: root" \
+                -H "Content-Type: application/json" \
+                -d '{"common_name":"acme.localhost","ttl":"%s"}')
+              if [ $? -ne 0 ] || [ -z "$RESPONSE" ]; then
+                echo "ERROR: failed to issue cert from Vault"; exit 1
+              fi
+              echo "$RESPONSE" | jq -r '.data.certificate' > /certs/cert.pem
+              echo "$RESPONSE" | jq -r '.data.private_key' > /certs/key.pem
+              echo "$RESPONSE" | jq -r '.data.issuing_ca' > /shared/vault-ca.pem
+              echo "Cert issued OK: $(jq -r '.data.expiration' <<< "$RESPONSE")"
           volumeMounts:
+            - name: certs
+              mountPath: /certs
             - name: shared-ca
               mountPath: /shared
         - name: build-page
@@ -1160,7 +1150,7 @@ spec:
               <html>
                 <head>
                   <meta charset='utf-8'>
-                  <title>HAL Vault ACME + Caddy</title>
+                  <title>HAL Vault PKI + Caddy</title>
                   <style>
                     *{box-sizing:border-box;}
                     body{font-family:system-ui;background:#0f172a;color:#e2e8f0;padding:24px;max-width:960px;margin:0 auto;}
@@ -1198,8 +1188,6 @@ spec:
                       return m ? new Date(m[1].trim()) : null;
                     }
                     function parseSerial(infoText) {
-                      // OpenSSL formats serial numbers differently depending on issuer.
-                      // Accept both colon-separated hex and single-token values.
                       const m = infoText.match(/Serial Number:\s*(?:\n\s*)?([^\n]+)/i);
                       return m ? m[1].trim() : null;
                     }
@@ -1236,10 +1224,9 @@ spec:
                         const serial = parseSerial(text);
                         if (serial && serial !== lastSerial) {
                           if (lastSerial !== null) {
-                            // cert was renewed — flash the badge
                             const badge = document.getElementById('renewal-badge');
                             badge.className = 'badge renewed';
-                            badge.textContent = '🔄 Renewed!';
+                            badge.textContent = '\ud83d\udd04 Renewed!';
                             clearTimeout(renewalBadgeTimer);
                             renewalBadgeTimer = setTimeout(() => {
                               badge.className = 'badge live';
@@ -1250,7 +1237,6 @@ spec:
                           document.getElementById('serial').textContent = 'Serial: ' + serial;
                         }
 
-                        // Always refresh expiry metadata and PEM rendering even when serial parsing fails.
                         notAfter = parseNotAfter(text);
                         notBefore = parseNotBefore(text);
                         if (!serial) {
@@ -1271,8 +1257,8 @@ spec:
                   </script>
                 </head>
                 <body>
-                  <h1>HAL Vault ACME + Caddy</h1>
-                  <p class='subtitle'>Certificate via <a href='%s'>Vault ACME (role: acme-demo)</a> · auto-renewed by Caddy</p>
+                  <h1>HAL Vault PKI + Caddy</h1>
+                  <p class='subtitle'>Short-lived cert from <a href='http://vault.localhost:8200/ui/'>Vault PKI</a> (role: acme-demo) &middot; auto-renewed by sidecar every ~2/3 TTL</p>
 
                   <div class='card'>
                     <h2>Time until expiry <span id='renewal-badge' class='badge live'>Live</span></h2>
@@ -1283,7 +1269,7 @@ spec:
                   </div>
 
                   <h2>openssl x509 -noout -text</h2>
-                  <div class='card'><pre class='info' id='info'>Waiting for Caddy to complete ACME exchange...</pre></div>
+                  <div class='card'><pre class='info' id='info'>Waiting for initial cert from Vault PKI...</pre></div>
 
                   <h2>PEM (raw)</h2>
                   <div class='card'><pre class='pem' id='pem'></pre></div>
@@ -1299,46 +1285,64 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # Install openssl (not bundled in caddy:alpine) then start Caddy.
-              # Continuously watch for cert changes and write updated
-              # cert-info.txt / cert-pem.txt to /srv for the live web page.
               apk add --no-cache openssl >/dev/null 2>&1
               caddy start --config /etc/caddy/Caddyfile
-              LAST_CERT=""
               while true; do
-                certfile=$(find /data/caddy/certificates -name '*.crt' 2>/dev/null | grep -v '\.issuer' | head -1)
-                if [ -n "$certfile" ] && [ "$certfile" != "$LAST_CERT" ]; then
-                  openssl x509 -noout -text -in "$certfile" > /srv/cert-info.txt 2>&1 || true
-                  cat "$certfile" > /srv/cert-pem.txt 2>&1 || true
-                  LAST_CERT="$certfile"
-                elif [ -n "$certfile" ]; then
-                  # same file path — check if serial changed (Caddy overwrites in place)
-                  new_serial=$(openssl x509 -noout -serial -in "$certfile" 2>/dev/null)
-                  old_serial=$(grep -m1 'Serial Number' /srv/cert-info.txt 2>/dev/null || echo "")
-                  if ! echo "$old_serial" | grep -qF "${new_serial#serial=}"; then
-                    openssl x509 -noout -text -in "$certfile" > /srv/cert-info.txt 2>&1 || true
-                    cat "$certfile" > /srv/cert-pem.txt 2>&1 || true
-                  fi
+                if [ -f /certs/cert.pem ]; then
+                  openssl x509 -noout -text -in /certs/cert.pem > /srv/cert-info.txt 2>&1 || true
+                  cat /certs/cert.pem > /srv/cert-pem.txt 2>&1 || true
                 fi
                 sleep 5
               done
           ports:
             - containerPort: 443
+            - containerPort: 2019
           volumeMounts:
             - name: caddy-config
               mountPath: /etc/caddy/Caddyfile
               subPath: Caddyfile
-            - name: shared-ca
-              mountPath: /etc/caddy/vault-ca.pem
-              subPath: vault-ca.pem
+            - name: certs
+              mountPath: /certs
             - name: caddy-data
               mountPath: /data
             - name: web-root
               mountPath: /srv
+        - name: renewer
+          image: alpine:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              apk add --no-cache curl jq >/dev/null 2>&1
+              RENEW_INTERVAL=%d
+              VAULT_URL="http://%s:8200/v1/%s/issue/acme-demo"
+              CERT_TTL="%s"
+              echo "Renewer started: will re-issue every ${RENEW_INTERVAL}s (TTL=${CERT_TTL})"
+              while true; do
+                sleep "$RENEW_INTERVAL"
+                echo "Renewing cert from Vault PKI..."
+                RESPONSE=$(curl -sf -X POST "$VAULT_URL" \
+                  -H "X-Vault-Token: root" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"common_name\":\"acme.localhost\",\"ttl\":\"${CERT_TTL}\"}") || continue
+                echo "$RESPONSE" | jq -r '.data.certificate' > /certs/cert.pem
+                echo "$RESPONSE" | jq -r '.data.private_key' > /certs/key.pem
+                echo "Cert renewed. Reloading Caddy..."
+                curl -sf -X POST http://localhost:2019/load \
+                  -H 'Content-Type: text/caddyfile' \
+                  --data-binary @/etc/caddy/Caddyfile >/dev/null 2>&1 && echo "Caddy reloaded OK" || echo "Caddy reload failed (will retry next cycle)"
+              done
+          volumeMounts:
+            - name: caddy-config
+              mountPath: /etc/caddy/Caddyfile
+              subPath: Caddyfile
+            - name: certs
+              mountPath: /certs
       volumes:
         - name: caddy-config
           configMap:
             name: caddy-config
+        - name: certs
+          emptyDir: {}
         - name: shared-ca
           emptyDir: {}
         - name: caddy-data
@@ -1359,7 +1363,27 @@ spec:
     - port: 443
       targetPort: 443
       nodePort: 30083
-`, acmeDir, vaultIP, intMount, acmePublicDir, caddyImage)
+`, vaultIP, intMount, certTTL, caddyImage, renewSecs, vaultIP, intMount, certTTL)
+}
+// parseCertTTLToSeconds converts a Vault TTL string ("5m", "2h", "300s") to seconds.
+func parseCertTTLToSeconds(ttl string) int {
+	ttl = strings.TrimSpace(ttl)
+	if strings.HasSuffix(ttl, "m") {
+		n := 0
+		fmt.Sscanf(strings.TrimSuffix(ttl, "m"), "%d", &n)
+		return n * 60
+	}
+	if strings.HasSuffix(ttl, "h") {
+		n := 0
+		fmt.Sscanf(strings.TrimSuffix(ttl, "h"), "%d", &n)
+		return n * 3600
+	}
+	if strings.HasSuffix(ttl, "s") {
+		n := 0
+		fmt.Sscanf(strings.TrimSuffix(ttl, "s"), "%d", &n)
+		return n
+	}
+	return 300
 }
 
 func init() {
