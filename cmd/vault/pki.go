@@ -1127,12 +1127,12 @@ spec:
                       const m = infoText.match(/Not Before\s*:\s*(.+)/i);
                       return m ? new Date(m[1].trim()) : null;
                     }
-										function parseSerial(infoText) {
-											// OpenSSL formats serial numbers differently depending on issuer.
-											// Accept both colon-separated hex and single-token values.
-											const m = infoText.match(/Serial Number:\s*(?:\n\s*)?([^\n]+)/i);
-											return m ? m[1].trim() : null;
-										}
+                    function parseSerial(infoText) {
+                      // OpenSSL formats serial numbers differently depending on issuer.
+                      // Accept both colon-separated hex and single-token values.
+                      const m = infoText.match(/Serial Number:\s*(?:\n\s*)?([^\n]+)/i);
+                      return m ? m[1].trim() : null;
+                    }
 
                     function updateCountdown() {
                       if (!notAfter) return;
@@ -1161,10 +1161,10 @@ spec:
                         const r = await fetch('/cert-info.txt?t=' + Date.now());
                         if (!r.ok) return;
                         const text = await r.text();
-												document.getElementById('info').textContent = text;
+                        document.getElementById('info').textContent = text;
 
                         const serial = parseSerial(text);
-												if (serial && serial !== lastSerial) {
+                        if (serial && serial !== lastSerial) {
                           if (lastSerial !== null) {
                             // cert was renewed — flash the badge
                             const badge = document.getElementById('renewal-badge');
@@ -1177,18 +1177,18 @@ spec:
                             }, 8000);
                           }
                           lastSerial = serial;
-													document.getElementById('serial').textContent = 'Serial: ' + serial;
+                          document.getElementById('serial').textContent = 'Serial: ' + serial;
                         }
 
-												// Always refresh expiry metadata and PEM rendering even when serial parsing fails.
-												notAfter = parseNotAfter(text);
-												notBefore = parseNotBefore(text);
-												if (!serial) {
-													document.getElementById('serial').textContent = 'Serial: unavailable';
-												}
+                        // Always refresh expiry metadata and PEM rendering even when serial parsing fails.
+                        notAfter = parseNotAfter(text);
+                        notBefore = parseNotBefore(text);
+                        if (!serial) {
+                          document.getElementById('serial').textContent = 'Serial: unavailable';
+                        }
 
-												const pr = await fetch('/cert-pem.txt?t=' + Date.now());
-												document.getElementById('pem').textContent = pr.ok ? await pr.text() : '';
+                        const pr = await fetch('/cert-pem.txt?t=' + Date.now());
+                        document.getElementById('pem').textContent = pr.ok ? await pr.text() : '';
                       } catch(_) {}
                       updateCountdown();
                     }
