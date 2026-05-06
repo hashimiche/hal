@@ -253,6 +253,9 @@ var vaultPKICmd = &cobra.Command{
 					_ = exec.Command("kubectl", "delete", "namespace", "pki-acme-demo", "--ignore-not-found").Run()
 					fmt.Println("  ✅ pki-acme-demo namespace removed.")
 				}
+				// Clean up the acme.localhost /etc/hosts entry we added to hal-vault.
+				_ = exec.Command(engine, "exec", "hal-vault", "sh", "-c",
+					"sed -i '/acme.localhost/d' /etc/hosts").Run()
 
 				// Conditionally delete KinD cluster
 				vsoOut, _ := exec.Command("helm", "list", "-n", "vso", "-q").Output()
@@ -1006,6 +1009,26 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 		vaultIP = "hal-vault"
 	}
 
+	// ---- Register acme.localhost in Vault's /etc/hosts ----
+	// The Caddy pod uses hostNetwork=true, so it listens on ports 80+443
+	// directly on the KinD node's hal-net IP. Vault needs to resolve
+	// acme.localhost to that IP to complete the ACME HTTP-01/TLS-ALPN-01
+	// challenge (CertMagic short-circuits *.localhost to internal CA;
+	// forcing an external ACME issuer requires the challenge to succeed).
+	kindIPOut, _ := exec.Command(
+		engine, "inspect",
+		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+		"kind-control-plane",
+	).Output()
+	kindIP := strings.TrimSpace(string(kindIPOut))
+	if kindIP != "" {
+		// Idempotent: remove any stale entry, then add the current one.
+		_ = exec.Command(engine, "exec", "hal-vault", "sh", "-c",
+			"sed -i '/acme.localhost/d' /etc/hosts && echo '"+kindIP+" acme.localhost' >> /etc/hosts",
+		).Run()
+		fmt.Printf("⚙️  Registered acme.localhost → %s in Vault /etc/hosts (ACME challenge routing).\n", kindIP)
+	}
+
 	// ---- Apply Caddy manifests ----
 	fmt.Println("⚙️  Applying ACME/Caddy manifests (Namespace, ConfigMap, Deployment, Service)...")
 	manifests := buildPKIACMEManifests(vaultIP, intMount, pkiCaddyImage)
@@ -1113,6 +1136,11 @@ spec:
       labels:
         app: hal-caddy-acme
     spec:
+      # hostNetwork gives Caddy direct access to the KinD node's network
+      # interface so Vault can reach ports 80 (HTTP-01) and 443 (TLS-ALPN-01)
+      # for ACME challenge validation without iptables NodePort indirection.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       initContainers:
         - name: fetch-ca
           image: curlimages/curl:latest
