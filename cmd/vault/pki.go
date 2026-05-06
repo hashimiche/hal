@@ -465,13 +465,20 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	_, _ = client.Logical().Write(pkiIntMount+"/config/acme", map[string]interface{}{
 		"enabled": true,
 	})
+	// Vault 1.16+ supports acme_min_cert_ttl to override the hardcoded 12h ACME minimum.
+	// The error is silently ignored on older Vault versions; enabled is already set above.
+	_, _ = client.Logical().Write(pkiIntMount+"/config/acme", map[string]interface{}{
+		"enabled":           true,
+		"acme_min_cert_ttl": pkiACMECertTTL,
+	})
 	_, _ = client.Logical().Write(pkiIntMount+"/config/cluster", map[string]interface{}{
 		"path": "http://127.0.0.1:8200/v1/" + pkiIntMount,
 	})
 	_, _ = client.Logical().Write(pkiIntMount+"/roles/acme-demo", map[string]interface{}{
 		"allowed_domains":     pkiAllowedDomains,
 		"allow_subdomains":    true,
-		"allow_bare_domains":  false,
+		"allow_bare_domains":  true,
+		"allow_any_name":      true,
 		"allow_ip_sans":       true,
 		"use_csr_common_name": true,
 		"ttl":                 pkiACMECertTTL,
@@ -934,12 +941,13 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 		return
 	}
 
-	// Always sync the acme-demo role TTL with the current flag value so that
-	// 'update --acme --acme-cert-ttl X' takes effect without --force.
+	// Always sync the acme-demo role TTL and ACME min-cert-TTL with the current
+	// flag value so that 'update --acme --acme-cert-ttl X' takes effect without --force.
 	_, _ = client.Logical().Write(intMount+"/roles/acme-demo", map[string]interface{}{
 		"allowed_domains":     pkiAllowedDomains,
 		"allow_subdomains":    true,
-		"allow_bare_domains":  false,
+		"allow_bare_domains":  true,
+		"allow_any_name":      true,
 		"allow_ip_sans":       true,
 		"use_csr_common_name": true,
 		"ttl":                 pkiACMECertTTL,
@@ -947,6 +955,11 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 		"key_type":            "rsa",
 		"key_bits":            2048,
 		"no_store":            false,
+	})
+	// Vault 1.16+ only; silently ignored on older versions.
+	_, _ = client.Logical().Write(intMount+"/config/acme", map[string]interface{}{
+		"enabled":           true,
+		"acme_min_cert_ttl": pkiACMECertTTL,
 	})
 	fmt.Printf("⚙️  Role 'acme-demo' TTL set to %s.\n", pkiACMECertTTL)
 
