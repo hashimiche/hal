@@ -383,8 +383,8 @@ func runVaultPKISetup(client *vault.Client, isUpdate bool) {
 	}
 	fmt.Println("  ✅ Root CA generated.")
 	_, _ = client.Logical().Write(pkiRootMount+"/config/urls", map[string]interface{}{
-		"issuing_certificates":    "http://127.0.0.1:8200/v1/" + pkiRootMount + "/ca",
-		"crl_distribution_points": "http://127.0.0.1:8200/v1/" + pkiRootMount + "/crl",
+		"issuing_certificates":    "http://vault.localhost:8200/v1/" + pkiRootMount + "/ca",
+		"crl_distribution_points": "http://vault.localhost:8200/v1/" + pkiRootMount + "/crl",
 	})
 
 	// ---- Intermediate CA ----
@@ -430,8 +430,8 @@ func runVaultPKISetup(client *vault.Client, isUpdate bool) {
 	}
 	fmt.Println("  ✅ Intermediate CA certificate installed.")
 	_, _ = client.Logical().Write(pkiIntMount+"/config/urls", map[string]interface{}{
-		"issuing_certificates":    "http://127.0.0.1:8200/v1/" + pkiIntMount + "/ca",
-		"crl_distribution_points": "http://127.0.0.1:8200/v1/" + pkiIntMount + "/crl",
+		"issuing_certificates":    "http://vault.localhost:8200/v1/" + pkiIntMount + "/ca",
+		"crl_distribution_points": "http://vault.localhost:8200/v1/" + pkiIntMount + "/crl",
 	})
 
 	// ---- Role ----
@@ -472,7 +472,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 		"max_ttl": pkiACMECertTTL,
 	})
 	_, _ = client.Logical().Write(pkiIntMount+"/config/cluster", map[string]interface{}{
-		"path": "http://127.0.0.1:8200/v1/" + pkiIntMount,
+		"path": "http://vault.localhost:8200/v1/" + pkiIntMount,
 	})
 	_, _ = client.Logical().Write(pkiIntMount+"/roles/acme-demo", map[string]interface{}{
 		"allowed_domains":     pkiAllowedDomains,
@@ -489,7 +489,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	})
 	fmt.Println("  ✅ ACME directory enabled.")
 	fmt.Printf("     Role 'acme-demo' TTL: %s (Caddy will auto-renew at ~1/3 lifetime)\n", pkiACMECertTTL)
-	fmt.Printf("     http://127.0.0.1:8200/v1/%s/roles/acme-demo/acme/directory\n", pkiIntMount)
+	fmt.Printf("     http://vault.localhost:8200/v1/%s/roles/acme-demo/acme/directory\n", pkiIntMount)
 
 	fmt.Println("\n✅ Vault PKI setup complete!")
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
