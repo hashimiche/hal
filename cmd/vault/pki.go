@@ -1110,7 +1110,7 @@ data:
       file_server
       tls {
         issuer acme {
-          ca %s
+					dir %s
           trusted_roots /etc/caddy/vault-ca.pem
           disable_tlsalpn_challenge
         }
