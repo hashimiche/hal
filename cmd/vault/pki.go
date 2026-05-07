@@ -1093,203 +1093,203 @@ func buildPKIACMEManifests(vaultIP, intMount, caddyImage string) string {
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: pki-acme-demo
+	name: pki-acme-demo
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: caddy-config
-  namespace: pki-acme-demo
+	name: caddy-config
+	namespace: pki-acme-demo
 data:
-  Caddyfile: |
-    {
-      email lab@hal.local
-    }
-    acme.localhost {
-      root * /srv
-      file_server
-      tls {
-        issuer acme {
-          ca %s
-          trusted_roots /etc/caddy/vault-ca.pem
-          disable_tlsalpn_challenge
-        }
-      }
-    }
+	Caddyfile: |
+		{
+			email lab@hal.local
+		}
+		acme.localhost {
+			root * /srv
+			file_server
+			tls {
+				issuer acme {
+					ca %s
+					trusted_roots /etc/caddy/vault-ca.pem
+					disable_tlsalpn_challenge
+				}
+			}
+		}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hal-caddy-acme
-  namespace: pki-acme-demo
+	name: hal-caddy-acme
+	namespace: pki-acme-demo
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: hal-caddy-acme
-  template:
-    metadata:
-      labels:
-        app: hal-caddy-acme
-    spec:
-      initContainers:
+	replicas: 1
+	selector:
+		matchLabels:
+			app: hal-caddy-acme
+	template:
+		metadata:
+			labels:
+				app: hal-caddy-acme
+		spec:
+			initContainers:
 				- name: fetch-ca
 					image: curlimages/curl:latest
 					command: ["/bin/sh", "-c"]
 					args:
 						- curl -sS http://%s:8200/v1/%s/ca/pem -o /shared/vault-ca.pem
-          volumeMounts:
-            - name: shared-ca
-              mountPath: /shared
-        - name: build-page
-          image: alpine:latest
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              mkdir -p /srv
-              cat > /srv/index.html <<'HTMLEOF'
-              <html>
-                <head>
-                  <meta charset='utf-8'>
+					volumeMounts:
+						- name: shared-ca
+							mountPath: /shared
+				- name: build-page
+					image: alpine:latest
+					command: ["/bin/sh", "-c"]
+					args:
+						- |
+							mkdir -p /srv
+							cat > /srv/index.html <<'HTMLEOF'
+							<html>
+								<head>
+									<meta charset='utf-8'>
 									<title>HAL Vault ACME + Caddy</title>
-                  <style>
-                    *{box-sizing:border-box;}
-                    body{font-family:system-ui;background:#0f172a;color:#e2e8f0;padding:24px;max-width:960px;margin:0 auto;}
-                    h1{margin-bottom:2px;color:#f8fafc;}
-                    .subtitle{color:#64748b;font-size:.9rem;margin-bottom:16px;}
-                    .subtitle a{color:#60a5fa;}
-                    h2{margin-top:24px;margin-bottom:6px;font-size:.9rem;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;}
-                    .card{background:#1e293b;border-radius:10px;padding:16px;margin-bottom:12px;}
-                    .countdown{font-size:2.4rem;font-weight:700;letter-spacing:.02em;color:#f8fafc;}
-                    .countdown.warning{color:#fbbf24;}
-                    .countdown.critical{color:#f87171;animation:pulse 1s infinite;}
-                    @keyframes pulse{0%%,100%%{opacity:1;}50%%{opacity:.5;}}
-                    .badge{display:inline-block;padding:2px 10px;border-radius:99px;font-size:.75rem;font-weight:600;margin-left:10px;vertical-align:middle;}
-                    .badge.renewed{background:#065f46;color:#6ee7b7;}
-                    .badge.live{background:#1e3a5f;color:#93c5fd;}
-                    .meta{font-size:.8rem;color:#64748b;margin-top:6px;}
-                    pre{background:#0f172a;padding:14px;border-radius:8px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;}
-                    pre.info{color:#a5f3fc;}
-                    pre.pem{color:#34d399;}
-                    .progress-bar{height:6px;background:#1e293b;border-radius:3px;overflow:hidden;margin-top:10px;}
-                    .progress-fill{height:100%%;background:#3b82f6;transition:width .5s linear,background .5s;}
-                  </style>
-                  <script>
-                    let lastSerial = null;
-                    let notAfter = null;
-                    let notBefore = null;
-                    let renewalBadgeTimer = null;
+									<style>
+										*{box-sizing:border-box;}
+										body{font-family:system-ui;background:#0f172a;color:#e2e8f0;padding:24px;max-width:960px;margin:0 auto;}
+										h1{margin-bottom:2px;color:#f8fafc;}
+										.subtitle{color:#64748b;font-size:.9rem;margin-bottom:16px;}
+										.subtitle a{color:#60a5fa;}
+										h2{margin-top:24px;margin-bottom:6px;font-size:.9rem;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;}
+										.card{background:#1e293b;border-radius:10px;padding:16px;margin-bottom:12px;}
+										.countdown{font-size:2.4rem;font-weight:700;letter-spacing:.02em;color:#f8fafc;}
+										.countdown.warning{color:#fbbf24;}
+										.countdown.critical{color:#f87171;animation:pulse 1s infinite;}
+										@keyframes pulse{0%%,100%%{opacity:1;}50%%{opacity:.5;}}
+										.badge{display:inline-block;padding:2px 10px;border-radius:99px;font-size:.75rem;font-weight:600;margin-left:10px;vertical-align:middle;}
+										.badge.renewed{background:#065f46;color:#6ee7b7;}
+										.badge.live{background:#1e3a5f;color:#93c5fd;}
+										.meta{font-size:.8rem;color:#64748b;margin-top:6px;}
+										pre{background:#0f172a;padding:14px;border-radius:8px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;}
+										pre.info{color:#a5f3fc;}
+										pre.pem{color:#34d399;}
+										.progress-bar{height:6px;background:#1e293b;border-radius:3px;overflow:hidden;margin-top:10px;}
+										.progress-fill{height:100%%;background:#3b82f6;transition:width .5s linear,background .5s;}
+									</style>
+									<script>
+										let lastSerial = null;
+										let notAfter = null;
+										let notBefore = null;
+										let renewalBadgeTimer = null;
 
-                    function parseNotAfter(infoText) {
-                      const m = infoText.match(/Not After\s*:\s*(.+)/i);
-                      return m ? new Date(m[1].trim()) : null;
-                    }
-                    function parseNotBefore(infoText) {
-                      const m = infoText.match(/Not Before\s*:\s*(.+)/i);
-                      return m ? new Date(m[1].trim()) : null;
-                    }
-                    function parseSerial(infoText) {
-                      const m = infoText.match(/Serial Number:\s*(?:\n\s*)?([^\n]+)/i);
-                      return m ? m[1].trim() : null;
-                    }
+										function parseNotAfter(infoText) {
+											const m = infoText.match(/Not After\s*:\s*(.+)/i);
+											return m ? new Date(m[1].trim()) : null;
+										}
+										function parseNotBefore(infoText) {
+											const m = infoText.match(/Not Before\s*:\s*(.+)/i);
+											return m ? new Date(m[1].trim()) : null;
+										}
+										function parseSerial(infoText) {
+											const m = infoText.match(/Serial Number:\s*(?:\n\s*)?([^\n]+)/i);
+											return m ? m[1].trim() : null;
+										}
 
-                    function updateCountdown() {
-                      if (!notAfter) return;
-                      const now = new Date();
-                      const secsLeft = Math.max(0, Math.floor((notAfter - now) / 1000));
-                      const total = notAfter - (notBefore || notAfter - 120000);
-                      const elapsed = now - (notBefore || now);
-                      const pct = Math.max(0, Math.min(100, 100 - (elapsed / total * 100)));
+										function updateCountdown() {
+											if (!notAfter) return;
+											const now = new Date();
+											const secsLeft = Math.max(0, Math.floor((notAfter - now) / 1000));
+											const total = notAfter - (notBefore || notAfter - 120000);
+											const elapsed = now - (notBefore || now);
+											const pct = Math.max(0, Math.min(100, 100 - (elapsed / total * 100)));
 
-                      const m = Math.floor(secsLeft / 60);
-                      const s = secsLeft %% 60;
-                      const el = document.getElementById('countdown');
-                      el.textContent = m + 'm ' + String(s).padStart(2,'0') + 's';
-                      el.className = 'countdown' + (secsLeft < 30 ? ' critical' : secsLeft < 60 ? ' warning' : '');
+											const m = Math.floor(secsLeft / 60);
+											const s = secsLeft %% 60;
+											const el = document.getElementById('countdown');
+											el.textContent = m + 'm ' + String(s).padStart(2,'0') + 's';
+											el.className = 'countdown' + (secsLeft < 30 ? ' critical' : secsLeft < 60 ? ' warning' : '');
 
-                      const fill = document.getElementById('progress-fill');
-                      fill.style.width = pct + '%%';
-                      fill.style.background = secsLeft < 30 ? '#ef4444' : secsLeft < 60 ? '#f59e0b' : '#3b82f6';
+											const fill = document.getElementById('progress-fill');
+											fill.style.width = pct + '%%';
+											fill.style.background = secsLeft < 30 ? '#ef4444' : secsLeft < 60 ? '#f59e0b' : '#3b82f6';
 
-                      document.getElementById('meta-expires').textContent =
-                        'Expires: ' + notAfter.toLocaleTimeString() + '  ·  Issued: ' + (notBefore ? notBefore.toLocaleTimeString() : '?');
-                    }
+											document.getElementById('meta-expires').textContent =
+												'Expires: ' + notAfter.toLocaleTimeString() + '  ·  Issued: ' + (notBefore ? notBefore.toLocaleTimeString() : '?');
+										}
 
-                    async function poll() {
-                      try {
-                        const r = await fetch('/cert-info.txt?t=' + Date.now());
-                        if (!r.ok) return;
-                        const text = await r.text();
-                        document.getElementById('info').textContent = text;
+										async function poll() {
+											try {
+												const r = await fetch('/cert-info.txt?t=' + Date.now());
+												if (!r.ok) return;
+												const text = await r.text();
+												document.getElementById('info').textContent = text;
 
-                        const serial = parseSerial(text);
-                        if (serial && serial !== lastSerial) {
-                          if (lastSerial !== null) {
-                            const badge = document.getElementById('renewal-badge');
-                            badge.className = 'badge renewed';
+												const serial = parseSerial(text);
+												if (serial && serial !== lastSerial) {
+													if (lastSerial !== null) {
+														const badge = document.getElementById('renewal-badge');
+														badge.className = 'badge renewed';
 														badge.textContent = 'Renewed!';
-                            clearTimeout(renewalBadgeTimer);
-                            renewalBadgeTimer = setTimeout(() => {
-                              badge.className = 'badge live';
-                              badge.textContent = 'Live';
-                            }, 8000);
-                          }
-                          lastSerial = serial;
-                          document.getElementById('serial').textContent = 'Serial: ' + serial;
-                        }
+														clearTimeout(renewalBadgeTimer);
+														renewalBadgeTimer = setTimeout(() => {
+															badge.className = 'badge live';
+															badge.textContent = 'Live';
+														}, 8000);
+													}
+													lastSerial = serial;
+													document.getElementById('serial').textContent = 'Serial: ' + serial;
+												}
 
-                        notAfter = parseNotAfter(text);
-                        notBefore = parseNotBefore(text);
-                        if (!serial) {
-                          document.getElementById('serial').textContent = 'Serial: unavailable';
-                        }
+												notAfter = parseNotAfter(text);
+												notBefore = parseNotBefore(text);
+												if (!serial) {
+													document.getElementById('serial').textContent = 'Serial: unavailable';
+												}
 
-                        const pr = await fetch('/cert-pem.txt?t=' + Date.now());
-                        document.getElementById('pem').textContent = pr.ok ? await pr.text() : '';
-                      } catch(_) {}
-                      updateCountdown();
-                    }
+												const pr = await fetch('/cert-pem.txt?t=' + Date.now());
+												document.getElementById('pem').textContent = pr.ok ? await pr.text() : '';
+											} catch(_) {}
+											updateCountdown();
+										}
 
-                    window.onload = function() {
-                      poll();
-                      setInterval(poll, 5000);
-                      setInterval(updateCountdown, 500);
-                    };
-                  </script>
-                </head>
-                <body>
+										window.onload = function() {
+											poll();
+											setInterval(poll, 5000);
+											setInterval(updateCountdown, 500);
+										};
+									</script>
+								</head>
+								<body>
 									<h1>HAL Vault ACME + Caddy</h1>
 									<p class='subtitle'>Certificate via <a href='%s'>Vault ACME (role: acme-demo) · auto-renewed by Caddy</p>
 
-                  <div class='card'>
-                    <h2>Time until expiry <span id='renewal-badge' class='badge live'>Live</span></h2>
-                    <div class='countdown' id='countdown'>--:--</div>
-                    <div class='progress-bar'><div class='progress-fill' id='progress-fill' style='width:100%%'></div></div>
-                    <div class='meta' id='meta-expires'></div>
-                    <div class='meta' id='serial'></div>
-                  </div>
+									<div class='card'>
+										<h2>Time until expiry <span id='renewal-badge' class='badge live'>Live</span></h2>
+										<div class='countdown' id='countdown'>--:--</div>
+										<div class='progress-bar'><div class='progress-fill' id='progress-fill' style='width:100%%'></div></div>
+										<div class='meta' id='meta-expires'></div>
+										<div class='meta' id='serial'></div>
+									</div>
 
-                  <h2>openssl x509 -noout -text</h2>
-				  <div class='card'><pre class='info' id='info'>Waiting for Caddy to complete ACME exchange...</pre></div>
+									<h2>openssl x509 -noout -text</h2>
+									<div class='card'><pre class='info' id='info'>Waiting for Caddy to complete ACME exchange...</pre></div>
 
-                  <h2>PEM (raw)</h2>
-                  <div class='card'><pre class='pem' id='pem'></pre></div>
-                </body>
-              </html>
-              HTMLEOF
-          volumeMounts:
-            - name: web-root
-              mountPath: /srv
-      containers:
-        - name: caddy
-          image: %s
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              apk add --no-cache openssl >/dev/null 2>&1
-              caddy start --config /etc/caddy/Caddyfile
+									<h2>PEM (raw)</h2>
+									<div class='card'><pre class='pem' id='pem'></pre></div>
+								</body>
+							</html>
+							HTMLEOF
+					volumeMounts:
+						- name: web-root
+							mountPath: /srv
+			containers:
+				- name: caddy
+					image: %s
+					command: ["/bin/sh", "-c"]
+					args:
+						- |
+							apk add --no-cache openssl >/dev/null 2>&1
+							caddy start --config /etc/caddy/Caddyfile
 							LAST_CERT=""
-              while true; do
+							while true; do
 								certfile=$(find /data/caddy/certificates -name '*.crt' 2>/dev/null | grep -v '\.issuer' | head -1)
 								if [ -n "$certfile" ] && [ "$certfile" != "$LAST_CERT" ]; then
 									openssl x509 -noout -text -in "$certfile" > /srv/cert-info.txt 2>&1 || true
@@ -1302,33 +1302,33 @@ spec:
 										openssl x509 -noout -text -in "$certfile" > /srv/cert-info.txt 2>&1 || true
 										cat "$certfile" > /srv/cert-pem.txt 2>&1 || true
 									fi
-                fi
-                sleep 5
-              done
-          ports:
-            - containerPort: 443
+								fi
+								sleep 5
+							done
+					ports:
+						- containerPort: 443
 						- containerPort: 80
-          volumeMounts:
-            - name: caddy-config
-              mountPath: /etc/caddy/Caddyfile
-              subPath: Caddyfile
+					volumeMounts:
+						- name: caddy-config
+							mountPath: /etc/caddy/Caddyfile
+							subPath: Caddyfile
 						- name: shared-ca
 							mountPath: /etc/caddy/vault-ca.pem
 							subPath: vault-ca.pem
-            - name: caddy-data
-              mountPath: /data
-            - name: web-root
-              mountPath: /srv
-      volumes:
-        - name: caddy-config
-          configMap:
-            name: caddy-config
-        - name: shared-ca
-          emptyDir: {}
-        - name: caddy-data
-          emptyDir: {}
-        - name: web-root
-          emptyDir: {}
+						- name: caddy-data
+							mountPath: /data
+						- name: web-root
+							mountPath: /srv
+			volumes:
+				- name: caddy-config
+					configMap:
+						name: caddy-config
+				- name: shared-ca
+					emptyDir: {}
+				- name: caddy-data
+					emptyDir: {}
+				- name: web-root
+					emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -1401,16 +1401,16 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: hal-caddy-acme
-  namespace: pki-acme-demo
+	name: hal-caddy-acme
+	namespace: pki-acme-demo
 spec:
-  type: NodePort
-  selector:
-    app: hal-caddy-acme
-  ports:
-    - port: 443
-      targetPort: 443
-      nodePort: 30083
+	type: NodePort
+	selector:
+		app: hal-caddy-acme
+	ports:
+		- port: 443
+			targetPort: 443
+			nodePort: 30083
 `, acmeDir, vaultIP, intMount, acmeDir, caddyImage)
 }
 
