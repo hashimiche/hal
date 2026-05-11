@@ -9,7 +9,7 @@ This skill covers the local GitLab-backed JWT auth demo implemented by `hal vaul
 
 ## Lab Assumptions
 
-- Vault runs at `http://127.0.0.1:8200`
+- Vault runs at `http://vault.localhost:8200`
 - Root token defaults to `root`
 - The JWT demo deploys GitLab CE and a runner, then configures Vault JWT auth
 - Prefer `hal` for lifecycle actions and `vault read/write` for post-deploy inspection
@@ -51,7 +51,7 @@ If Vault MCP is available, inspect:
 
 If MCP is unavailable, use:
 
-    export VAULT_ADDR='http://127.0.0.1:8200'
+    export VAULT_ADDR='http://vault.localhost:8200'
     export VAULT_TOKEN='root'
 
     vault read auth/jwt/config
@@ -78,7 +78,7 @@ Provide a brief confirmation that the JWT auth method is enabled and configured.
 
 **Tier 3 — Actionable Testing Commands**
 
-    export VAULT_ADDR='http://127.0.0.1:8200'
+    export VAULT_ADDR='http://vault.localhost:8200'
     export VAULT_TOKEN='root'
 
     vault read auth/jwt/config

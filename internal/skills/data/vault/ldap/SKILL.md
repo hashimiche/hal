@@ -9,7 +9,7 @@ This skill covers the OpenLDAP + phpLDAPadmin + Vault LDAP auth/secrets workflow
 
 ## Lab Assumptions
 
-- Vault runs locally at `http://127.0.0.1:8200`
+- Vault runs locally at `http://vault.localhost:8200`
 - Root token defaults to `root`
 - OpenLDAP container is `hal-openldap`
 - phpLDAPadmin UI is `https://phpldapadmin.localhost:8082`
@@ -57,7 +57,7 @@ If Vault MCP is available, inspect:
 
 If MCP is unavailable, use:
 
-	export VAULT_ADDR='http://127.0.0.1:8200'
+	export VAULT_ADDR='http://vault.localhost:8200'
 	export VAULT_TOKEN='root'
 
 	vault read auth/ldap/config

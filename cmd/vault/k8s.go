@@ -266,10 +266,9 @@ var vaultK8sCmd = &cobra.Command{
 			clusterCheck, _ := exec.Command("kind", "get", "clusters").Output()
 			if strings.Contains(string(clusterCheck), "kind") {
 				fmt.Println("⚡ KinD cluster already running, skipping boot sequence...")
-				fmt.Println("   ℹ️  Existing clusters may not expose host port 8088. Use --update once to recreate with HAL ingress mapping.")
 			} else {
 				fmt.Println("🚀 Booting KinD Cluster (attached directly to hal-net)...")
-				kindConfigPath, cfgErr := writeKindConfigWithIngress()
+				kindConfigPath, cfgErr := writeHALKindConfig()
 				if cfgErr != nil {
 					fmt.Printf("❌ Failed to prepare KinD config: %v\n", cfgErr)
 					return
@@ -797,34 +796,6 @@ func applyK8s(yamlContent string) bool {
 		fmt.Println("✅ Successfully applied Kubernetes manifests.")
 		return true
 	}
-}
-
-func writeKindConfigWithIngress() (string, error) {
-	tempFile, err := os.CreateTemp("", "hal-kind-*.yaml")
-	if err != nil {
-		return "", err
-	}
-
-	config := `kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-  extraPortMappings:
-    - containerPort: 30080
-      hostPort: 8088
-      protocol: TCP
-`
-
-	if _, err := tempFile.WriteString(config); err != nil {
-		_ = tempFile.Close()
-		return "", err
-	}
-
-	if err := tempFile.Close(); err != nil {
-		return "", err
-	}
-
-	return tempFile.Name(), nil
 }
 
 func detectK8sDemoMode() string {
