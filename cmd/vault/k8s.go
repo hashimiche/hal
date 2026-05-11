@@ -266,13 +266,13 @@ var vaultK8sCmd = &cobra.Command{
 			clusterCheck, _ := exec.Command("kind", "get", "clusters").Output()
 			if strings.Contains(string(clusterCheck), "kind") {
 				fmt.Println("⚡ KinD cluster already running, skipping boot sequence...")
-				} else {
-					fmt.Println("🚀 Booting KinD Cluster (attached directly to hal-net)...")
-					kindConfigPath, cfgErr := writeHALKindConfig()
-					if cfgErr != nil {
-						fmt.Printf("❌ Failed to prepare KinD config: %v\n", cfgErr)
-						return
-					}
+			} else {
+				fmt.Println("🚀 Booting KinD Cluster (attached directly to hal-net)...")
+				kindConfigPath, cfgErr := writeHALKindConfig()
+				if cfgErr != nil {
+					fmt.Printf("❌ Failed to prepare KinD config: %v\n", cfgErr)
+					return
+				}
 				defer os.Remove(kindConfigPath)
 
 				startCmd := exec.Command("kind", "create", "cluster", "--config", kindConfigPath)
@@ -797,8 +797,6 @@ func applyK8s(yamlContent string) bool {
 		return true
 	}
 }
-
-
 
 func detectK8sDemoMode() string {
 	out, err := exec.Command(

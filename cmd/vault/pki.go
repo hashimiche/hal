@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -253,9 +254,8 @@ var vaultPKICmd = &cobra.Command{
 					_ = exec.Command("kubectl", "delete", "namespace", "pki-acme-demo", "--ignore-not-found").Run()
 					fmt.Println("  ✅ pki-acme-demo namespace removed.")
 				}
-				// Clean up the acme.localhost /etc/hosts entry we added to hal-vault.
-				_ = exec.Command(engine, "exec", "hal-vault", "sh", "-c",
-					"sed -i '/acme.localhost/d' /etc/hosts").Run()
+				// Remove the CoreDNS sidecar used for ACME challenge DNS resolution.
+				_ = exec.Command(engine, "rm", "-f", "hal-acme-dns").Run()
 
 				// Conditionally delete KinD cluster
 				vsoOut, _ := exec.Command("helm", "list", "-n", "vso", "-q").Output()
@@ -398,6 +398,11 @@ func runVaultPKISetup(client *vault.Client, isUpdate bool) {
 	}); err != nil {
 		fmt.Printf("  ⚠️  Mount error (may already exist) — tuning TTL and continuing...\n")
 		_ = client.Sys().TuneMount(pkiIntMount, vault.MountConfigInput{MaxLeaseTTL: pkiIntTTL})
+	}
+	if err := tunePKIACMEHeaders(client, pkiIntMount); err != nil {
+		fmt.Printf("  ⚠️  Could not tune ACME headers on '%s': %v\n", pkiIntMount, err)
+	} else {
+		fmt.Printf("  ✅ Tuned ACME response/request headers on '%s'.\n", pkiIntMount)
 	}
 	fmt.Println("📝 Generating Intermediate CA CSR (RSA-4096)...")
 	csrResp, err := client.Logical().Write(pkiIntMount+"/intermediate/generate/internal", map[string]interface{}{
@@ -620,6 +625,11 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	if vaultIP == "" {
 		vaultIP = "hal-vault"
 	}
+	// Ensure ACME endpoint links (new-nonce/new-account/new-order) advertised by Vault
+	// are reachable from in-cluster ACME clients (Caddy) during --acme reconcile.
+	_, _ = client.Logical().Write(intMount+"/config/cluster", map[string]interface{}{
+		"path": "http://" + vaultIP + ":8200/v1/" + intMount,
+	})
 
 	// ---- Apply manifests in two phases ----
 	// Phase 1: Namespace, Deployment, Service — standard K8s resources, no cert-manager
@@ -937,7 +947,12 @@ spec:
 // to obtain its TLS certificate — no cert-manager, no Kubernetes CRDs.
 // Caddy speaks the ACME protocol directly to Vault's pki-int/acme/directory.
 func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMount string) {
-	// Verify ACME endpoint is live
+	if err := tunePKIACMEHeaders(client, intMount); err != nil {
+		fmt.Printf("❌ Failed to tune ACME headers on '%s': %v\n", intMount, err)
+		return
+	}
+
+	// Verify ACME endpoint is live (config readable means ACME has been enabled).
 	acmeResp, err := client.Logical().Read(intMount + "/config/acme")
 	if err != nil || acmeResp == nil {
 		fmt.Printf("❌ ACME config not readable on '%s'. Run 'hal vault pki enable' first.\n", intMount)
@@ -955,8 +970,8 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 		"use_csr_common_name": true,
 		"ttl":                 pkiACMECertTTL,
 		"max_ttl":             pkiACMECertTTL,
-		"key_type":            "rsa",
-		"key_bits":            2048,
+		"key_type":            "any",
+		"key_bits":            0,
 		"no_store":            false,
 	})
 	// Vault 2.x: config/acme max_ttl caps ALL certs issued via ACME on this mount.
@@ -1017,15 +1032,53 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 	).Output()
 	kindIP := strings.TrimSpace(string(kindIPOut))
 	if kindIP != "" {
-		_ = exec.Command(engine, "exec", "hal-vault", "sh", "-c",
-			"sed -i '/acme.localhost/d' /etc/hosts && echo '"+kindIP+" acme.localhost' >> /etc/hosts",
-		).Run()
-		fmt.Printf("⚙️  Registered acme.localhost -> %s in hal-vault /etc/hosts for ACME callback routing.\n", kindIP)
+		// The Vault container's /etc/hosts is read-only in rootless Podman and the
+		// .localhost TLD always resolves to 127.0.0.1 via the container DNS.
+		// Spin up a CoreDNS sidecar on hal-net that serves acme.localhost → kindIP,
+		// then point Vault's ACME validator at it via dns_resolver.
+		fmt.Println("⚙️  Starting ACME DNS resolver (CoreDNS) on hal-net...")
+		dnsIP, dnsErr := ensureACMEDNS(engine, kindIP)
+		if dnsErr != nil {
+			fmt.Printf("⚠️  Could not start ACME DNS: %v\n", dnsErr)
+			fmt.Println("   HTTP-01 validation may fail if acme.localhost resolves to loopback inside Vault.")
+		}
+
+		// challenge_permitted_ip_ranges: tell Vault this private IP is a valid target.
+		// dns_resolver: tell Vault to use our CoreDNS instead of the default container DNS
+		// (which maps .localhost → 127.0.0.1, an address Vault can never reach externally).
+		acmeCfg := map[string]interface{}{
+			"enabled":                       true,
+			"max_ttl":                       pkiACMECertTTL,
+			"challenge_permitted_ip_ranges": []string{kindIP + "/32"},
+		}
+		if dnsIP != "" {
+			acmeCfg["dns_resolver"] = dnsIP + ":53"
+		}
+		_, _ = client.Logical().Write(intMount+"/config/acme", acmeCfg)
+		if dnsIP != "" {
+			fmt.Printf("⚙️  Vault ACME: challenge_permitted_ip_ranges=[%s/32], dns_resolver=%s:53\n", kindIP, dnsIP)
+		} else {
+			fmt.Printf("⚙️  Vault ACME: challenge_permitted_ip_ranges=[%s/32]\n", kindIP)
+		}
 	}
+
+	// ---- Auto-tidy: remove expired certs from PKI storage automatically ----
+	// With short-TTL ACME certs (e.g. 5m) Vault accumulates a large number of expired
+	// certificate entries. auto-tidy runs on an interval inside Vault itself — no CronJob needed.
+	_, _ = client.Logical().Write(intMount+"/config/auto-tidy", map[string]interface{}{
+		"enabled":            true,
+		"interval_duration":  "2m",
+		"safety_buffer":      "30s",
+		"tidy_cert_store":    true,
+		"tidy_revoked_certs": true,
+	})
+	fmt.Println("⚙️  Vault PKI auto-tidy: enabled (interval=2m, safety_buffer=30s)")
 
 	// ---- Apply Caddy manifests ----
 	fmt.Println("⚙️  Applying ACME/Caddy manifests (Namespace, ConfigMaps, Deployments, Services)...")
 	manifests := buildPKIACMEManifests(vaultIP, intMount, pkiCaddyImage)
+	// Guard against accidental tab indentation in embedded YAML blocks.
+	manifests = strings.ReplaceAll(manifests, "\t", "  ")
 	applyCmd := exec.Command("kubectl", "apply", "-f", "-")
 	applyCmd.Stdin = strings.NewReader(manifests)
 	applyCmd.Stdout = os.Stdout
@@ -1043,13 +1096,13 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 	_ = exec.Command("kubectl", "rollout", "restart",
 		"deployment/hal-caddy-acme", "-n", "pki-acme-demo").Run()
 
-	fmt.Println("⏳ Waiting for Caddy pod to be Ready (up to 90s — first ACME exchange takes time)...")
+	fmt.Println("⏳ Waiting for Caddy rollout to complete (up to 90s)...")
 	podWaitErr := exec.Command(
-		"kubectl", "wait", "--for=condition=Ready",
-		"pod", "-l", "app=hal-caddy-acme", "-n", "pki-acme-demo", "--timeout=90s",
+		"kubectl", "rollout", "status",
+		"deployment/hal-caddy-acme", "-n", "pki-acme-demo", "--timeout=90s",
 	).Run()
 	if podWaitErr != nil {
-		fmt.Println("❌ Caddy pod not Ready within 90s. Diagnosis:")
+		fmt.Println("❌ Caddy deployment did not roll out within 90s. Diagnosis:")
 		logOut, _ := exec.Command(
 			"kubectl", "logs", "-l", "app=hal-caddy-acme",
 			"-n", "pki-acme-demo", "--tail=40",
@@ -1084,6 +1137,74 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
 
+func tunePKIACMEHeaders(client *vault.Client, mount string) error {
+	_, err := client.Logical().Write("sys/mounts/"+mount+"/tune", map[string]interface{}{
+		"passthrough_request_headers": []string{"If-Modified-Since"},
+		"allowed_response_headers":    []string{"Last-Modified", "Location", "Replay-Nonce", "Link"},
+	})
+	return err
+}
+
+// ensureACMEDNS ensures a minimal CoreDNS container is running on hal-net that
+// serves a static A record for acme.localhost → kindIP. Vault cannot write to
+// its own /etc/hosts (read-only in rootless Podman), and the .localhost TLD
+// always resolves to 127.0.0.1 via the container DNS — so we give Vault a
+// custom dns_resolver that returns the real KinD node IP instead.
+// Returns the DNS container IP (to be set as Vault ACME dns_resolver).
+func ensureACMEDNS(engine, kindIP string) (string, error) {
+	// Return early if already running with the correct mapping.
+	runningOut, _ := exec.Command(engine, "inspect", "-f", "{{.State.Running}}", "hal-acme-dns").Output()
+	if strings.TrimSpace(string(runningOut)) == "true" {
+		ipOut, _ := exec.Command(engine, "inspect",
+			"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "hal-acme-dns").Output()
+		if ip := strings.TrimSpace(string(ipOut)); ip != "" {
+			return ip, nil
+		}
+	}
+	// Remove any stopped/stale container.
+	_ = exec.Command(engine, "rm", "-f", "hal-acme-dns").Run()
+
+	// Write a minimal Corefile to a temp directory.
+	tmpDir, err := os.MkdirTemp("", "hal-acme-dns-*")
+	if err != nil {
+		return "", fmt.Errorf("temp dir: %w", err)
+	}
+	corefile := fmt.Sprintf(`. {
+    hosts {
+        %s acme.localhost
+        fallthrough
+    }
+    forward . 8.8.8.8:53 8.8.4.4:53
+    errors
+    cache
+}
+`, kindIP)
+	if err := os.WriteFile(filepath.Join(tmpDir, "Corefile"), []byte(corefile), 0644); err != nil {
+		return "", fmt.Errorf("write Corefile: %w", err)
+	}
+
+	startOut, startErr := exec.Command(engine, "run", "-d",
+		"--name", "hal-acme-dns",
+		"--network", "hal-net",
+		"-v", tmpDir+"/Corefile:/Corefile:ro",
+		"coredns/coredns:latest", "-conf", "/Corefile",
+	).CombinedOutput()
+	if startErr != nil {
+		return "", fmt.Errorf("start hal-acme-dns: %s", strings.TrimSpace(string(startOut)))
+	}
+
+	// Give CoreDNS a moment to bind.
+	time.Sleep(2 * time.Second)
+
+	ipOut, _ := exec.Command(engine, "inspect",
+		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "hal-acme-dns").Output()
+	dnsIP := strings.TrimSpace(string(ipOut))
+	if dnsIP == "" {
+		return "", fmt.Errorf("hal-acme-dns started but could not determine its IP")
+	}
+	return dnsIP, nil
+}
+
 // buildPKIACMEManifests returns Namespace, ConfigMaps, Deployments, and Services for ACME demo.
 // Host access stays unprivileged via NodePort 30083 -> host:8090, while Vault callback traffic
 // is handled by a hostNetwork gateway that listens on Kind node port 80.
@@ -1104,6 +1225,7 @@ data:
   Caddyfile: |
     {
       email lab@hal.local
+			renew_interval 30s
     }
     acme.localhost {
       root * /srv
@@ -1132,6 +1254,10 @@ spec:
       labels:
         app: hal-caddy-acme
     spec:
+			hostAliases:
+				- ip: %s
+					hostnames:
+						- vault.localhost
       initContainers:
         - name: fetch-ca
           image: curlimages/curl:latest
@@ -1180,6 +1306,10 @@ spec:
                     let notBefore = null;
                     let renewalBadgeTimer = null;
 
+										function toDate(value) {
+											return value ? new Date(value) : null;
+										}
+
                     function parseNotAfter(infoText) {
                       const m = infoText.match(/Not After\s*:\s*(.+)/i);
                       return m ? new Date(m[1].trim()) : null;
@@ -1217,31 +1347,45 @@ spec:
 
                     async function poll() {
                       try {
+												const metaResp = await fetch('/cert-meta.json?t=' + Date.now());
+												if (metaResp.ok) {
+													const meta = await metaResp.json();
+													const serial = meta.serial || null;
+													notAfter = toDate(meta.not_after);
+													notBefore = toDate(meta.not_before);
+
+													if (serial && serial !== lastSerial) {
+														if (lastSerial !== null) {
+															const chip = document.getElementById('renewed-badge');
+															chip.style.opacity = '1';
+															clearTimeout(renewalBadgeTimer);
+															const fadeMs = notAfter && notBefore
+																? Math.max(5000, (notAfter - notBefore) * 0.1)
+																: 30000;
+															renewalBadgeTimer = setTimeout(() => { chip.style.opacity = '0'; }, fadeMs);
+														}
+														lastSerial = serial;
+													}
+													document.getElementById('serial').textContent = serial ? ('Serial: ' + serial) : 'Serial: unavailable';
+												}
+
                         const r = await fetch('/cert-info.txt?t=' + Date.now());
                         if (!r.ok) return;
                         const text = await r.text();
                         document.getElementById('info').textContent = text;
 
-                        const serial = parseSerial(text);
-                        if (serial && serial !== lastSerial) {
-                          if (lastSerial !== null) {
-                            const badge = document.getElementById('renewal-badge');
-                            badge.className = 'badge renewed';
-                            badge.textContent = 'Renewed!';
-                            clearTimeout(renewalBadgeTimer);
-                            renewalBadgeTimer = setTimeout(() => {
-                              badge.className = 'badge live';
-                              badge.textContent = 'Live';
-                            }, 8000);
-                          }
-                          lastSerial = serial;
-                          document.getElementById('serial').textContent = 'Serial: ' + serial;
-                        }
-
-                        notAfter = parseNotAfter(text);
-                        notBefore = parseNotBefore(text);
-                        if (!serial) {
-                          document.getElementById('serial').textContent = 'Serial: unavailable';
+												if (!notAfter) {
+													notAfter = parseNotAfter(text);
+												}
+												if (!notBefore) {
+													notBefore = parseNotBefore(text);
+												}
+												if (!lastSerial) {
+													const serial = parseSerial(text);
+													if (serial) {
+														lastSerial = serial;
+														document.getElementById('serial').textContent = 'Serial: ' + serial;
+													}
                         }
 
                         const pr = await fetch('/cert-pem.txt?t=' + Date.now());
@@ -1259,20 +1403,18 @@ spec:
                 </head>
                 <body>
                   <h1>HAL Vault ACME + Caddy</h1>
-                  <p class='subtitle'>Certificate via <a href='%s'>Vault ACME (role: acme-demo) · auto-renewed by Caddy</p>
+									<p class='subtitle'>Certificate via <a href='%s'>Vault ACME (role: acme-demo)</a> · auto-renewed by Caddy</p>
 
                   <div class='card'>
-                    <h2>Time until expiry <span id='renewal-badge' class='badge live'>Live</span></h2>
+                    <h2>Time until expiry <span class='badge live'>Live</span><span id='renewed-badge' class='badge renewed' style='opacity:0;transition:opacity 1.5s ease'>Renewed!</span></h2>
                     <div class='countdown' id='countdown'>--:--</div>
                     <div class='progress-bar'><div class='progress-fill' id='progress-fill' style='width:100%%'></div></div>
                     <div class='meta' id='meta-expires'></div>
                     <div class='meta' id='serial'></div>
                   </div>
 
-                  <h2>openssl x509 -noout -text</h2>
                   <div class='card'><pre class='info' id='info'>Waiting for Caddy to complete ACME exchange...</pre></div>
 
-                  <h2>PEM (raw)</h2>
                   <div class='card'><pre class='pem' id='pem'></pre></div>
                 </body>
               </html>
@@ -1281,6 +1423,12 @@ spec:
             - name: web-root
               mountPath: /srv
       containers:
+				- name: vault-localhost-proxy
+					image: alpine/socat:latest
+					command: ["/bin/sh", "-c"]
+					args:
+						- |
+							exec socat TCP-LISTEN:8200,bind=127.0.0.1,reuseaddr,fork TCP:%s:8200
         - name: caddy
           image: %s
           command: ["/bin/sh", "-c"]
@@ -1288,20 +1436,15 @@ spec:
             - |
               apk add --no-cache openssl >/dev/null 2>&1
               caddy start --config /etc/caddy/Caddyfile
-              LAST_CERT=""
               while true; do
                 certfile=$(find /data/caddy/certificates -name '*.crt' 2>/dev/null | grep -v '\.issuer' | head -1)
-                if [ -n "$certfile" ] && [ "$certfile" != "$LAST_CERT" ]; then
+								if [ -n "$certfile" ]; then
                   openssl x509 -noout -text -in "$certfile" > /srv/cert-info.txt 2>&1 || true
                   cat "$certfile" > /srv/cert-pem.txt 2>&1 || true
-                  LAST_CERT="$certfile"
-                elif [ -n "$certfile" ]; then
-                  new_serial=$(openssl x509 -noout -serial -in "$certfile" 2>/dev/null)
-                  old_serial=$(grep -m1 'Serial Number' /srv/cert-info.txt 2>/dev/null || echo "")
-                  if ! echo "$old_serial" | grep -qF "${new_serial#serial=}"; then
-                    openssl x509 -noout -text -in "$certfile" > /srv/cert-info.txt 2>&1 || true
-                    cat "$certfile" > /srv/cert-pem.txt 2>&1 || true
-                  fi
+									serial=$(openssl x509 -noout -serial -in "$certfile" 2>/dev/null | cut -d= -f2-)
+									not_before=$(openssl x509 -noout -startdate -in "$certfile" 2>/dev/null | cut -d= -f2-)
+									not_after=$(openssl x509 -noout -enddate -in "$certfile" 2>/dev/null | cut -d= -f2-)
+									printf '{"serial":"%%s","not_before":"%%s","not_after":"%%s"}\n' "$serial" "$not_before" "$not_after" > /srv/cert-meta.json 2>/dev/null || true
                 fi
                 sleep 5
               done
@@ -1411,7 +1554,7 @@ spec:
     - port: 443
       targetPort: 443
       nodePort: 30083
-`, acmeDir, vaultIP, intMount, acmeDir, caddyImage)
+`, acmeDir, vaultIP, vaultIP, intMount, acmeDir, vaultIP, caddyImage)
 }
 
 func init() {
