@@ -115,7 +115,8 @@ Tears down all HAL-managed resources. **Destructive — prompts for confirmation
 
 ```bash
 hal vault create                          # provision Vault with defaults
-hal vault create --version 2.0            # pin the image version
+hal vault create --vault-tag 2.0          # pin the image tag
+hal vault create --vault-image myregistry.local/vault --vault-tag 2.0  # custom image
 hal vault create --edition ent            # use Vault Enterprise image
 hal vault create --join-consul            # tether to the local Consul instance
 hal vault update                          # reconcile config changes
@@ -132,10 +133,10 @@ hal vault oidc update
 hal vault oidc disable
 
 # JWT auth method (deploys GitLab CE as the OIDC provider)
-hal vault jwt enable --gitlab-version 18.10.1-ce.0
+hal vault jwt enable --vault-gitlab-tag 18.10.1-ce.0
 
 # Database secrets engine (MariaDB backend — only supported backend today)
-hal vault database enable --backend mariadb --mariadb-version 11.4
+hal vault database enable --backend mariadb --vault-mariadb-tag 11.4
 
 # LDAP auth with pinned image versions
 hal vault ldap enable --openldap-version 1.5.0 --phpldapadmin-version 0.9.0
@@ -144,8 +145,8 @@ hal vault ldap enable --openldap-version 1.5.0 --phpldapadmin-version 0.9.0
 hal vault k8s enable \
   --kind-node-image kindest/node:v1.31.1 \
   --vso-chart-version 0.8.1 \
-  --web-backend-image httpd:2.4-alpine \
-  --web-proxy-image nginx:alpine
+  --vault-k8s-web-backend-image httpd --vault-k8s-web-backend-tag 2.4-alpine \
+  --vault-k8s-web-proxy-image nginx --vault-k8s-web-proxy-tag alpine
 
 hal vault k8s update
 hal vault k8s disable
@@ -187,7 +188,7 @@ The demo app is reachable at http://web.localhost:8088 — no `kubectl port-forw
 ### Boundary (`hal boundary`)
 
 ```bash
-hal boundary create --version 0.15.2
+hal boundary create --boundary-tag 0.15.2
 hal boundary status
 hal boundary delete
 
@@ -197,8 +198,8 @@ hal boundary ssh update
 hal boundary ssh disable
 
 # MariaDB target
-hal boundary mariadb enable --mariadb-version 11.4
-hal boundary mariadb enable --mariadb-version 11.4 --with-vault    # link Vault dynamic creds
+hal boundary mariadb enable --boundary-mariadb-tag 11.4
+hal boundary mariadb enable --boundary-mariadb-tag 11.4 --with-vault    # link Vault dynamic creds
 hal boundary mariadb disable
 
 # Observability
@@ -211,7 +212,7 @@ hal boundary obs delete
 ### Consul (`hal consul`)
 
 ```bash
-hal consul create --version 1.15.0
+hal consul create --consul-tag 1.15.0
 hal consul status
 hal consul delete
 
@@ -225,7 +226,7 @@ hal consul obs delete
 ### Nomad (`hal nomad`)
 
 ```bash
-hal nomad create --ubuntu-image 22.04 --version 1.11.3 --cpus 2 --mem 2G
+hal nomad create --ubuntu-image 22.04 --nomad-version 1.11.3 --cpus 2 --mem 2G
 hal nomad status
 hal nomad delete
 
@@ -241,13 +242,13 @@ hal nomad obs delete
 
 ```bash
 hal terraform create \
-  --version 1.2.0 \
-  --pg-version 16 \
-  --redis-version 7 \
-  --minio-version latest \
+  --tfe-tag 1.2.0 \
+  --tfe-pg-tag 16-alpine \
+  --tfe-redis-tag 7-alpine \
+  --tfe-minio-tag latest \
   --minio-api-port 19000 \
   --minio-console-port 19001 \
-  --proxy-nginx-version alpine
+  --tfe-proxy-tag alpine
 
 hal terraform status
 hal terraform update
@@ -257,7 +258,7 @@ hal terraform delete
 **Twin TFE instance** — reuses the primary ecosystem (PostgreSQL, Redis, MinIO)
 
 ```bash
-hal terraform create --target twin --twin-version 1.2.0
+hal terraform create --target twin --twin-tag 1.2.0
 hal terraform status --target twin
 hal terraform update --target twin
 hal terraform delete --target twin
@@ -267,7 +268,7 @@ hal terraform delete --target twin
 
 ```bash
 # VCS-driven workspace workflow (local GitLab integration)
-hal terraform vcs-workflow enable --gitlab-version 18.10.1-ce.0
+hal terraform vcs-workflow enable --vault-gitlab-tag 18.10.1-ce.0
 hal terraform vcs-workflow update
 hal terraform vcs-workflow disable
 
@@ -304,10 +305,10 @@ Deploys a PLG stack (Prometheus, Loki, Grafana, Promtail) on `hal-net` with pre-
 ```bash
 hal obs create                  # deploy with default image tags
 hal obs create \
-  --loki-version 3.7 \
-  --grafana-version main \
-  --prom-version main \
-  --promtail-version 3.6
+  --loki-tag 3.7 \
+  --grafana-tag main \
+  --prometheus-tag main \
+  --promtail-tag 3.6
 hal obs status
 hal obs update                  # full stack reconcile (tear down + redeploy)
 hal obs delete
@@ -317,10 +318,14 @@ hal obs delete
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--loki-version` | `3.7` | Tag for `grafana/loki` |
-| `--grafana-version` | `main` | Tag for `grafana/grafana` |
-| `--prom-version` | `main` | Tag for `prom/prometheus` |
-| `--promtail-version` | `3.6` | Tag for `grafana/promtail` |
+| `--loki-tag` | `3.7` | Tag for the Loki image |
+| `--loki-image` | `grafana/loki` | Loki image name |
+| `--grafana-tag` | `main` | Tag for the Grafana image |
+| `--grafana-image` | `grafana/grafana` | Grafana image name |
+| `--prometheus-tag` | `main` | Tag for the Prometheus image |
+| `--prometheus-image` | `prom/prometheus` | Prometheus image name |
+| `--promtail-tag` | `3.6` | Tag for the Promtail image |
+| `--promtail-image` | `grafana/promtail` | Promtail image name |
 | `--prom-config-path` | _(generated)_ | Path to a hand-crafted `prometheus.yml`; skips the generated config entirely |
 
 #### Adding a custom metrics endpoint
@@ -448,7 +453,7 @@ HAL uses environment variables and Docker/Podman networking — there is no conf
 - **`hal delete`** (global teardown) removes all HAL-managed containers, volumes, VMs, and the `hal-net` Docker network. There is a confirmation prompt but the action is not reversible. If `hal-net` cannot be removed (non-HAL containers still attached), the command exits with an error listing the blockers.
 - **TFE requires a valid license.** `hal terraform create` expects a Terraform Enterprise license to be in place. The stack will start but TFE itself will not activate without one.
 - **CSI mode for `hal vault k8s`** requires a Vault Enterprise binary. HAL will detect the edition at runtime and fall back to native mode automatically.
-- **Version pinning is opt-in.** By default HAL pulls the latest stable image for each product. Use explicit `--version` and image flags for reproducible labs.
+- **Image and tag overrides are opt-in.** Every `create` / `enable` command exposes `--<component>-image` (registry + name) and `--<component>-tag` (version) flags independently. Use them to pull from a private mirror, pin a specific version, or test a custom build.
 - **`--network-subnet`** (global flag) pins the subnet when `hal-net` is created for the first time (e.g. `hal --network-subnet 10.89.3.0/24 tf create --enable`). Useful on Rancher Desktop or any engine that assigns an unexpected default subnet that conflicts with static proxy IPs.
 
 ---
