@@ -35,8 +35,8 @@ Install the tooling required by the labs you want to run before installing HAL.
 | Requirement | Used by |
 |---|---|
 | Docker **or** Podman | Almost every `hal` flow |
-| KinD + kubectl + helm | `hal vault k8s` |
-| Multipass | `hal nomad`, `hal boundary ssh` |
+| [KinD](https://kind.sigs.k8s.io/docs/user/quick-start/) + [kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl) + [helm](https://helm.sh/docs/intro/install/) | `hal vault k8s` |
+| [Multipass](https://canonical.com/multipass/install) | `hal nomad`, `hal boundary ssh` |
 | [Ollama](https://ollama.com) | `hal plus` — local AI model backend |
 
 > **Engine detection:** HAL probes `docker info` first, then `podman info`, and uses whichever responds. No alias is required — both engines work natively.
