@@ -19,7 +19,11 @@ const (
 
 var (
 	plusImage          string
+	plusImageName      string
+	plusImageTag       string
 	mcpImage           string
+	mcpImageName       string
+	mcpImageTag        string
 	plusPull           bool
 	plusPort           int
 	plusModel          string
@@ -34,6 +38,11 @@ var Cmd = &cobra.Command{
 	Use:   "plus",
 	Short: "Manage HAL Plus web UI runtime",
 	Args:  cobra.NoArgs,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Combine image name + tag into the full refs used by all subcommands.
+		plusImage = plusImageName + ":" + plusImageTag
+		mcpImage = mcpImageName + ":" + mcpImageTag
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		statusCmd.Run(cmd, args)
 	},
@@ -153,8 +162,12 @@ func prettyJSON(v interface{}) string {
 }
 
 func init() {
-	plusImage = "ghcr.io/hashimiche/hal-plus:latest"
-	mcpImage = "ghcr.io/hashimiche/hal-mcp:latest"
+	plusImageName = "ghcr.io/hashimiche/hal-plus"
+	plusImageTag = "latest"
+	mcpImageName = "ghcr.io/hashimiche/hal-mcp"
+	mcpImageTag = "latest"
+	plusImage = plusImageName + ":" + plusImageTag
+	mcpImage = mcpImageName + ":" + mcpImageTag
 	plusPort = 9000
 	plusModel = "qwen3.5"
 	plusModelConfig = ""
@@ -162,8 +175,10 @@ func init() {
 	ollamaContainerURL = ""
 	ollamaKeepAlive = defaultOllamaKeepAlive
 
-	createCmd.Flags().StringVar(&plusImage, "image", plusImage, "HAL Plus image to run")
-	createCmd.Flags().StringVar(&mcpImage, "mcp-image", mcpImage, "HAL MCP image expected to exist locally")
+	createCmd.Flags().StringVar(&plusImageName, "plus-image", plusImageName, "HAL Plus container image name")
+	createCmd.Flags().StringVar(&plusImageTag, "plus-tag", plusImageTag, "HAL Plus container image tag")
+	createCmd.Flags().StringVar(&mcpImageName, "plus-mcp-image", mcpImageName, "HAL MCP container image name (must exist locally)")
+	createCmd.Flags().StringVar(&mcpImageTag, "plus-mcp-tag", mcpImageTag, "HAL MCP container image tag")
 	createCmd.Flags().BoolVar(&plusPull, "pull", false, "Force pull latest GHCR images before starting (no-op for localhost/ images)")
 	createCmd.Flags().IntVar(&plusPort, "port", plusPort, "Host port for HAL Plus UI")
 	createCmd.Flags().StringVar(&plusModel, "model", plusModel, supportedOllamaModelsHelp())
@@ -172,13 +187,17 @@ func init() {
 	createCmd.Flags().StringVar(&ollamaContainerURL, "ollama-base-url", ollamaContainerURL, "Container-side OLLAMA_BASE_URL override (defaults by engine)")
 	createCmd.Flags().StringVar(&ollamaKeepAlive, "keep-alive", ollamaKeepAlive, "Ollama model keep-alive duration for HAL Plus chat requests (for example 10m or 0)")
 
-	statusCmd.Flags().StringVar(&plusImage, "image", plusImage, "HAL Plus image expected")
-	statusCmd.Flags().StringVar(&mcpImage, "mcp-image", mcpImage, "HAL MCP image expected")
+	statusCmd.Flags().StringVar(&plusImageName, "plus-image", plusImageName, "HAL Plus container image name")
+	statusCmd.Flags().StringVar(&plusImageTag, "plus-tag", plusImageTag, "HAL Plus container image tag")
+	statusCmd.Flags().StringVar(&mcpImageName, "plus-mcp-image", mcpImageName, "HAL MCP container image name")
+	statusCmd.Flags().StringVar(&mcpImageTag, "plus-mcp-tag", mcpImageTag, "HAL MCP container image tag")
 
 	Cmd.AddCommand(createCmd)
 	Cmd.AddCommand(statusCmd)
 	Cmd.AddCommand(deleteCmd)
 
-	deleteCmd.Flags().StringVar(&plusImage, "image", plusImage, "HAL Plus image expected")
-	deleteCmd.Flags().StringVar(&mcpImage, "mcp-image", mcpImage, "HAL MCP image expected")
+	deleteCmd.Flags().StringVar(&plusImageName, "plus-image", plusImageName, "HAL Plus container image name")
+	deleteCmd.Flags().StringVar(&plusImageTag, "plus-tag", plusImageTag, "HAL Plus container image tag")
+	deleteCmd.Flags().StringVar(&mcpImageName, "plus-mcp-image", mcpImageName, "HAL MCP container image name")
+	deleteCmd.Flags().StringVar(&mcpImageTag, "plus-mcp-tag", mcpImageTag, "HAL MCP container image tag")
 }

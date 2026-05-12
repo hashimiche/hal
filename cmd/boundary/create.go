@@ -14,7 +14,9 @@ import (
 
 var (
 	boundaryVersion    string
+	boundaryImage      string
 	pgVersion          string
+	pgImage            string
 	boundaryUpdate     bool
 	boundaryJoinConsul bool
 )
@@ -45,7 +47,7 @@ var deployCmd = &cobra.Command{
 
 		global.EnsureNetwork(engine)
 
-		fmt.Printf("⚙️  Provisioning Boundary Control Plane Database (postgres:%s-alpine)...\n", pgVersion)
+		fmt.Printf("⚙️  Provisioning Boundary Control Plane Database (%s:%s)...\n", pgImage, pgVersion)
 		backendArgs := []string{
 			"run", "-d",
 			"--name", "hal-boundary-backend",
@@ -53,7 +55,7 @@ var deployCmd = &cobra.Command{
 			"-e", "POSTGRES_USER=boundary",
 			"-e", "POSTGRES_PASSWORD=boundary",
 			"-e", "POSTGRES_DB=boundary",
-			fmt.Sprintf("postgres:%s-alpine", pgVersion),
+			fmt.Sprintf("%s:%s", pgImage, pgVersion),
 		}
 
 		if global.DryRun {
@@ -80,7 +82,7 @@ var deployCmd = &cobra.Command{
 		}
 
 		boundaryArgs = append(boundaryArgs,
-			fmt.Sprintf("hashicorp/boundary:%s", boundaryVersion),
+			fmt.Sprintf("%s:%s", boundaryImage, boundaryVersion),
 			"boundary", "dev",
 			"-api-listen-address=0.0.0.0:9200",
 			"-proxy-listen-address=0.0.0.0:9202",
@@ -162,8 +164,10 @@ var updateCmd = &cobra.Command{
 }
 
 func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
-	cmd.Flags().StringVarP(&boundaryVersion, "version", "v", "0.15.2", "Boundary version to deploy")
-	cmd.Flags().StringVar(&pgVersion, "pg-version", "16", "PostgreSQL version for Boundary backend")
+	cmd.Flags().StringVarP(&boundaryVersion, "boundary-tag", "v", "0.15.2", "Boundary container image tag")
+	cmd.Flags().StringVar(&boundaryImage, "boundary-image", "hashicorp/boundary", "Boundary container image name")
+	cmd.Flags().StringVar(&pgVersion, "boundary-pg-tag", "16-alpine", "PostgreSQL image tag for Boundary backend")
+	cmd.Flags().StringVar(&pgImage, "boundary-pg-image", "postgres", "PostgreSQL image name for Boundary backend")
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&boundaryUpdate, "update", "u", false, "Reconcile an existing Boundary deployment in place")
 	}

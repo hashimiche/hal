@@ -54,11 +54,12 @@ const (
 )
 
 var (
-	createCommandName string
-	createBinaryPath  string
-	createJSONOnly    bool
-	createHTTPImage   bool
-	createHTTPTag     string
+	createCommandName   string
+	createBinaryPath    string
+	createJSONOnly      bool
+	createHTTPImage     bool
+	mcpContainerImage   string
+	mcpContainerTag     string
 	upTransport       string
 	upHTTPHost        string
 	upHTTPPort        int
@@ -87,20 +88,20 @@ var createCmd = &cobra.Command{
 				return
 			}
 
-			imageTag := strings.TrimSpace(createHTTPTag)
-			if imageTag == "" {
-				fmt.Println("❌ Image tag cannot be empty (use --http-tag).")
+			imageRef := strings.TrimSpace(mcpContainerImage) + ":" + strings.TrimSpace(mcpContainerTag)
+			if mcpContainerImage == "" || mcpContainerTag == "" {
+				fmt.Println("❌ Image name and tag cannot be empty (use --mcp-image and --mcp-tag).")
 				return
 			}
 
-			if err := buildManagedMCPHTTPImage(engine, imageTag); err != nil {
+			if err := buildManagedMCPHTTPImage(engine, imageRef); err != nil {
 				fmt.Printf("❌ Failed to build HAL MCP HTTP image: %v\n", err)
 				return
 			}
 
 			fmt.Println("✅ HAL MCP HTTP image created locally.")
 			fmt.Printf("🐳 Engine:      %s\n", engine)
-			fmt.Printf("🐳 Image:       %s\n", imageTag)
+			fmt.Printf("🐳 Image:       %s\n", imageRef)
 			fmt.Println("🧭 Next:        Start this image on hal-net and point HAL Plus to HAL_MCP_HTTP_URL=http://hal-mcp:8080/mcp")
 			return
 		}
@@ -980,7 +981,8 @@ func init() {
 	createCmd.Flags().StringVar(&createBinaryPath, "binary-path", "", "Path to write the managed HAL binary used by MCP clients (default ~/.hal/bin/hal-mcp)")
 	createCmd.Flags().BoolVar(&createJSONOnly, "json", false, "Only generate/replace MCP config JSON (skip managed binary provisioning)")
 	createCmd.Flags().BoolVar(&createHTTPImage, "http", false, "Build a local HAL MCP container image for streamable-http transport")
-	createCmd.Flags().StringVar(&createHTTPTag, "http-tag", "ghcr.io/hashimiche/hal-mcp:latest", "Image tag used when --http is set")
+	createCmd.Flags().StringVar(&mcpContainerImage, "mcp-image", "ghcr.io/hashimiche/hal-mcp", "HAL MCP container image name (used when --http is set)")
+	createCmd.Flags().StringVar(&mcpContainerTag, "mcp-tag", "latest", "HAL MCP container image tag (used when --http is set)")
 	upCmd.Flags().StringVar(&upTransport, "transport", transportStdio, "MCP transport to use: stdio or streamable-http")
 	upCmd.Flags().StringVar(&upHTTPHost, "http-host", "0.0.0.0", "Host/interface to bind when --transport=streamable-http")
 	upCmd.Flags().IntVar(&upHTTPPort, "http-port", 8080, "TCP port to listen on when --transport=streamable-http")

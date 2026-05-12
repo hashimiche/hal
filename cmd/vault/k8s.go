@@ -23,7 +23,9 @@ var (
 	kindNodeImage   string
 	vsoChartVersion string
 	webBackendImage string
+	webBackendTag   string
 	webProxyImage   string
+	webProxyTag     string
 )
 
 func isVaultEnterprise(client *vault.Client) bool {
@@ -590,7 +592,7 @@ spec:
 			port: 80
 			targetPort: 80
 			nodePort: 30080
-`, vaultIP, webBackendImage, webProxyImage)
+`, vaultIP, webBackendImage+":"+webBackendTag, webProxyImage+":"+webProxyTag)
 			} else {
 				appManifests = fmt.Sprintf(`
 ---
@@ -756,7 +758,7 @@ spec:
 			port: 80
 			targetPort: 80
 			nodePort: 30080
-`, vaultIP, webBackendImage, webProxyImage)
+`, vaultIP, webBackendImage+":"+webBackendTag, webProxyImage+":"+webProxyTag)
 			}
 
 			if !applyK8s(appManifests) {
@@ -840,8 +842,10 @@ func init() {
 	vaultK8sCmd.Flags().BoolVar(&jwtAuth, "jwt", false, "Use the advanced jwt-k8s OIDC architecture (experimental)")
 	vaultK8sCmd.Flags().StringVar(&kindNodeImage, "kind-node-image", "kindest/node:v1.31.1", "KinD node image used when creating the cluster")
 	vaultK8sCmd.Flags().StringVar(&vsoChartVersion, "vso-chart-version", "", "Helm chart version for hashicorp/vault-secrets-operator (empty uses latest)")
-	vaultK8sCmd.Flags().StringVar(&webBackendImage, "web-backend-image", "httpd:2.4-alpine", "Demo backend container image")
-	vaultK8sCmd.Flags().StringVar(&webProxyImage, "web-proxy-image", "nginx:alpine", "Demo reverse proxy container image")
+	vaultK8sCmd.Flags().StringVar(&webBackendImage, "vault-k8s-web-backend-image", "httpd", "Demo backend container image name")
+	vaultK8sCmd.Flags().StringVar(&webBackendTag, "vault-k8s-web-backend-tag", "2.4-alpine", "Demo backend container image tag")
+	vaultK8sCmd.Flags().StringVar(&webProxyImage, "vault-k8s-web-proxy-image", "nginx", "Demo reverse proxy container image name")
+	vaultK8sCmd.Flags().StringVar(&webProxyTag, "vault-k8s-web-proxy-tag", "alpine", "Demo reverse proxy container image tag")
 
 	Cmd.AddCommand(vaultK8sCmd)
 }

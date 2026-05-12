@@ -18,6 +18,7 @@ var (
 	databaseUpdate       bool
 	databaseBackend      string
 	mariadbVersion       string
+	mariadbImage         string
 	dbUsernamePrefix     string
 )
 
@@ -67,7 +68,7 @@ var vaultDatabaseCmd = &cobra.Command{
 			"--network-alias", "mariadb.localhost",
 			"-p", "3306:3306",
 			"-e", "MARIADB_ROOT_PASSWORD=vaultroot",
-			fmt.Sprintf("mariadb:%s", mariadbVersion),
+			fmt.Sprintf("%s:%s", mariadbImage, mariadbVersion),
 		}
 
 		client, vaultErr := GetHealthyClient()
@@ -299,7 +300,8 @@ func init() {
 
 	// Backend selection and version pinning
 	vaultDatabaseCmd.Flags().StringVarP(&databaseBackend, "backend", "b", "mariadb", "Database backend to use (mariadb; pgsql planned, postgres alias accepted)")
-	vaultDatabaseCmd.Flags().StringVar(&mariadbVersion, "mariadb-version", "11.4", "Version of the MariaDB container image to deploy")
+	vaultDatabaseCmd.Flags().StringVar(&mariadbVersion, "vault-mariadb-tag", "11.4", "MariaDB container image tag")
+	vaultDatabaseCmd.Flags().StringVar(&mariadbImage, "vault-mariadb-image", "mariadb", "MariaDB container image name")
 	vaultDatabaseCmd.Flags().StringVar(&dbUsernamePrefix, "username-prefix", "v", "Prefix for dynamically generated database usernames (e.g. 'myapp' → 'myapp-AbCdEfGhIj')")
 
 	Cmd.AddCommand(vaultDatabaseCmd)

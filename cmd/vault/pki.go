@@ -35,7 +35,9 @@ var (
 	pkiKindNodeImage      string
 	pkiCertManagerVersion string
 	pkiWebBackendImage    string
+	pkiWebBackendTag      string
 	pkiCaddyImage         string
+	pkiCaddyTag           string
 	pkiACMECertTTL        string
 )
 
@@ -635,7 +637,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	// Phase 1: Namespace, Deployment, Service — standard K8s resources, no cert-manager
 	// webhook validation. Apply immediately with no retry needed.
 	fmt.Println("⚙️  Applying core manifests (Namespace, Deployment, Service)...")
-	coreManifests := buildPKIK8sCoreManifests(intMount, pkiWebBackendImage)
+	coreManifests := buildPKIK8sCoreManifests(intMount, pkiWebBackendImage+":"+pkiWebBackendTag)
 	coreCmd := exec.Command("kubectl", "apply", "-f", "-")
 	coreCmd.Stdin = strings.NewReader(coreManifests)
 	coreCmd.Stdout = os.Stdout
@@ -718,7 +720,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	fmt.Println("    - cert-manager (namespace: cert-manager, Jetstack chart)")
 	fmt.Printf("    - ClusterIssuer vault-pki-issuer → %s/sign/hal-role\n", intMount)
 	fmt.Println("    - Certificate hal-web-pki-cert (namespace: pki-demo)")
-	fmt.Printf("    - Web pod hal-web-pki (%s, TLS cert mounted at /tls)\n", pkiWebBackendImage)
+	fmt.Printf("    - Web pod hal-web-pki (%s, TLS cert mounted at /tls)\n", pkiWebBackendImage+":"+pkiWebBackendTag)
 	fmt.Println("\n  Access:")
 	fmt.Println("    → https://pki.localhost:8089")
 	fmt.Println("\n  Inspect the certificate:")
@@ -1076,7 +1078,7 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 
 	// ---- Apply Caddy manifests ----
 	fmt.Println("⚙️  Applying ACME/Caddy manifests (Namespace, ConfigMaps, Deployments, Services)...")
-	manifests := buildPKIACMEManifests(vaultIP, intMount, pkiCaddyImage)
+	manifests := buildPKIACMEManifests(vaultIP, intMount, pkiCaddyImage+":"+pkiCaddyTag)
 	// Guard against accidental tab indentation in embedded YAML blocks.
 	manifests = strings.ReplaceAll(manifests, "\t", "  ")
 	applyCmd := exec.Command("kubectl", "apply", "-f", "-")
@@ -1127,7 +1129,7 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 	fmt.Println("    - hostNetwork ACME gateway on Kind node :80 for Vault HTTP-01 callbacks")
 	fmt.Printf("    - ACME directory: http://vault.localhost:8200/v1/%s/roles/acme-demo/acme/directory\n", intMount)
 	fmt.Printf("    - Cert TTL: %s\n", pkiACMECertTTL)
-	fmt.Printf("    - Caddy image: %s\n", pkiCaddyImage)
+	fmt.Printf("    - Caddy image: %s\n", pkiCaddyImage+":"+pkiCaddyTag)
 	fmt.Println("\n  Access:")
 	fmt.Println("    → https://acme.localhost:8090")
 	fmt.Println("\n  Inspect the certificate:")
@@ -1579,8 +1581,10 @@ func init() {
 	vaultPKICmd.Flags().BoolVar(&pkiForce, "force", false, "With --k8s/--acme update: also rebuild Root CA and Intermediate CA from scratch")
 	vaultPKICmd.Flags().StringVar(&pkiKindNodeImage, "kind-node-image", "kindest/node:v1.31.1", "KinD node image (used only when creating a new cluster)")
 	vaultPKICmd.Flags().StringVar(&pkiCertManagerVersion, "cert-manager-version", "", "Jetstack cert-manager Helm chart version (empty = latest)")
-	vaultPKICmd.Flags().StringVar(&pkiWebBackendImage, "web-backend-image", "nginx:alpine", "Demo backend container image (cert-manager/--k8s demo)")
-	vaultPKICmd.Flags().StringVar(&pkiCaddyImage, "caddy-image", "caddy:alpine", "Caddy container image (ACME/--acme demo)")
+	vaultPKICmd.Flags().StringVar(&pkiWebBackendImage, "vault-pki-web-backend-image", "nginx", "Demo backend container image name (cert-manager/--k8s demo)")
+	vaultPKICmd.Flags().StringVar(&pkiWebBackendTag, "vault-pki-web-backend-tag", "alpine", "Demo backend container image tag (cert-manager/--k8s demo)")
+	vaultPKICmd.Flags().StringVar(&pkiCaddyImage, "vault-pki-caddy-image", "caddy", "Caddy container image name (ACME/--acme demo)")
+	vaultPKICmd.Flags().StringVar(&pkiCaddyTag, "vault-pki-caddy-tag", "alpine", "Caddy container image tag (ACME/--acme demo)")
 	vaultPKICmd.Flags().StringVar(&pkiACMECertTTL, "acme-cert-ttl", "5m", "TTL for certs issued to Caddy via ACME (short = visible auto-renewal in the web page)")
 
 	Cmd.AddCommand(vaultPKICmd)
