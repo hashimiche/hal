@@ -90,8 +90,6 @@ var deployCmd = &cobra.Command{
 		tfeHostname := "tfe.localhost"
 		healthURL := "https://tfe.localhost:8443/api/v1/health/readiness"
 		uiURL := "https://tfe.localhost:8443"
-		// Stable internal proxy IP on hal-net used to route in-cluster tfe.localhost:443 traffic.
-		proxyInternalIP := "10.89.3.54"
 
 		// 2. FORGE THE TLS CERTIFICATES
 		fmt.Println("🔐 Forging local TLS certificates for TFE...")
@@ -123,6 +121,8 @@ var deployCmd = &cobra.Command{
 
 		// 4. Ensure the global HAL network exists
 		global.EnsureNetwork(engine)
+		// Derive the proxy IP from the actual hal-net subnet so it works on any engine.
+		proxyInternalIP := global.HalNetStaticIP(engine, 250)
 
 		// 5. Deploy PostgreSQL
 		fmt.Printf("⚙️  Provisioning TFE PostgreSQL Database...\n")

@@ -122,7 +122,16 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 - Global teardown logic is centralized for `hal delete` and `hal daisy`.
     - KinD cleanup includes default cluster name `kind` plus `hal-*` clusters.
     - Leftover KinD containers are removed by cluster label as a fallback.
+    - `hal delete` also removes the `hal-net` Docker network after all containers are gone via `global.CleanNetworkIfEmpty()`.
+    - If `hal-net` cannot be removed (non-HAL containers still attached), the command prints the blocker list and exits with code 1. The user should stop those containers and re-run `hal delete`.
+    - Teardown output uses a `CleanStatus` type: `cleaned`, `not deployed`, or `clean failed` — so "MCP artifacts: not deployed" means MCP was never started, not an error.
 - `hal daisy` is a cinematic tribute teardown flow with minimum-duration rendering and reverse random memory-bar decay.
+- `hal-net` Docker network behaviour:
+    - Created on demand by `global.EnsureNetwork()` before any product that needs inter-container networking.
+    - No subnet is enforced by default — the engine picks freely. On Rancher Desktop this can conflict with static proxy IPs needed by TFE.
+    - `--network-subnet <cidr>` (global persistent flag) pins the subnet on first creation only. Example: `hal --network-subnet 10.89.3.0/24 tf create --enable`.
+    - `global.HalNetStaticIP(engine, hostNum)` inspects the live `hal-net` subnet at runtime and returns `<network-prefix>.<hostNum>`. TFE proxy uses host `.250`, twin proxy uses host `.249`. This makes static IPs portable across any subnet the engine assigned.
+    - `global.HalNetName` and `global.HalNetSubnet` are exported constants/vars for use across packages.
 
 ## Maintenance Rule
 

@@ -153,6 +153,9 @@ var twinCmd = &cobra.Command{
 		}
 
 		global.EnsureNetwork(engine)
+		if tfeTwinProxyInternalIP == "" {
+			tfeTwinProxyInternalIP = global.HalNetStaticIP(engine, 249)
+		}
 
 		fmt.Printf("⚙️  Ensuring shared PostgreSQL has twin database '%s'...\n", tfeTwinDatabaseName)
 		if err := ensureTwinDatabaseExists(engine, tfeTwinDatabaseName); err != nil {
@@ -686,7 +689,7 @@ func bindTwinFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&tfeTwinHTTPSPort, "twin-https-port", 9443, "Host HTTPS port exposed by the twin TFE ingress proxy")
 	cmd.Flags().StringVar(&tfeTwinHostname, "twin-hostname", "tfe-bis.localhost", "TLS hostname used by the twin TFE instance")
 	cmd.Flags().StringVar(&tfeTwinContainerName, "twin-container-name", "hal-tfe-bis", "Container name used for the twin TFE core application")
-	cmd.Flags().StringVar(&tfeTwinProxyInternalIP, "twin-proxy-ip", "10.89.3.55", "Static internal proxy IP on hal-net for twin hostname routing")
+	cmd.Flags().StringVar(&tfeTwinProxyInternalIP, "twin-proxy-ip", "", "Static internal proxy IP on hal-net for twin hostname routing (default: auto-derived .249)")
 	cmd.Flags().StringVar(&tfeTwinDatabasePassword, "twin-db-password", "tfe_password", "PostgreSQL password used by the twin TFE backend")
 	cmd.Flags().StringVar(&tfeTwinDatabaseName, "twin-db-name", "tfe_bis", "Database name for the twin TFE schema in shared PostgreSQL")
 	cmd.Flags().StringVar(&tfeTwinMinioRootUser, "twin-minio-root-user", "minioadmin", "MinIO root user for shared object storage")

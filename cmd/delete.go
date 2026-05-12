@@ -24,6 +24,7 @@ var destroyCmd = &cobra.Command{
 			fmt.Println("[DRY RUN] Would delete HAL Multipass VMs and purge")
 			fmt.Println("[DRY RUN] Would remove local observability state")
 			fmt.Println("[DRY RUN] Would remove HAL MCP config and managed binary artifacts")
+			fmt.Println("[DRY RUN] Would remove hal-net Docker network")
 			return
 		}
 
@@ -47,13 +48,22 @@ var destroyCmd = &cobra.Command{
 		fmt.Printf("   - Docker containers removed: %d\n", result.DockerContainersRemoved)
 		fmt.Printf("   - KinD clusters deleted:     %d\n", result.KindClustersDeleted)
 		fmt.Printf("   - Multipass VMs deleted:     %d\n", result.MultipassVMsDeleted)
-		fmt.Printf("   - Obs state cleaned:         %t\n", result.ObsStateCleaned)
-		fmt.Printf("   - MCP artifacts cleaned:     %t\n", result.MCPArtifactsCleaned)
+		fmt.Printf("   - Obs state:                 %s\n", result.ObsStatus)
+		fmt.Printf("   - MCP artifacts:             %s\n", result.MCPStatus)
+		fmt.Printf("   - hal-net:                   %s\n", result.NetworkStatus)
 		if len(result.Warnings) > 0 {
 			fmt.Println("\n⚠️  Teardown warnings:")
 			for _, warning := range result.Warnings {
 				fmt.Printf("   - %s\n", warning)
 			}
+		}
+		if len(result.NetworkBlockers) > 0 {
+			fmt.Println("\n❌ hal-net could not be removed — the following containers are still attached:")
+			for _, name := range result.NetworkBlockers {
+				fmt.Printf("   - %s\n", name)
+			}
+			fmt.Println("   Stop or remove them, then re-run: hal delete")
+			os.Exit(1)
 		}
 	},
 }

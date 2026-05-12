@@ -19,7 +19,8 @@ You are an expert HashiCorp Vault, Terraform, and DevOps assistant. Your primary
 
 ## High-level architecture
 `hal` is a Cobra-based Go CLI for spinning up local HashiCorp labs. `main.go` only calls `cmd.Execute()`, and `cmd/root.go` wires the root command plus the product namespaces.
-- Shared runtime behavior lives in `internal/global` (`DetectEngine()`, `EnsureNetwork()`).
+- Shared runtime behavior lives in `internal/global` (`DetectEngine()`, `EnsureNetwork()`, `HalNetStaticIP()`).
+- `HalNetStaticIP(engine, hostNum)` inspects the live `hal-net` subnet and returns `<prefix>.<hostNum>` — use it instead of hardcoded IPs for any container that needs a stable address on `hal-net`.
 - `vault` commands touch the API via `GetHealthyClient()`, applying local defaults (`VAULT_ADDR` fallback to `http://vault.localhost:8200`, root token fallback).
 
 ## Key conventions
