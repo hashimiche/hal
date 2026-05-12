@@ -18,13 +18,13 @@ import (
 )
 
 var (
-	jwtEnable          bool
-	jwtDisable         bool
-	jwtUpdate          bool
-	gitlabVersion      string
-	gitlabImage        string
-	gitlabRunnerImage  string
-	gitlabRunnerTag    string
+	jwtEnable         bool
+	jwtDisable        bool
+	jwtUpdate         bool
+	gitlabVersion     string
+	gitlabImage       string
+	gitlabRunnerImage string
+	gitlabRunnerTag   string
 )
 
 var vaultJwtCmd = &cobra.Command{

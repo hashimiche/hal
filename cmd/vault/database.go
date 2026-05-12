@@ -13,13 +13,13 @@ import (
 )
 
 var (
-	databaseEnable       bool
-	databaseDisable      bool
-	databaseUpdate       bool
-	databaseBackend      string
-	mariadbVersion       string
-	mariadbImage         string
-	dbUsernamePrefix     string
+	databaseEnable   bool
+	databaseDisable  bool
+	databaseUpdate   bool
+	databaseBackend  string
+	mariadbVersion   string
+	mariadbImage     string
+	dbUsernamePrefix string
 )
 
 var vaultDatabaseCmd = &cobra.Command{

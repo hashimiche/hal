@@ -11,11 +11,11 @@ import (
 )
 
 var (
-	mariadbEnable     bool
-	mariadbDisable    bool
-	mariadbUpdate     bool
-	mariadbWithVault  bool
-	targetMariadbVer  string
+	mariadbEnable      bool
+	mariadbDisable     bool
+	mariadbUpdate      bool
+	mariadbWithVault   bool
+	targetMariadbVer   string
 	targetMariadbImage string
 )
 
