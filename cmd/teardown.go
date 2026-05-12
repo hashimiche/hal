@@ -11,12 +11,23 @@ import (
 
 const tfeCLIHelperImage = "hal-tfe-cli:latest"
 
+// CleanStatus represents the outcome of a cleanup step.
+type CleanStatus string
+
+const (
+	StatusCleaned     CleanStatus = "cleaned"
+	StatusNotDeployed CleanStatus = "not deployed"
+	StatusFailed      CleanStatus = "clean failed"
+)
+
 type globalTeardownResult struct {
 	DockerContainersRemoved int
 	KindClustersDeleted     int
 	MultipassVMsDeleted     int
-	ObsStateCleaned         bool
-	MCPArtifactsCleaned     bool
+	ObsStatus               CleanStatus
+	MCPStatus               CleanStatus
+	NetworkStatus           CleanStatus
+	NetworkBlockers         []string
 	Warnings                []string
 }
 
@@ -111,17 +122,38 @@ func runGlobalTeardown() globalTeardownResult {
 		}
 	}
 
-	if err := global.RemoveObsState(); err != nil {
+	removed, existed, err := global.RemoveObsState()
+	if err != nil {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("observability state cleanup failed: %v", err))
+		result.ObsStatus = StatusFailed
+	} else if existed || removed {
+		result.ObsStatus = StatusCleaned
 	} else {
-		result.ObsStateCleaned = true
+		result.ObsStatus = StatusNotDeployed
 	}
 
 	mcpCleanup := mcp.CleanupArtifacts()
-	if mcpCleanup.ConfigRemoved || mcpCleanup.BinaryRemoved || mcpCleanup.PIDRemoved || mcpCleanup.ProcessStopped {
-		result.MCPArtifactsCleaned = true
-	}
 	result.Warnings = append(result.Warnings, mcpCleanup.Warnings...)
+	if len(mcpCleanup.Warnings) > 0 {
+		result.MCPStatus = StatusFailed
+	} else if mcpCleanup.ConfigRemoved || mcpCleanup.BinaryRemoved || mcpCleanup.PIDRemoved || mcpCleanup.ProcessStopped {
+		result.MCPStatus = StatusCleaned
+	} else {
+		result.MCPStatus = StatusNotDeployed
+	}
+
+	// Remove hal-net now that all containers are gone.
+	for _, containerEngine := range containerEngines {
+		existed, removed, blockers := global.CleanNetworkIfEmpty(containerEngine)
+		if !existed {
+			result.NetworkStatus = StatusNotDeployed
+		} else if removed {
+			result.NetworkStatus = StatusCleaned
+		} else {
+			result.NetworkStatus = StatusFailed
+			result.NetworkBlockers = append(result.NetworkBlockers, blockers...)
+		}
+	}
 
 	return result
 }

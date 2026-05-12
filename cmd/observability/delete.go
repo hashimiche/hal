@@ -43,7 +43,7 @@ var destroyCmd = &cobra.Command{
 		}
 
 		fmt.Println("  🧹 Wiping local PLG configurations...")
-		if err := global.RemoveObsState(); err != nil {
+		if _, _, err := global.RemoveObsState(); err != nil {
 			fmt.Printf("  ⚠️  Failed to wipe local PLG configurations: %v\n", err)
 		}
 

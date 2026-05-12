@@ -16,7 +16,13 @@ var (
 const (
 	HalHealthContainerName = "hal-health"
 	HalHealthPort          = 9001
+
+	HalNetName = "hal-net"
 )
+
+// HalNetSubnet is the optional subnet passed via --network-subnet.
+// Empty string means let the engine pick (default behaviour).
+var HalNetSubnet string
 
 func DetectEngine() (string, error) {
 	if err := exec.Command("docker", "info").Run(); err == nil {
@@ -54,35 +60,85 @@ func BoolState(enabled bool) string {
 	return "disabled"
 }
 
-// EnsureNetwork creates the global grid if it doesn't exist.
+// EnsureNetwork creates the global hal-net if it doesn't exist.
+// When HalNetSubnet is set (via --network-subnet) the network is created with
+// that explicit subnet so static IPs derived by HalNetStaticIP are predictable.
 func EnsureNetwork(engine string) {
 	out, _ := exec.Command(engine, "network", "ls", "--format", "{{.Name}}").Output()
-	if !strings.Contains(string(out), "hal-net") {
-		if Debug {
-			fmt.Println("[DEBUG] Creating global 'hal-net' Docker network...")
+	if !strings.Contains(string(out), HalNetName) {
+		args := []string{"network", "create"}
+		if HalNetSubnet != "" {
+			args = append(args, "--subnet", HalNetSubnet)
 		}
-		_ = exec.Command(engine, "network", "create", "hal-net").Run()
+		args = append(args, HalNetName)
+		if Debug {
+			fmt.Printf("[DEBUG] Creating '%s' Docker network (subnet: %q)...\n", HalNetName, HalNetSubnet)
+		}
+		_ = exec.Command(engine, args...).Run()
 	}
 }
 
+// HalNetStaticIP returns an IP in the hal-net subnet with the given last octet.
+// It inspects the live network so it works regardless of which subnet the engine
+// assigned (e.g. 172.18.0.250, 10.89.3.250, ...).
+// Falls back to 172.18.0.<hostNum> when inspection fails.
+func HalNetStaticIP(engine string, hostNum int) string {
+	out, err := exec.Command(engine, "network", "inspect", HalNetName,
+		"--format", "{{range .IPAM.Config}}{{.Subnet}}{{end}}").Output()
+	if err == nil {
+		subnet := strings.TrimSpace(string(out))
+		// subnet looks like "172.18.0.0/16" or "10.89.3.0/24"
+		// Take everything up to the last dot of the network address.
+		if slash := strings.Index(subnet, "/"); slash > 0 {
+			host := subnet[:slash] // "172.18.0.0"
+			if dot := strings.LastIndex(host, "."); dot > 0 {
+				return fmt.Sprintf("%s.%d", host[:dot], hostNum)
+			}
+		}
+	}
+	return fmt.Sprintf("172.18.0.%d", hostNum)
+}
+
 // CleanNetworkIfEmpty acts as a garbage collector.
-// Docker natively blocks deletion if containers are still attached!
-func CleanNetworkIfEmpty(engine string) {
+// Docker natively blocks deletion if containers are still attached.
+// Returns (existed, removed bool, blockers []string) so callers can distinguish
+// "not deployed" from "cleaned" from "blocked by containers".
+func CleanNetworkIfEmpty(engine string) (existed, removed bool, blockers []string) {
 	if Debug {
 		fmt.Println("[DEBUG] Attempting to clean up 'hal-net'...")
 	}
 
-	// We run the remove command. If it succeeds, the network was empty.
-	// If it fails, Docker blocked it because an app is still using it.
-	err := exec.Command(engine, "network", "rm", "hal-net").Run()
+	// If the network doesn't exist there's nothing to do.
+	out, _ := exec.Command(engine, "network", "ls", "--format", "{{.Name}}").Output()
+	if !strings.Contains(string(out), HalNetName) {
+		if Debug {
+			fmt.Println("[DEBUG] 'hal-net' does not exist, nothing to remove.")
+		}
+		return false, false, nil
+	}
 
-	if Debug {
-		if err == nil {
+	err := exec.Command(engine, "network", "rm", HalNetName).Run()
+	if err == nil {
+		if Debug {
 			fmt.Println("[DEBUG] 'hal-net' was empty and has been removed.")
-		} else {
-			fmt.Println("[DEBUG] 'hal-net' is still in use by other containers. Leaving it active.")
+		}
+		return true, true, nil
+	}
+
+	// Network still in use — find which containers are blocking.
+	inspectOut, inspectErr := exec.Command(engine, "network", "inspect", HalNetName,
+		"--format", "{{range $k, $v := .Containers}}{{$v.Name}}\n{{end}}").Output()
+	if inspectErr == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(inspectOut)), "\n") {
+			if name := strings.TrimSpace(line); name != "" {
+				blockers = append(blockers, name)
+			}
 		}
 	}
+	if Debug {
+		fmt.Printf("[DEBUG] 'hal-net' is still in use by: %v\n", blockers)
+	}
+	return true, false, blockers
 }
 
 // IsConsulRunning checks if the global hal-consul container is active.

@@ -152,8 +152,11 @@ hal vault k8s disable
 
 # PKI secrets engine (Root CA + Intermediate CA)
 hal vault pki enable
-hal vault pki enable --k8s   # also deploy cert-manager + web demo on KinD
+hal vault pki enable --k8s              # also deploy cert-manager + web demo on KinD
+hal vault pki enable --acme             # also deploy Caddy ACME demo on KinD
 hal vault pki update --k8s
+hal vault pki update --acme
+hal vault pki update --acme --acme-cert-ttl 2m  # shorten cert TTL for live renewal demo
 hal vault pki disable
 
 # Audit logging (file-based by default)
@@ -442,10 +445,11 @@ HAL uses environment variables and Docker/Podman networking — there is no conf
 - **Docker or Podman must be running** before any `create` command. HAL auto-detects the engine by probing `docker info` then `podman info` — whichever responds is used. No alias is needed. HAL will error early if neither engine is reachable.
 - **`hal vault k8s`** requires KinD, kubectl, and helm to be on your `$PATH`. The KinD cluster is created on demand and removed on `disable`.
 - **`hal nomad` and `hal boundary ssh`** require Multipass. The Ubuntu VM is provisioned and torn down as part of the lifecycle.
-- **`hal delete`** (global teardown) removes all HAL-managed containers, volumes, and VMs. There is a confirmation prompt but the action is not reversible.
+- **`hal delete`** (global teardown) removes all HAL-managed containers, volumes, VMs, and the `hal-net` Docker network. There is a confirmation prompt but the action is not reversible. If `hal-net` cannot be removed (non-HAL containers still attached), the command exits with an error listing the blockers.
 - **TFE requires a valid license.** `hal terraform create` expects a Terraform Enterprise license to be in place. The stack will start but TFE itself will not activate without one.
 - **CSI mode for `hal vault k8s`** requires a Vault Enterprise binary. HAL will detect the edition at runtime and fall back to native mode automatically.
 - **Version pinning is opt-in.** By default HAL pulls the latest stable image for each product. Use explicit `--version` and image flags for reproducible labs.
+- **`--network-subnet`** (global flag) pins the subnet when `hal-net` is created for the first time (e.g. `hal --network-subnet 10.89.3.0/24 tf create --enable`). Useful on Rancher Desktop or any engine that assigns an unexpected default subnet that conflicts with static proxy IPs.
 
 ---
 

@@ -50,15 +50,21 @@ func ObsDashboardsDir() string {
 	return filepath.Join(base, "dashboards")
 }
 
-func RemoveObsState() error {
+// RemoveObsState removes the local observability state directory.
+// Returns (existed, removed bool, err error) so callers can distinguish
+// "nothing deployed" from "cleaned" from "failed".
+func RemoveObsState() (existed, removed bool, err error) {
 	base := obsBaseDir()
 	if base == "" {
-		return nil
+		return false, false, nil
 	}
-	if err := os.RemoveAll(base); err != nil {
-		return err
+	if _, statErr := os.Stat(base); os.IsNotExist(statErr) {
+		return false, false, nil
 	}
-	return nil
+	if removeErr := os.RemoveAll(base); removeErr != nil {
+		return true, false, removeErr
+	}
+	return true, true, nil
 }
 
 func IsObsRunning(engine string) bool {
