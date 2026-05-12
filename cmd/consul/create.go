@@ -12,6 +12,7 @@ import (
 
 var (
 	consulVersion string
+	consulImage   string
 	consulUpdate  bool
 )
 
@@ -45,7 +46,7 @@ var deployCmd = &cobra.Command{
 			"--name", "hal-consul",
 			"--network", "hal-net",
 			"-p", "8500:8500", // The magic UI/API port
-			fmt.Sprintf("hashicorp/consul:%s", consulVersion),
+			fmt.Sprintf("%s:%s", consulImage, consulVersion),
 			"agent", "-server", "-ui", "-node=hal-server", "-bootstrap-expect=1", "-client=0.0.0.0",
 		}
 
@@ -83,7 +84,8 @@ var updateCmd = &cobra.Command{
 }
 
 func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
-	cmd.Flags().StringVarP(&consulVersion, "version", "v", "1.15.0", "Consul version to deploy")
+	cmd.Flags().StringVarP(&consulVersion, "consul-tag", "v", "1.15.0", "Consul container image tag")
+	cmd.Flags().StringVar(&consulImage, "consul-image", "hashicorp/consul", "Consul container image name")
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&consulUpdate, "update", "u", false, "Reconcile an existing Consul deployment in place")
 	}

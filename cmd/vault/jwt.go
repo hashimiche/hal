@@ -18,10 +18,13 @@ import (
 )
 
 var (
-	jwtEnable     bool
-	jwtDisable    bool
-	jwtUpdate     bool
-	gitlabVersion string
+	jwtEnable          bool
+	jwtDisable         bool
+	jwtUpdate          bool
+	gitlabVersion      string
+	gitlabImage        string
+	gitlabRunnerImage  string
+	gitlabRunnerTag    string
 )
 
 var vaultJwtCmd = &cobra.Command{
@@ -171,7 +174,7 @@ var vaultJwtCmd = &cobra.Command{
 
 			global.EnsureNetwork(engine)
 
-			reused, err := integrations.EnsureGitLabCE(engine, gitlabVersion, "hal9000FTW")
+			reused, err := integrations.EnsureGitLabCE(engine, gitlabImage+":"+gitlabVersion, "hal9000FTW")
 			if err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return
@@ -179,7 +182,7 @@ var vaultJwtCmd = &cobra.Command{
 			if reused {
 				fmt.Println("ℹ️  Reusing existing GitLab CE shared service.")
 			} else {
-				fmt.Printf("🚀 Booted GitLab CE shared service (gitlab/gitlab-ce:%s).\n", gitlabVersion)
+				fmt.Printf("🚀 Booted GitLab CE shared service (%s:%s).\n", gitlabImage, gitlabVersion)
 			}
 
 			fmt.Println("⏳ Waiting for GitLab API...")
@@ -479,7 +482,7 @@ func ensureJWTGitLabRunner(engine, token, projectID string) error {
 			"--network", "hal-net",
 			"--add-host", fmt.Sprintf("gitlab.localhost:%s", gitlabIP),
 			"-v", fmt.Sprintf("%s:/etc/gitlab-runner", runnerConfigDir),
-			"gitlab/gitlab-runner:alpine",
+			gitlabRunnerImage + ":" + gitlabRunnerTag,
 		}
 
 		if out, err := exec.Command(engine, runnerArgs...).CombinedOutput(); err != nil {
@@ -635,7 +638,10 @@ func init() {
 	_ = vaultJwtCmd.Flags().MarkHidden("update")
 
 	// 2. Feature-Specific Flags
-	vaultJwtCmd.Flags().StringVar(&gitlabVersion, "gitlab-version", "18.10.1-ce.0", "Version of the GitLab CE container image to deploy")
+	vaultJwtCmd.Flags().StringVar(&gitlabVersion, "vault-gitlab-tag", "18.10.1-ce.0", "GitLab CE container image tag")
+	vaultJwtCmd.Flags().StringVar(&gitlabImage, "vault-gitlab-image", "gitlab/gitlab-ce", "GitLab CE container image name")
+	vaultJwtCmd.Flags().StringVar(&gitlabRunnerImage, "vault-gitlab-runner-image", "gitlab/gitlab-runner", "GitLab Runner container image name")
+	vaultJwtCmd.Flags().StringVar(&gitlabRunnerTag, "vault-gitlab-runner-tag", "alpine", "GitLab Runner container image tag")
 
 	Cmd.AddCommand(vaultJwtCmd)
 }

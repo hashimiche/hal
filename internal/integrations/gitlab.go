@@ -114,7 +114,7 @@ func GitLabGet(urlStr, token string) ([]byte, error) {
 	return body, nil
 }
 
-func EnsureGitLabCE(engine, version, rootPassword string) (bool, error) {
+func EnsureGitLabCE(engine, image, rootPassword string) (bool, error) {
 	if out, err := exec.Command(engine, "inspect", "-f", "{{.State.Running}}", "hal-gitlab").Output(); err == nil {
 		if string(bytes.TrimSpace(out)) == "true" {
 			return true, nil
@@ -134,7 +134,7 @@ func EnsureGitLabCE(engine, version, rootPassword string) (bool, error) {
 		"--privileged",
 		"-v", fmt.Sprintf("%s:/etc/gitlab/trusted-certs/tfe.localhost.crt:z", certPath), // 🎯 FIX: Inject CA
 		"-e", fmt.Sprintf("GITLAB_OMNIBUS_CONFIG=external_url 'http://gitlab.localhost:8080'; nginx['listen_port'] = 8080; nginx['listen_addresses'] = ['0.0.0.0', '[::]']; puma['port'] = 8081; gitlab_rails['initial_root_password'] = '%s';", rootPassword),
-		fmt.Sprintf("gitlab/gitlab-ce:%s", version),
+		image,
 	}
 
 	if out, err := exec.Command(engine, args...).CombinedOutput(); err != nil {

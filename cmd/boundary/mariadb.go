@@ -11,11 +11,12 @@ import (
 )
 
 var (
-	mariadbEnable    bool
-	mariadbDisable   bool
-	mariadbUpdate    bool
-	mariadbWithVault bool
-	targetMariadbVer string
+	mariadbEnable     bool
+	mariadbDisable    bool
+	mariadbUpdate     bool
+	mariadbWithVault  bool
+	targetMariadbVer  string
+	targetMariadbImage string
 )
 
 var mariadbCmd = &cobra.Command{
@@ -100,7 +101,7 @@ var mariadbCmd = &cobra.Command{
 			} else {
 				fmt.Println("🚀 Deploying standalone MariaDB...")
 				global.EnsureNetwork(engine)
-				out, err = exec.Command(engine, "run", "-d", "--name", dbContainerName, "--network", "hal-net", "-p", "3306:3306", "-e", "MARIADB_ROOT_PASSWORD=password", "-e", "MARIADB_DATABASE=targetdb", "-e", "MARIADB_USER=admin", "-e", "MARIADB_PASSWORD=password", fmt.Sprintf("mariadb:%s", targetMariadbVer)).CombinedOutput()
+				out, err = exec.Command(engine, "run", "-d", "--name", dbContainerName, "--network", "hal-net", "-p", "3306:3306", "-e", "MARIADB_ROOT_PASSWORD=password", "-e", "MARIADB_DATABASE=targetdb", "-e", "MARIADB_USER=admin", "-e", "MARIADB_PASSWORD=password", fmt.Sprintf("%s:%s", targetMariadbImage, targetMariadbVer)).CombinedOutput()
 				if err != nil {
 					fmt.Printf("❌ Failed to start MariaDB container: %v\n%s\n", err, strings.TrimSpace(string(out)))
 					return
@@ -132,7 +133,8 @@ func init() {
 	_ = mariadbCmd.Flags().MarkHidden("disable")
 	_ = mariadbCmd.Flags().MarkHidden("update")
 	mariadbCmd.Flags().BoolVar(&mariadbWithVault, "with-vault", false, "Link with Vault Dynamic Creds")
-	mariadbCmd.Flags().StringVar(&targetMariadbVer, "mariadb-version", "11.4", "Version")
+	mariadbCmd.Flags().StringVar(&targetMariadbVer, "boundary-mariadb-tag", "11.4", "MariaDB container image tag")
+	mariadbCmd.Flags().StringVar(&targetMariadbImage, "boundary-mariadb-image", "mariadb", "MariaDB container image name")
 	Cmd.AddCommand(mariadbCmd)
 }
 

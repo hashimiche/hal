@@ -28,6 +28,7 @@ var (
 	tfeTwinDisable             bool
 	tfeTwinUpdate              bool
 	tfeTwinVersion             string
+	tfeTwinImage               string
 	tfeTwinPassword            string
 	tfeTwinOrg                 string
 	tfeTwinProject             string
@@ -35,6 +36,7 @@ var (
 	tfeTwinAdminEmail          string
 	tfeTwinAdminPass           string
 	tfeTwinProxyNginxTag       string
+	tfeTwinProxyImage          string
 	tfeTwinHTTPSPort           int
 	tfeTwinHostname            string
 	tfeTwinContainerName       string
@@ -144,12 +146,15 @@ var twinCmd = &cobra.Command{
 
 		fmt.Printf("🚀 Deploying twin Terraform Enterprise %s using shared PG/Redis/MinIO via %s...\n", tfeTwinVersion, engine)
 
-		fmt.Println("🔑 Authenticating with HashiCorp private image registry...")
-		loginCmd := exec.Command(engine, "login", "images.releases.hashicorp.com", "-u", "terraform", "--password-stdin")
-		loginCmd.Stdin = strings.NewReader(license)
-		if err := loginCmd.Run(); err != nil {
-			fmt.Println("❌ Error: Failed to authenticate with images.releases.hashicorp.com.")
-			return
+		// Only auth with the HashiCorp registry when using the default image
+		if strings.Contains(tfeTwinImage, "images.releases.hashicorp.com") {
+			fmt.Println("🔑 Authenticating with HashiCorp private image registry...")
+			loginCmd := exec.Command(engine, "login", "images.releases.hashicorp.com", "-u", "terraform", "--password-stdin")
+			loginCmd.Stdin = strings.NewReader(license)
+			if err := loginCmd.Run(); err != nil {
+				fmt.Println("❌ Error: Failed to authenticate with images.releases.hashicorp.com.")
+				return
+			}
 		}
 
 		global.EnsureNetwork(engine)
@@ -224,7 +229,7 @@ var twinCmd = &cobra.Command{
 			"-e", fmt.Sprintf("TFE_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY=%s", tfeTwinMinioRootPassword),
 			"-e", "TFE_OBJECT_STORAGE_S3_FORCE_PATH_STYLE=true",
 			"-e", "TFE_CAPACITY_CONCURRENCY=5",
-			fmt.Sprintf("images.releases.hashicorp.com/hashicorp/terraform-enterprise:%s", tfeTwinVersion),
+			fmt.Sprintf("%s:%s", tfeTwinImage, tfeTwinVersion),
 		)
 
 		out, err := exec.Command(engine, tfeArgs...).CombinedOutput()
@@ -304,7 +309,7 @@ http {
 			"-p", fmt.Sprintf("%d:%d", tfeTwinHTTPSPort, tfeTwinHTTPSPort),
 			"-v", fmt.Sprintf("%s:/etc/ssl/tfe:ro", layout.CertDir),
 			"-v", fmt.Sprintf("%s:/etc/nginx/nginx.conf:ro", layout.ProxyConfPath),
-			fmt.Sprintf("nginx:%s", tfeTwinProxyNginxTag)).Run()
+			fmt.Sprintf("%s:%s", tfeTwinProxyImage, tfeTwinProxyNginxTag)).Run()
 
 		fmt.Println("⏳ Waiting for twin TFE to initialize (WARNING: This can take 3-5 minutes!)...")
 		if err := waitForTwinService(layout.HealthURL, 60); err != nil {
@@ -678,14 +683,16 @@ func runTFETwinLifecycle(enable, disable, update bool) {
 }
 
 func bindTwinFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&tfeTwinVersion, "twin-version", "1.2.0", "Terraform Enterprise Docker image tag for the twin instance")
+	cmd.Flags().StringVar(&tfeTwinVersion, "twin-tag", "1.2.0", "TFE container image tag for the twin instance")
+	cmd.Flags().StringVar(&tfeTwinImage, "twin-image", "images.releases.hashicorp.com/hashicorp/terraform-enterprise", "TFE container image name for the twin instance")
 	cmd.Flags().StringVar(&tfeTwinPassword, "twin-password", "hal-secret-encryption-password", "Twin TFE encryption password")
 	cmd.Flags().StringVar(&tfeTwinOrg, "twin-tfe-org", "hal-bis", "Terraform Enterprise organization name to auto-bootstrap for the twin instance")
 	cmd.Flags().StringVar(&tfeTwinProject, "twin-tfe-project", "Dave-bis", "Terraform Enterprise project name to auto-bootstrap for the twin instance")
 	cmd.Flags().StringVar(&tfeTwinAdminUser, "twin-tfe-admin-username", "haladmin", "Initial twin TFE admin username used when bootstrapping via IACT")
 	cmd.Flags().StringVar(&tfeTwinAdminEmail, "twin-tfe-admin-email", "haladmin@localhost", "Initial twin TFE admin email used when bootstrapping via IACT")
 	cmd.Flags().StringVar(&tfeTwinAdminPass, "twin-tfe-admin-password", "hal9000FTW", "Initial twin TFE admin password used when bootstrapping via IACT")
-	cmd.Flags().StringVar(&tfeTwinProxyNginxTag, "twin-proxy-nginx-version", "alpine", "Nginx image tag for the twin ingress proxy")
+	cmd.Flags().StringVar(&tfeTwinProxyNginxTag, "twin-proxy-tag", "alpine", "Nginx image tag for the twin ingress proxy")
+	cmd.Flags().StringVar(&tfeTwinProxyImage, "twin-proxy-image", "nginx", "Nginx image name for the twin ingress proxy")
 	cmd.Flags().IntVar(&tfeTwinHTTPSPort, "twin-https-port", 9443, "Host HTTPS port exposed by the twin TFE ingress proxy")
 	cmd.Flags().StringVar(&tfeTwinHostname, "twin-hostname", "tfe-bis.localhost", "TLS hostname used by the twin TFE instance")
 	cmd.Flags().StringVar(&tfeTwinContainerName, "twin-container-name", "hal-tfe-bis", "Container name used for the twin TFE core application")

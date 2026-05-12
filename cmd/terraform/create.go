@@ -24,13 +24,18 @@ import (
 
 var (
 	tfeVersion          string
+	tfeImage            string
 	tfePassword         string
 	pgVersion           string
+	pgImage             string
 	redisVersion        string
+	redisImage          string
 	minioVersion        string
+	minioImage          string
 	minioAPIPort        int
 	minioConsolePort    int
 	tfeProxyNginxTag    string
+	tfeProxyImage       string
 	tfeUpdate           bool
 	deployTFEOrg        string
 	deployTFEProject    string
@@ -110,13 +115,15 @@ var deployCmd = &cobra.Command{
 
 		fmt.Printf("🚀 Deploying Terraform Enterprise %s (PG: %s, Redis: %s) via %s...\n", tfeVersion, pgVersion, redisVersion, engine)
 
-		// 3. SECURE REGISTRY AUTHENTICATION
-		fmt.Println("🔑 Authenticating with HashiCorp private image registry...")
-		loginCmd := exec.Command(engine, "login", "images.releases.hashicorp.com", "-u", "terraform", "--password-stdin")
-		loginCmd.Stdin = strings.NewReader(license)
-		if err := loginCmd.Run(); err != nil {
-			fmt.Println("❌ Error: Failed to authenticate with images.releases.hashicorp.com.")
-			return
+		// 3. SECURE REGISTRY AUTHENTICATION (only for the default HashiCorp registry)
+		if strings.Contains(tfeImage, "images.releases.hashicorp.com") {
+			fmt.Println("🔑 Authenticating with HashiCorp private image registry...")
+			loginCmd := exec.Command(engine, "login", "images.releases.hashicorp.com", "-u", "terraform", "--password-stdin")
+			loginCmd.Stdin = strings.NewReader(license)
+			if err := loginCmd.Run(); err != nil {
+				fmt.Println("❌ Error: Failed to authenticate with images.releases.hashicorp.com.")
+				return
+			}
 		}
 
 		// 4. Ensure the global HAL network exists
@@ -128,19 +135,19 @@ var deployCmd = &cobra.Command{
 		fmt.Printf("⚙️  Provisioning TFE PostgreSQL Database...\n")
 		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-db", "--network", "hal-net",
 			"-e", "POSTGRES_USER=tfe", "-e", "POSTGRES_PASSWORD=tfe_password", "-e", "POSTGRES_DB=tfe",
-			fmt.Sprintf("postgres:%s-alpine", pgVersion)).Run()
+			fmt.Sprintf("%s:%s", pgImage, pgVersion)).Run()
 
 		// 6. Deploy Redis
 		fmt.Printf("⚙️  Provisioning TFE Redis Cache...\n")
 		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-redis", "--network", "hal-net",
-			fmt.Sprintf("redis:%s-alpine", redisVersion)).Run()
+			fmt.Sprintf("%s:%s", redisImage, redisVersion)).Run()
 
 		// 7. Deploy MinIO (S3 Mock)
 		fmt.Println("⚙️  Provisioning TFE Object Storage (MinIO)...")
 		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-minio", "--network", "hal-net",
 			"-p", fmt.Sprintf("%d:9000", minioAPIPort), "-p", fmt.Sprintf("%d:9001", minioConsolePort),
 			"-e", "MINIO_ROOT_USER=minioadmin", "-e", "MINIO_ROOT_PASSWORD=minioadmin",
-			fmt.Sprintf("minio/minio:%s", minioVersion), "server", "/data", "--console-address", ":9001").Run()
+			fmt.Sprintf("%s:%s", minioImage, minioVersion), "server", "/data", "--console-address", ":9001").Run()
 
 		time.Sleep(3 * time.Second)
 		_ = exec.Command(engine, "exec", "hal-tfe-minio", "sh", "-c", "mkdir -p /data/tfe-data").Run()
@@ -201,7 +208,7 @@ var deployCmd = &cobra.Command{
 			"-e", "TFE_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY=minioadmin",
 			"-e", "TFE_OBJECT_STORAGE_S3_FORCE_PATH_STYLE=true",
 			"-e", "TFE_CAPACITY_CONCURRENCY=5",
-			fmt.Sprintf("images.releases.hashicorp.com/hashicorp/terraform-enterprise:%s", tfeVersion),
+			fmt.Sprintf("%s:%s", tfeImage, tfeVersion),
 		)
 
 		out, err := exec.Command(engine, tfeArgs...).CombinedOutput()
@@ -289,7 +296,7 @@ http {
 			"-p", "8443:8443", // 🎯 Only the proxy exposes port 8443 to the host OS
 			"-v", fmt.Sprintf("%s:/etc/ssl/tfe:ro", certDir),
 			"-v", fmt.Sprintf("%s:/etc/nginx/nginx.conf:ro", proxyConfPath),
-			fmt.Sprintf("nginx:%s", tfeProxyNginxTag)).Run()
+			fmt.Sprintf("%s:%s", tfeProxyImage, tfeProxyNginxTag)).Run()
 
 		// 9. THE HEALTH CHECK PHASE
 		fmt.Println("⏳ Waiting for TFE to initialize (WARNING: This can take 3-5 minutes!)...")
@@ -471,13 +478,18 @@ var updateCmd = &cobra.Command{
 }
 
 func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
-	cmd.Flags().StringVarP(&tfeVersion, "version", "v", "1.2.0", "Terraform Enterprise Docker image tag")
-	cmd.Flags().StringVar(&pgVersion, "pg-version", "16", "PostgreSQL version for TFE backend")
-	cmd.Flags().StringVar(&redisVersion, "redis-version", "7", "Redis version for TFE background jobs")
-	cmd.Flags().StringVar(&minioVersion, "minio-version", "latest", "MinIO image tag for TFE object storage")
+	cmd.Flags().StringVarP(&tfeVersion, "tfe-tag", "v", "1.2.0", "TFE container image tag")
+	cmd.Flags().StringVar(&tfeImage, "tfe-image", "images.releases.hashicorp.com/hashicorp/terraform-enterprise", "TFE container image name")
+	cmd.Flags().StringVar(&pgVersion, "tfe-pg-tag", "16-alpine", "PostgreSQL image tag for TFE backend")
+	cmd.Flags().StringVar(&pgImage, "tfe-pg-image", "postgres", "PostgreSQL image name for TFE backend")
+	cmd.Flags().StringVar(&redisVersion, "tfe-redis-tag", "7-alpine", "Redis image tag for TFE background jobs")
+	cmd.Flags().StringVar(&redisImage, "tfe-redis-image", "redis", "Redis image name for TFE background jobs")
+	cmd.Flags().StringVar(&minioVersion, "tfe-minio-tag", "latest", "MinIO image tag for TFE object storage")
+	cmd.Flags().StringVar(&minioImage, "tfe-minio-image", "minio/minio", "MinIO image name for TFE object storage")
 	cmd.Flags().IntVar(&minioAPIPort, "minio-api-port", 19000, "Host port mapped to MinIO S3 API container port 9000")
 	cmd.Flags().IntVar(&minioConsolePort, "minio-console-port", 19001, "Host port mapped to MinIO console container port 9001")
-	cmd.Flags().StringVar(&tfeProxyNginxTag, "proxy-nginx-version", "alpine", "Nginx image tag for the TFE ingress proxy")
+	cmd.Flags().StringVar(&tfeProxyNginxTag, "tfe-proxy-tag", "alpine", "Nginx image tag for the TFE ingress proxy")
+	cmd.Flags().StringVar(&tfeProxyImage, "tfe-proxy-image", "nginx", "Nginx image name for the TFE ingress proxy")
 	cmd.Flags().StringVarP(&tfePassword, "password", "p", "hal-secret-encryption-password", "TFE Encryption Password")
 	cmd.Flags().StringVar(&deployTFEOrg, "tfe-org", "hal", "Terraform Enterprise organization name to auto-bootstrap during deploy")
 	cmd.Flags().StringVar(&deployTFEProject, "tfe-project", "Dave", "Terraform Enterprise project name to auto-bootstrap during deploy")
