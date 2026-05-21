@@ -28,6 +28,14 @@ var tfeSharedBackendContainers = []string{
 	"hal-tfe-minio",
 }
 
+// Named volumes created by the shared backend containers. Must be removed
+// explicitly — docker rm -f does not remove named volumes.
+var tfeSharedBackendVolumes = []string{
+	"hal-tfe-db-data",
+	"hal-tfe-redis-data",
+	"hal-tfe-minio-data",
+}
+
 var destroyCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "Tear down the TFE stack and wipe all local state for a fresh restart",
@@ -127,7 +135,18 @@ var destroyCmd = &cobra.Command{
 			}
 		}
 
-		// 2. Wipe the local Cert cache
+		// 2. Remove named volumes for shared backend (only when not preserving for twin).
+		if !preserveSharedBackend {
+			for _, vol := range tfeSharedBackendVolumes {
+				if global.DryRun {
+					fmt.Printf("[DRY RUN] Would execute: %s volume rm -f %s\n", engine, vol)
+					continue
+				}
+				_ = exec.Command(engine, "volume", "rm", "-f", vol).Run()
+			}
+		}
+
+		// 3. Wipe the local Cert cache
 		homeDir, _ := os.UserHomeDir()
 		certDir := filepath.Join(homeDir, ".hal", "tfe-certs")
 		if _, err := os.Stat(certDir); err == nil {
