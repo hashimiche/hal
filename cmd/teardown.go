@@ -9,6 +9,17 @@ import (
 	"hal/internal/global"
 )
 
+// halNamedVolumes is the exhaustive list of named Docker/Podman volumes created
+// by HAL product commands. These are NOT removed by "docker rm -f <container>" —
+// they must be deleted explicitly. hal delete calls this list so a full teardown
+// leaves no leftover state that would cause stale-data problems on the next
+// "hal vault create / hal vault oidc enable --scim" cycle.
+var halNamedVolumes = []string{
+	"hal-authentik-db",  // Authentik PostgreSQL data (cmd/vault/oidc + integrations/authentik.go)
+	"hal-vault-logs",    // Vault audit logs shared with Promtail (cmd/vault/create.go)
+	"hal-vault-plugins", // Vault external plugins, e.g. OS secrets engine (cmd/vault/create.go)
+}
+
 const tfeCLIHelperImage = "hal-tfe-cli:latest"
 
 // CleanStatus represents the outcome of a cleanup step.
@@ -154,6 +165,19 @@ func runGlobalTeardown() globalTeardownResult {
 			result.NetworkBlockers = append(result.NetworkBlockers, blockers...)
 		}
 	}
+
+	// Remove named Docker/Podman volumes. "docker rm -f" only removes containers;
+	// named volumes persist and will be re-mounted with stale data on the next
+	// "hal vault create" or "hal vault oidc enable --scim" cycle.
+	for _, containerEngine := range containerEngines {
+		for _, vol := range halNamedVolumes {
+			_ = exec.Command(containerEngine, "volume", "rm", "-f", vol).Run()
+		}
+	}
+
+	// Reset the shared-services registry so stale consumer entries (e.g.
+	// "vault-oidc" under "authentik-idp") don't survive into the next cycle.
+	global.ResetSharedServicesFile()
 
 	return result
 }

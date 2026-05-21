@@ -938,3 +938,100 @@ func (c *AuthentikClient) DeleteSCIMProviderByName(name string) error {
 	}
 	return nil
 }
+
+// GetSCIMProviderByName returns the PK and current token of an existing SCIM provider,
+// or (0, "", nil) if not found.
+func (c *AuthentikClient) GetSCIMProviderByName(name string) (pk int, currentToken string, err error) {
+	data, _, err := c.do("GET", "/api/v3/providers/scim/?search="+name, nil)
+	if err != nil {
+		return 0, "", err
+	}
+	results, _ := data["results"].([]interface{})
+	for _, r := range results {
+		item, ok := r.(map[string]interface{})
+		if !ok || item["name"] != name {
+			continue
+		}
+		pkFloat, _ := item["pk"].(float64)
+		token, _ := item["token"].(string)
+		return int(pkFloat), token, nil
+	}
+	return 0, "", nil
+}
+
+// UpdateSCIMProvider patches an existing Authentik SCIM provider with a new bearer token.
+func (c *AuthentikClient) UpdateSCIMProvider(pk int, name, baseURL, token string, userMappingPKs, groupMappingPKs []string) error {
+	_, _, err := c.do("PATCH", fmt.Sprintf("/api/v3/providers/scim/%d/", pk), map[string]interface{}{
+		"name":                    name,
+		"url":                     baseURL,
+		"token":                   token,
+		"property_mappings":       userMappingPKs,
+		"property_mappings_group": groupMappingPKs,
+		"compatibility_mode":      "aws",
+	})
+	return err
+}
+
+// UpsertSCIMProvider creates the SCIM provider if it doesn't exist, or updates its
+// token if it does. Returns the provider PK. Use this instead of CreateSCIMProvider
+// for idempotent enable/update flows — avoids orphaned providers after "hal delete".
+func (c *AuthentikClient) UpsertSCIMProvider(name, baseURL, token string, userMappingPKs, groupMappingPKs []string) (int, error) {
+	existingPK, _, err := c.GetSCIMProviderByName(name)
+	if err != nil {
+		return 0, fmt.Errorf("lookup scim provider %q: %w", name, err)
+	}
+	if existingPK != 0 {
+		if err := c.UpdateSCIMProvider(existingPK, name, baseURL, token, userMappingPKs, groupMappingPKs); err != nil {
+			return 0, fmt.Errorf("update scim provider %q: %w", name, err)
+		}
+		return existingPK, nil
+	}
+	return c.CreateSCIMProvider(name, baseURL, token, userMappingPKs, groupMappingPKs)
+}
+
+// AuthentikGroup holds the minimal fields needed for per-object SCIM sync.
+type AuthentikGroup struct {
+	PK   string
+	Name string
+}
+
+// GetAllGroups returns all groups in Authentik.
+func (c *AuthentikClient) GetAllGroups() ([]AuthentikGroup, error) {
+	var groups []AuthentikGroup
+	nextURL := "/api/v3/core/groups/?page_size=100"
+	for nextURL != "" {
+		data, _, err := c.do("GET", nextURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		results, _ := data["results"].([]interface{})
+		for _, r := range results {
+			item, ok := r.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			pk, _ := item["pk"].(string)
+			name, _ := item["name"].(string)
+			groups = append(groups, AuthentikGroup{PK: pk, Name: name})
+		}
+		// Authentik pagination: "next" is a full URL or null
+		nextRaw, _ := data["next"].(string)
+		if nextRaw == "" || nextRaw == "null" {
+			break
+		}
+		// Strip base URL — do() prepends it
+		nextURL = strings.TrimPrefix(nextRaw, c.baseURL)
+	}
+	return groups, nil
+}
+
+// SyncSCIMObject triggers a per-object SCIM sync for a single Authentik object.
+// model should be "authentik.core.models.Group" or "authentik.core.models.User".
+func (c *AuthentikClient) SyncSCIMObject(providerPK int, model, objectPK string) error {
+	_, _, err := c.do("POST", fmt.Sprintf("/api/v3/providers/scim/%d/sync/object/", providerPK),
+		map[string]interface{}{
+			"sync_object_model": model,
+			"sync_object_id":    objectPK,
+		})
+	return err
+}

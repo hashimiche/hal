@@ -125,3 +125,13 @@ func GetSharedServiceConsumers(service string) []string {
 	}
 	return state[service]
 }
+
+// ResetSharedServicesFile removes ~/.hal/shared-services.json entirely.
+// Called by hal delete so the registry does not contain stale consumer entries
+// after a full teardown.
+func ResetSharedServicesFile() {
+	path := sharedServicesPath()
+	if path != "" {
+		_ = os.Remove(path)
+	}
+}

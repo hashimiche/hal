@@ -163,13 +163,16 @@ path "identity/scim/v2/*" {
 	bearerToken := sec.Auth.ClientToken
 
 	// 9. Configure Authentik outbound SCIM provider → Vault.
+	// UpsertSCIMProvider handles the "hal delete + recreate" scenario: if Authentik
+	// stayed up across a Vault teardown, the old provider still exists with a stale
+	// token. Upsert patches the token instead of failing with a conflict.
 	fmt.Println("  ⚙️  Configuring Authentik SCIM provider → Vault...")
 	userMappings, groupMappings, err := aktClient.GetDefaultSCIMPropertyMappings()
 	if err != nil {
 		return fmt.Errorf("get scim property mappings: %w", err)
 	}
 
-	providerPK, err := aktClient.CreateSCIMProvider(
+	providerPK, err := aktClient.UpsertSCIMProvider(
 		"vault-scim-provider",
 		scimVaultBaseURL,
 		bearerToken,
@@ -177,7 +180,7 @@ path "identity/scim/v2/*" {
 		groupMappings,
 	)
 	if err != nil {
-		return fmt.Errorf("create authentik scim provider: %w", err)
+		return fmt.Errorf("upsert authentik scim provider: %w", err)
 	}
 
 	// 10. Assign the SCIM provider as a backchannel provider on the Vault application.
@@ -197,6 +200,15 @@ path "identity/scim/v2/*" {
 				fmt.Println("  ⚠️  SCIM provider reports unhealthy — check Authentik task log")
 			}
 		}
+	}
+
+	// 12. Force-sync all groups so membership is populated immediately.
+	// Vault SCIM is still beta-quality: group membership PATCH via the event-driven
+	// path is unreliable (Django M2M signals don't fire, and Vault's SCIM PATCH
+	// implementation has known gaps). Triggering a per-object sync right after setup
+	// guarantees that the initial member list lands in Vault regardless of timing.
+	if err := syncSCIMGroups(aktClient, providerPK); err != nil {
+		fmt.Printf("  ⚠️  Group sync warning: %v\n", err)
 	}
 
 	fmt.Println()
@@ -258,4 +270,25 @@ func cleanVaultSCIM(client *vault.Client) {
 	_, _ = client.Logical().Delete("identity/scim/client/" + scimClientName)
 	_, _ = client.Logical().Delete("auth/token/roles/" + scimTokenRole)
 	_ = client.Sys().DeletePolicy(scimPolicyName)
+}
+
+// syncSCIMGroups triggers a per-object SCIM sync for every Authentik group so that
+// group membership is pushed to Vault immediately. Called automatically at the end of
+// configureSCIM and exposed via "hal vault oidc update --scim --sync".
+func syncSCIMGroups(aktClient *integrations.AuthentikClient, providerPK int) error {
+	fmt.Println("  ⚙️  Syncing group membership to Vault...")
+	groups, err := aktClient.GetAllGroups()
+	if err != nil {
+		return fmt.Errorf("list authentik groups: %w", err)
+	}
+	synced := 0
+	for _, g := range groups {
+		if syncErr := aktClient.SyncSCIMObject(providerPK, "authentik.core.models.Group", g.PK); syncErr != nil {
+			fmt.Printf("  ⚠️  Sync failed for group %q: %v\n", g.Name, syncErr)
+		} else {
+			synced++
+		}
+	}
+	fmt.Printf("  ✅ Synced %d group(s) to Vault\n", synced)
+	return nil
 }

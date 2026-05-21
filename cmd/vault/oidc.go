@@ -22,6 +22,7 @@ var (
 	oidcDisable        bool
 	oidcUpdate         bool
 	oidcWithSCIM       bool
+	oidcSync           bool
 	oidcAuthentikImage string
 	oidcAuthentikTag   string
 )
@@ -45,7 +46,8 @@ Demo users created in Authentik:
   bob   / password  → group: user-ro → Vault policy: user-ro (kv-oidc/team1 read)
 
 Flags:
-  --scim   [Vault Enterprise] Also wire SCIM provisioning from Authentik to Vault`,
+  --scim   [Vault Enterprise] Also wire SCIM provisioning from Authentik to Vault
+  --sync   (with --scim) Re-push all Authentik group membership to Vault without full re-provision`,
 	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := parseLifecycleAction(args, &oidcEnable, &oidcDisable, &oidcUpdate); err != nil {
@@ -95,6 +97,30 @@ Flags:
 
 		// ── UPDATE ──────────────────────────────────────────────────────────────
 		if oidcUpdate {
+			// --scim --sync: lightweight re-push of group membership without full re-provision.
+			// Useful when Vault restarted and Authentik is healthy with correct users/groups.
+			if oidcWithSCIM && oidcSync {
+				fmt.Println("🔄 Syncing SCIM group membership to Vault...")
+				secrets, err := integrations.LoadOrCreateAuthentikSecrets()
+				if err != nil {
+					fmt.Printf("❌ Could not load Authentik secrets: %v\n", err)
+					return
+				}
+				aktClient := integrations.NewAuthentikClient(secrets.BootstrapToken)
+				pk, _, err := aktClient.GetSCIMProviderByName("vault-scim-provider")
+				if err != nil || pk == 0 {
+					fmt.Println("❌ SCIM provider 'vault-scim-provider' not found in Authentik.")
+					fmt.Println("   Run: hal vault oidc enable --scim")
+					return
+				}
+				if err := syncSCIMGroups(aktClient, pk); err != nil {
+					fmt.Printf("❌ Sync failed: %v\n", err)
+					return
+				}
+				fmt.Println("✅ Group membership synced")
+				return
+			}
+
 			fmt.Println("♻️  Update: cleaning Vault OIDC configuration for re-provision...")
 			cleanVaultOIDC(client, vaultErr)
 
@@ -498,6 +524,7 @@ func init() {
 	_ = vaultOidcCmd.Flags().MarkHidden("update")
 
 	vaultOidcCmd.Flags().BoolVar(&oidcWithSCIM, "scim", false, "[Vault Enterprise] Also configure SCIM provisioning from Authentik")
+	vaultOidcCmd.Flags().BoolVar(&oidcSync, "sync", false, "With --scim: re-push all group membership to Vault without full re-provision")
 	vaultOidcCmd.Flags().StringVar(&oidcAuthentikImage, "authentik-image", integrations.AuthentikDefaultImage, "Authentik container image")
 	vaultOidcCmd.Flags().StringVar(&oidcAuthentikTag, "authentik-tag", integrations.AuthentikDefaultTag, "Authentik image tag")
 
