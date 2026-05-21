@@ -113,11 +113,11 @@ Flags:
 					fmt.Println("   Run: hal vault oidc enable --scim")
 					return
 				}
-				if err := syncSCIMGroups(aktClient, pk); err != nil {
+				if err := syncSCIMObjects(aktClient, pk); err != nil {
 					fmt.Printf("❌ Sync failed: %v\n", err)
 					return
 				}
-				fmt.Println("✅ Group membership synced")
+				fmt.Println("✅ Users and groups synced")
 				return
 			}
 
@@ -233,6 +233,15 @@ func runOIDCEnable(engine string, client *vault.Client, vaultErr error) {
 	}
 
 	if firstBoot {
+		// On first boot Authentik seeds default scope mappings asynchronously
+		// after the token becomes usable — wait for them before provisioning.
+		if err := integrations.WaitAuthentikScopesReady(secrets.BootstrapToken); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
+	}
+
+	if firstBoot {
 		printAuthentikCredentials(secrets)
 	}
 
@@ -276,7 +285,7 @@ func runOIDCEnable(engine string, client *vault.Client, vaultErr error) {
 	}
 
 	global.RefreshHalHealth(engine)
-	printOIDCSuccess(issuer, secrets)
+	printOIDCSuccess(secrets)
 }
 
 // ─── disable ──────────────────────────────────────────────────────────────────
@@ -500,7 +509,7 @@ func printAuthentikCredentials(secrets *integrations.AuthentikSecrets) {
 	fmt.Println()
 }
 
-func printOIDCSuccess(issuer string, _ *integrations.AuthentikSecrets) {
+func printOIDCSuccess(secrets *integrations.AuthentikSecrets) {
 	fmt.Println()
 	fmt.Println("✅ Vault OIDC + Authentik IdP ready!")
 	fmt.Println()
@@ -511,8 +520,8 @@ func printOIDCSuccess(issuer string, _ *integrations.AuthentikSecrets) {
 	fmt.Println("    alice / password  →  admin policy (full access)")
 	fmt.Println("    bob   / password  →  user-ro policy (kv-oidc/team1 read)")
 	fmt.Println()
-	fmt.Printf("  Authentik  : %s/if/admin/\n", integrations.AuthentikAdminURL())
-	fmt.Printf("  OIDC issuer: %s\n", issuer)
+	fmt.Printf("  Authentik admin  : %s/if/admin/\n", integrations.AuthentikAdminURL())
+	fmt.Printf("  Authentik login  : akadmin / %s\n", secrets.AdminPassword)
 }
 
 func init() {

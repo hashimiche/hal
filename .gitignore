@@ -12,3 +12,6 @@ coverage.txt
 
 # OS/editor noise
 .DS_Store
+
+# Hashicorp License
+*.hclic

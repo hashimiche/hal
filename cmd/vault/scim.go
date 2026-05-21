@@ -207,37 +207,10 @@ path "identity/scim/v2/*" {
 	// path is unreliable (Django M2M signals don't fire, and Vault's SCIM PATCH
 	// implementation has known gaps). Triggering a per-object sync right after setup
 	// guarantees that the initial member list lands in Vault regardless of timing.
-	if err := syncSCIMGroups(aktClient, providerPK); err != nil {
-		fmt.Printf("  ⚠️  Group sync warning: %v\n", err)
+	if err := syncSCIMObjects(aktClient, providerPK); err != nil {
+		fmt.Printf("  ⚠️  SCIM sync warning: %v\n", err)
 	}
 
-	fmt.Println()
-	fmt.Println("  ✅ SCIM provisioning configured")
-	fmt.Printf("     Endpoint : %s\n", scimVaultBaseURL)
-	fmt.Println()
-	fmt.Println("  📋 SCIM behaviour:")
-	fmt.Println("     • User creation   → auto-propagated to Vault  ✅")
-	fmt.Println("     • Group creation  → auto-propagated to Vault  ✅")
-	fmt.Println("     • Group membership changes → NOT auto-propagated ⚠️")
-	fmt.Println()
-	fmt.Println("     Authentik does not fire an outbound SCIM event when a user is")
-	fmt.Println("     added to / removed from a group. To propagate membership changes,")
-	fmt.Println("     trigger a per-object group sync as an Authentik admin:")
-	fmt.Println()
-	fmt.Printf("     # 1. Find the group PK\n")
-	fmt.Printf("     curl -s -H 'Authorization: Bearer %s' \\\n", aktClient.Token())
-	fmt.Printf("       '%s/api/v3/core/groups/?search=<group-name>' | jq '.results[0].pk'\n", aktClient.BaseURL())
-	fmt.Println()
-	fmt.Printf("     # 2. Trigger per-object sync for that group (replace <pk>)\n")
-	fmt.Printf("     curl -s -X POST -H 'Authorization: Bearer %s' \\\n", aktClient.Token())
-	fmt.Printf("       -H 'Content-Type: application/json' \\\n")
-	fmt.Printf("       -d '{\"sync_object_model\":\"authentik.core.models.Group\",\"sync_object_id\":\"<pk>\"}' \\\n")
-	fmt.Printf("       '%s/api/v3/providers/scim/%d/sync/object/'\n", aktClient.BaseURL(), providerPK)
-	fmt.Println()
-	fmt.Println("     Verify in Vault:")
-	fmt.Println("       vault list identity/group/name")
-	fmt.Println("       vault read identity/group/name/<group-name>")
-	fmt.Println()
 	return nil
 }
 
@@ -272,23 +245,39 @@ func cleanVaultSCIM(client *vault.Client) {
 	_ = client.Sys().DeletePolicy(scimPolicyName)
 }
 
-// syncSCIMGroups triggers a per-object SCIM sync for every Authentik group so that
-// group membership is pushed to Vault immediately. Called automatically at the end of
-// configureSCIM and exposed via "hal vault oidc update --scim --sync".
-func syncSCIMGroups(aktClient *integrations.AuthentikClient, providerPK int) error {
-	fmt.Println("  ⚙️  Syncing group membership to Vault...")
+// syncSCIMObjects triggers a per-object SCIM sync for every Authentik user and group.
+// Users that existed before the SCIM provider was configured are not pushed automatically
+// (no creation event fires retroactively), so we explicitly sync them here.
+// Called automatically at the end of configureSCIM and via "hal vault oidc update --scim --sync".
+func syncSCIMObjects(aktClient *integrations.AuthentikClient, providerPK int) error {
+	fmt.Println("  ⚙️  Syncing users and groups to Vault...")
+
+	users, err := aktClient.GetAllUsers()
+	if err != nil {
+		return fmt.Errorf("list authentik users: %w", err)
+	}
+	usersOK := 0
+	for _, u := range users {
+		if syncErr := aktClient.SyncSCIMObject(providerPK, "authentik.core.models.User", u.PK); syncErr != nil {
+			fmt.Printf("  ⚠️  Sync failed for user %q: %v\n", u.Username, syncErr)
+		} else {
+			usersOK++
+		}
+	}
+
 	groups, err := aktClient.GetAllGroups()
 	if err != nil {
 		return fmt.Errorf("list authentik groups: %w", err)
 	}
-	synced := 0
+	groupsOK := 0
 	for _, g := range groups {
 		if syncErr := aktClient.SyncSCIMObject(providerPK, "authentik.core.models.Group", g.PK); syncErr != nil {
 			fmt.Printf("  ⚠️  Sync failed for group %q: %v\n", g.Name, syncErr)
 		} else {
-			synced++
+			groupsOK++
 		}
 	}
-	fmt.Printf("  ✅ Synced %d group(s) to Vault\n", synced)
+
+	fmt.Printf("  ✅ Synced %d user(s) and %d group(s) to Vault\n", usersOK, groupsOK)
 	return nil
 }

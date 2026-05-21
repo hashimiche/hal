@@ -325,6 +325,49 @@ func WaitAuthentikTokenReady(token string) error {
 	return fmt.Errorf("authentik bootstrap token not ready within 60s — check: docker logs %s", AuthentikWorkerContainer)
 }
 
+// WaitAuthentikScopesReady polls until the standard openid/profile/email scope
+// property mappings exist. Authentik seeds these asynchronously after the first
+// migration run, so they may not be present immediately after the bootstrap token
+// becomes usable. Timeout: 60 seconds.
+func WaitAuthentikScopesReady(token string) error {
+	url := fmt.Sprintf("http://localhost:%s/api/v3/propertymappings/provider/scope/?page_size=100", AuthentikHTTPPort)
+	client := &http.Client{Timeout: 5 * time.Second}
+	deadline := time.Now().Add(60 * time.Second)
+	required := map[string]bool{"openid": false, "profile": false, "email": false}
+
+	fmt.Print("  ⏳ Waiting for Authentik scope mappings")
+	for time.Now().Before(deadline) {
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := client.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			var data map[string]interface{}
+			raw, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if json.Unmarshal(raw, &data) == nil {
+				found := 0
+				results, _ := data["results"].([]interface{})
+				for _, r := range results {
+					item, _ := r.(map[string]interface{})
+					if sn, _ := item["scope_name"].(string); required[sn] {
+						found++
+					}
+				}
+				if found == len(required) {
+					fmt.Println(" ✅")
+					return nil
+				}
+			}
+		} else if resp != nil {
+			resp.Body.Close()
+		}
+		fmt.Print(".")
+		time.Sleep(3 * time.Second)
+	}
+	fmt.Println()
+	return fmt.Errorf("authentik default scope mappings not ready within 60s — check: docker logs %s", AuthentikWorkerContainer)
+}
+
 // StopAuthentikStack stops and removes all Authentik containers.
 // If removeVolumes is true, the named volume hal-authentik-db is also removed.
 func StopAuthentikStack(engine string, removeVolumes bool) error {
@@ -993,6 +1036,47 @@ func (c *AuthentikClient) UpsertSCIMProvider(name, baseURL, token string, userMa
 type AuthentikGroup struct {
 	PK   string
 	Name string
+}
+
+// AuthentikUser holds the minimal fields needed for per-object SCIM sync.
+type AuthentikUser struct {
+	PK       string
+	Username string
+}
+
+// GetAllUsers returns all non-service users in Authentik.
+func (c *AuthentikClient) GetAllUsers() ([]AuthentikUser, error) {
+	var users []AuthentikUser
+	nextURL := "/api/v3/core/users/?page_size=100&type=internal"
+	for nextURL != "" {
+		data, _, err := c.do("GET", nextURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		results, _ := data["results"].([]interface{})
+		for _, r := range results {
+			item, ok := r.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			// pk may be a float64 (JSON number) — convert to string.
+			var pk string
+			switch v := item["pk"].(type) {
+			case string:
+				pk = v
+			case float64:
+				pk = fmt.Sprintf("%.0f", v)
+			}
+			username, _ := item["username"].(string)
+			users = append(users, AuthentikUser{PK: pk, Username: username})
+		}
+		nextRaw, _ := data["next"].(string)
+		if nextRaw == "" || nextRaw == "null" {
+			break
+		}
+		nextURL = strings.TrimPrefix(nextRaw, c.baseURL)
+	}
+	return users, nil
 }
 
 // GetAllGroups returns all groups in Authentik.
