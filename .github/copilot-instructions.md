@@ -64,3 +64,19 @@ Every `hal` CLI change must land on a named branch before merging to `main`:
 - Bug fixes or corrections: `bugfix/<short-description>`
 
 Before writing any code, ask the user to create or confirm the target branch.
+
+---
+
+## Commit Discipline
+
+**NEVER commit automatically.** Always present a summary of changed files and proposed commit message, then wait for explicit user approval before running `git commit` or `git push`.
+
+Before every commit, verify that all relevant documentation is updated in the same cycle:
+- `README.md` — if contributor-facing behavior changed
+- `LLM_CONTEXT.md` — if command behavior, flags, or product workflows changed
+- `docs/cli-lifecycle-model.md` — if lifecycle semantics changed
+- `docs/commands/*.md` — if a specific command was added or modified
+- `.github/copilot-instructions.md` — if policy or conventions changed
+- `HAL_MCP_CONTRACT.json` + `cmd/mcp/testdata/*_help_snapshot.json` — if command syntax changed
+
+If any of these are stale relative to the code changes, update them before proposing the commit.
