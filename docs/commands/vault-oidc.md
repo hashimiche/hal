@@ -4,28 +4,112 @@
 - `hal vault oidc`
 
 ## Purpose
-Deploy Keycloak and configure Vault OIDC authentication flow.
+Deploy Authentik as a shared Identity Provider and configure Vault OIDC authentication.
+With `--scim` (Vault Enterprise only), also wire Authentik outbound SCIM to provision users and groups into Vault automatically.
 
 ## Related
 - Parent namespace: [vault.md](vault.md)
+- Architecture: [../scim-idp-spec.md](../scim-idp-spec.md)
 
 ## Prerequisites
 - HAL CLI is available in your local environment.
-- The relevant product base deployment should be running when this command targets an existing stack.
+- Vault must be running and healthy (`hal vault create`).
+- For `--scim`: Vault Enterprise image required (`hal vault create --edition ent`).
+
 ## Flags
-- Deprecated: older HAL docs may reference `hal vault oidc --force`. That flag has been removed from the CLI. Use `hal vault oidc update`.
-- Command flags from `hal vault oidc --help`:
 ```text
--h, --help                      help for oidc
---keycloak-version string   Version of the Keycloak container image to deploy (default "24.0.4")
--u, --update                    Reconcile Keycloak and Vault OIDC integration
+-h, --help                        help for oidc
+    --authentik-image string      Authentik container image (default "ghcr.io/goauthentik/server")
+    --authentik-tag string        Authentik image tag (default "2026.2.3")
+    --scim                        [Vault Enterprise] Also configure SCIM provisioning from Authentik
+-u, --update                      Re-provision Vault OIDC providers (keeps Authentik running)
+-e, --enable                      Start Authentik and configure Vault OIDC
+-d, --disable                     Remove Vault OIDC and tear down Authentik if unused
 ```
 - Global flags: `--debug`, `--dry-run`
 
-## Side Effects
-- This command may create, mutate, or remove local lab resources depending on its operation.
+## Lifecycle Actions
 
-## Example
+| Action | Command | Description |
+|--------|---------|-------------|
+| status | `hal vault oidc` | Show Authentik stack health + Vault OIDC mount state (default) |
+| enable | `hal vault oidc enable` | Start Authentik, provision demo users/groups, configure Vault OIDC |
+| update | `hal vault oidc update` | Re-provision Vault OIDC with fresh credentials (Authentik stays running) |
+| disable | `hal vault oidc disable` | Remove Vault OIDC; stop Authentik only if no other product uses it |
+
+## What Gets Deployed
+
+**Authentik containers** (all on `hal-net`):
+- `hal-authentik-pg` — PostgreSQL database
+- `hal-authentik-server` — API + UI at `http://authentik.localhost:9100`
+- `hal-authentik-worker` — Celery background tasks
+
+**Authentik objects**:
+- Groups: `admin`, `user-ro`
+- Users: `alice / password` (admin), `bob / password` (user-ro)
+- OAuth2 provider: `vault-oidc-provider` (implicit-consent flow, groups scope)
+- Application slug: `hashicorp-vault` (tile launch URL: `http://vault.localhost:8200/ui/vault/auth/oidc`)
+
+**Vault objects (OIDC only)**:
+- OIDC auth mount: `oidc/`
+- KV-V2 mount: `kv-oidc/`
+- Policies: `admin` (all paths), `user-ro` (kv-oidc/team1 read)
+- External identity groups `admin` and `user-ro` with OIDC accessor aliases
+
+**Additional Vault objects with `--scim` (Enterprise)**:
+- SCIM feature flag activated (one-way, permanent)
+- Policy `scim-client` (`identity/scim/v2/*` — create/read/update/patch/delete/list)
+- Entity `scim-client-authentik` with alias on token mount
+- Token role `authentik-scim` (32-day renewable, orphan)
+- SCIM client `authentik-scim` with `alias_mount_accessor = oidc/`
+- Authentik: outbound SCIM provider `vault-scim-provider` (AWS compatibility mode) targeting `http://hal-vault:8200/v1/identity/scim/v2`
+- Authentik: SCIM provider assigned as backchannel on `hashicorp-vault` application
+- External groups (`admin`, `user-ro`) are **not** pre-created — Authentik SCIM owns group creation
+
+## SCIM Behaviour
+
+| Event | Propagated automatically |
+|-------|--------------------------|
+| User created in Authentik | ✅ Yes |
+| Group created in Authentik | ✅ Yes |
+| User added to / removed from group | ❌ No — requires manual per-object sync |
+
+To force-sync group membership after adding a user to a group, the bootstrap token and SCIM provider PK are printed at enable time. Run:
 ```bash
-hal vault oidc enable
+# 1. Find the group PK
+curl -s -H 'Authorization: Bearer <bootstrap-token>' \
+  'http://authentik.localhost:9100/api/v3/core/groups/?search=<group-name>' | jq '.results[0].pk'
+
+# 2. Trigger per-object sync
+curl -s -X POST -H 'Authorization: Bearer <bootstrap-token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"sync_object_model":"authentik.core.models.Group","sync_object_id":"<pk>"}' \
+  'http://authentik.localhost:9100/api/v3/providers/scim/<scim-provider-pk>/sync/object/'
 ```
+
+## Side Effects
+- Creates/removes containers `hal-authentik-pg`, `hal-authentik-server`, `hal-authentik-worker`.
+- Registers/deregisters `vault-oidc` in `~/.hal/shared-services.json` under key `authentik-idp`.
+- Authentik secrets are generated once and persisted at `~/.hal/authentik/env` (mode 0600).
+- Authentik stack is only torn down when no other product is registered as a consumer.
+
+## Examples
+```bash
+# First-time setup
+hal vault oidc enable
+
+# First-time setup with SCIM (Vault Enterprise)
+export VAULT_LICENSE='...'
+hal vault create --edition ent
+hal vault oidc enable --scim
+
+# Re-provision after Vault restart (keeps Authentik running)
+hal vault oidc update
+
+# Check current state
+hal vault oidc
+
+# Login with OIDC (browser opens Authentik login)
+vault login -method=oidc
+```
+
