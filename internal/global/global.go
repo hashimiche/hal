@@ -1,6 +1,7 @@
 package global
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -81,22 +82,68 @@ func EnsureNetwork(engine string) {
 // HalNetStaticIP returns an IP in the hal-net subnet with the given last octet.
 // It inspects the live network so it works regardless of which subnet the engine
 // assigned (e.g. 172.18.0.250, 10.89.3.250, ...).
-// Falls back to 172.18.0.<hostNum> when inspection fails.
+// Parses raw JSON to handle both Docker (IPAM.Config[].Subnet) and Podman
+// (subnets[].subnet) inspect formats. Falls back to 172.18.0.<hostNum>.
 func HalNetStaticIP(engine string, hostNum int) string {
-	out, err := exec.Command(engine, "network", "inspect", HalNetName,
-		"--format", "{{range .IPAM.Config}}{{.Subnet}}{{end}}").Output()
+	out, err := exec.Command(engine, "network", "inspect", HalNetName).Output()
 	if err == nil {
-		subnet := strings.TrimSpace(string(out))
-		// subnet looks like "172.18.0.0/16" or "10.89.3.0/24"
-		// Take everything up to the last dot of the network address.
-		if slash := strings.Index(subnet, "/"); slash > 0 {
-			host := subnet[:slash] // "172.18.0.0"
-			if dot := strings.LastIndex(host, "."); dot > 0 {
-				return fmt.Sprintf("%s.%d", host[:dot], hostNum)
+		subnet := extractSubnetFromInspect(out)
+		if subnet != "" {
+			// subnet looks like "172.18.0.0/16" or "10.89.3.0/24"
+			// Strip the mask and replace the last octet.
+			if slash := strings.Index(subnet, "/"); slash > 0 {
+				host := subnet[:slash]
+				if dot := strings.LastIndex(host, "."); dot > 0 {
+					return fmt.Sprintf("%s.%d", host[:dot], hostNum)
+				}
 			}
 		}
 	}
 	return fmt.Sprintf("172.18.0.%d", hostNum)
+}
+
+// extractSubnetFromInspect parses the raw JSON output of "docker/podman network inspect"
+// and returns the first subnet CIDR string. Handles both:
+//   - Docker: [{"IPAM":{"Config":[{"Subnet":"172.18.0.0/16"}]}}]
+//   - Podman: [{"subnets":[{"subnet":"10.89.3.0/24"}]}]
+func extractSubnetFromInspect(data []byte) string {
+	var raw []map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil || len(raw) == 0 {
+		return ""
+	}
+	net := raw[0]
+
+	// Docker format: IPAM.Config[].Subnet
+	if ipamRaw, ok := net["IPAM"]; ok {
+		var ipam struct {
+			Config []struct {
+				Subnet string `json:"Subnet"`
+			} `json:"Config"`
+		}
+		if err := json.Unmarshal(ipamRaw, &ipam); err == nil {
+			for _, c := range ipam.Config {
+				if c.Subnet != "" {
+					return c.Subnet
+				}
+			}
+		}
+	}
+
+	// Podman format: subnets[].subnet
+	if subnetsRaw, ok := net["subnets"]; ok {
+		var subnets []struct {
+			Subnet string `json:"subnet"`
+		}
+		if err := json.Unmarshal(subnetsRaw, &subnets); err == nil {
+			for _, s := range subnets {
+				if s.Subnet != "" {
+					return s.Subnet
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 // CleanNetworkIfEmpty acts as a garbage collector.

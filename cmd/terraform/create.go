@@ -134,18 +134,21 @@ var deployCmd = &cobra.Command{
 		// 5. Deploy PostgreSQL
 		fmt.Printf("⚙️  Provisioning TFE PostgreSQL Database...\n")
 		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-db", "--network", "hal-net",
+			"-v", "hal-tfe-db-data:/var/lib/postgresql/data",
 			"-e", "POSTGRES_USER=tfe", "-e", "POSTGRES_PASSWORD=tfe_password", "-e", "POSTGRES_DB=tfe",
 			fmt.Sprintf("%s:%s", pgImage, pgVersion)).Run()
 
 		// 6. Deploy Redis
 		fmt.Printf("⚙️  Provisioning TFE Redis Cache...\n")
 		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-redis", "--network", "hal-net",
+			"-v", "hal-tfe-redis-data:/data",
 			fmt.Sprintf("%s:%s", redisImage, redisVersion)).Run()
 
 		// 7. Deploy MinIO (S3 Mock)
 		fmt.Println("⚙️  Provisioning TFE Object Storage (MinIO)...")
 		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-minio", "--network", "hal-net",
 			"-p", fmt.Sprintf("%d:9000", minioAPIPort), "-p", fmt.Sprintf("%d:9001", minioConsolePort),
+			"-v", "hal-tfe-minio-data:/data",
 			"-e", "MINIO_ROOT_USER=minioadmin", "-e", "MINIO_ROOT_PASSWORD=minioadmin",
 			fmt.Sprintf("%s:%s", minioImage, minioVersion), "server", "/data", "--console-address", ":9001").Run()
 

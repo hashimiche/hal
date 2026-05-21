@@ -15,9 +15,12 @@ import (
 // leaves no leftover state that would cause stale-data problems on the next
 // "hal vault create / hal vault oidc enable --scim" cycle.
 var halNamedVolumes = []string{
-	"hal-authentik-db",  // Authentik PostgreSQL data (cmd/vault/oidc + integrations/authentik.go)
-	"hal-vault-logs",    // Vault audit logs shared with Promtail (cmd/vault/create.go)
-	"hal-vault-plugins", // Vault external plugins, e.g. OS secrets engine (cmd/vault/create.go)
+	"hal-authentik-db",   // Authentik PostgreSQL data (cmd/vault/oidc + integrations/authentik.go)
+	"hal-vault-logs",     // Vault audit logs shared with Promtail (cmd/vault/create.go)
+	"hal-vault-plugins",  // Vault external plugins, e.g. OS secrets engine (cmd/vault/create.go)
+	"hal-tfe-db-data",    // TFE PostgreSQL data (cmd/terraform/create.go)
+	"hal-tfe-redis-data", // TFE Redis cache (cmd/terraform/create.go)
+	"hal-tfe-minio-data", // TFE MinIO object storage (cmd/terraform/create.go)
 }
 
 const tfeCLIHelperImage = "hal-tfe-cli:latest"
