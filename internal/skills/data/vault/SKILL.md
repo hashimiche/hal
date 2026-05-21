@@ -24,7 +24,7 @@ If obs comes after Vault, prefer `hal vault obs create` to backfill metrics/dash
 - Use audit when the user asks about audit devices, logging, Loki, Grafana, or log shipping.
 - Use audit-analysis when the user asks who did what, request tracing, incident review, or audit investigations.
 - Use jwt when the user asks about CI or machine auth with JWT, GitLab pipelines, or bound claims.
-- Use oidc when the user asks about human SSO, browser login, callback URL issues, or Keycloak.
+- Use oidc when the user asks about human SSO, browser login, callback URL issues, or Authentik.
 - Use k8s when the user asks about Kubernetes auth, KinD, VSO, secret refresh demos, or CSI projection.
 - Use mariadb when the user asks about database secrets, dynamic DB credentials, or root rotation.
 - Use ldap when the user asks about LDAP auth, LDAP secrets engine, dynamic users, static creds, or credential libraries.

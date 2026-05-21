@@ -13,7 +13,7 @@ Assistant: I verify OIDC config and default role:
     vault read auth/oidc/config
     vault read auth/oidc/role/default
 
-Assistant: I confirm Keycloak realm `hal` users (`alice`, `bob`) map to external groups `admin` and `user-ro`.
+Assistant: I confirm Authentik users `alice` (group `admin`) and `bob` (group `user-ro`) map to Vault external groups with matching policies.
 
 ## Example 2: Callback Error
 
@@ -28,3 +28,11 @@ User: Rebuild OIDC integration completely.
 Assistant:
 
     hal vault oidc update
+
+A: This cleans Vault OIDC mounts and policies, removes the Authentik application and OAuth2 provider, then re-provisions everything with fresh clientID/clientSecret — without restarting the Authentik stack.
+
+## Example 4: Authentik admin credentials
+
+User: What is the Authentik admin password?
+
+A: The admin username is `akadmin`. The password was printed on first `hal vault oidc enable` and is stored in `~/.hal/authentik/env` under `AUTHENTIK_BOOTSTRAP_PASSWORD`. Access the UI at `http://authentik.localhost:9100/if/admin/`.

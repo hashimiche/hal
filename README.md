@@ -127,8 +127,10 @@ hal vault delete                          # remove Vault container and volumes
 **Feature subcommands** — `enable` / `update` / `disable`
 
 ```bash
-# OIDC auth method (deploys Keycloak as the provider)
-hal vault oidc enable --keycloak-version 24.0.4
+# OIDC auth method (deploys Authentik as the IdP)
+hal vault oidc enable
+hal vault oidc enable --authentik-tag 2026.2.3  # pin the image tag
+hal vault oidc enable --scim                     # also configure SCIM (Vault Enterprise only)
 hal vault oidc update
 hal vault oidc disable
 

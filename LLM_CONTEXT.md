@@ -96,10 +96,43 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - The `hal-health` container reuses `hashimiche/hal-mcp:latest` (same image as `hal-mcp`) with `--entrypoint /usr/local/bin/hal` and `health _serve` as args.
     - It reads a frozen `HAL_HEALTH_DATA` JSON env var at startup and serves it at `http://hal-health:9001/api/status` on `hal-net`.
     - The snapshot is built on the **host** (which has engine socket access) by `global.RefreshHalHealth(engine)`, injected as an env var, then the container is recreated. The container itself never touches the engine.
-    - `global.RefreshHalHealth(engine)` is called after every product lifecycle event that changes ecosystem state: all product `create`/`delete` commands, and all vault/boundary extension enable/disable commands (`vault k8s`, `vault oidc`, `vault jwt`, `vault ldap`, `vault database`, `boundary mariadb`, `boundary ssh`).
+- `global.RefreshHalHealth(engine)` is called after every product lifecycle event that changes ecosystem state: all product `create`/`delete` commands, and all vault/boundary extension enable/disable commands (`vault k8s`, `vault oidc`, `vault jwt`, `vault ldap`, `vault database`, `boundary mariadb`, `boundary ssh`).
     - `RefreshHalHealth` is a no-op if `hal-net` does not exist or the `hashimiche/hal-mcp:latest` image is not present — safe to call unconditionally.
     - HAL Plus fetches `http://hal-health:9001/api/status` as its primary product state source (via `fetchHalStatusProducts()` in `server/index.mjs`), with `fallbackProductsFromEndpoints()` as a fallback for local dev without containers.
     - The snapshot shape: `{ timestamp, engine, products: [{ product, state, health, reason, endpoint, containers, features: [{ feature, state, health, reason }] }] }`.
+- `hal vault oidc` deploys Authentik as a shared IdP and wires Vault OIDC auth. See `docs/scim-idp-spec.md` for full architecture.
+    - **Command**: `hal vault oidc enable|disable|update|status`. Flags: `--scim` (Vault Enterprise), `--authentik-image`, `--authentik-tag`.
+    - **Authentik containers**: `hal-authentik-pg` (postgres:16-alpine), `hal-authentik-server`, `hal-authentik-worker` — all on `hal-net`. No static IPs (Docker DNS). No Docker socket mounted.
+    - **Ports**: HTTP `9100`, HTTPS `9143`. `AUTHENTIK_LISTEN__HTTP=0.0.0.0:9100` must be set explicitly so internal and external port match. Internal port defaults to 9000 otherwise.
+    - **Canonical URL**: `authentik.localhost:9100` via `--network-alias authentik.localhost`. macOS resolves `*.localhost` → 127.0.0.1; Docker containers resolve via network alias. This keeps the OIDC issuer URL identical from host browser and from the Vault container.
+    - **Bootstrap token**: `AUTHENTIK_BOOTSTRAP_TOKEN` must be set on **both server and worker** containers. The worker runs Celery tasks that actually create the token record in the database — if the worker does not have it, the token is never persisted and all API calls get 403.
+    - **Bootstrap token race**: After `WaitAuthentikHealthy()` (polls `/api/v3/root/config/` — unauthenticated), always call `WaitAuthentikTokenReady(token)` before any API calls. It polls `GET /api/v3/core/groups/` with `Authorization: Bearer <token>` until 200 (60 s timeout). This ensures admin-level access is ready, not just server health.
+    - **`update` pattern**: cleans Vault OIDC mounts/policies, deletes the Authentik application + OAuth2 provider by name, then falls through to the enable path for fresh re-provision. Does not bounce the Authentik stack. Always calls `WaitAuthentikTokenReady` even when Authentik is already running.
+    - **Authentik REST API (version 2026.x / 2024.4+ changes)**:
+        - Scope mappings: `/api/v3/propertymappings/provider/scope/` (was `/propertymappings/scope/` before 2024.4)
+        - `CreateOAuth2Provider` requires both `authorization_flow` AND `invalidation_flow` fields — use `GetDefaultInvalidationFlowPK()` which prefers the `default-provider-invalidation-flow` slug.
+        - `GetDefaultAuthorizationFlowPK()` prefers slugs containing `"implicit"` — prevents picking `explicit-consent` which orphans the OAuth state and causes "Expired or missing OAuth state" on the second login attempt.
+        - Groups scope mapping no longer ships as a default in 2026.x — `GetGroupsScopeMappingPK()` creates it automatically if not found (`scope_name: groups`, expression: `list(request.user.ak_groups.values_list("name", flat=True))`).
+        - `CreateApplication` sets `meta_launch_url` to `http://vault.localhost:8200/ui/vault/auth/oidc` so the Authentik tile points to the host-reachable URL, not the SCIM backchannel URL.
+    - **Secrets file**: `~/.hal/authentik/env` (mode 0600). Keys: `PG_PASS`, `AUTHENTIK_SECRET_KEY`, `AUTHENTIK_BOOTSTRAP_TOKEN`, `AUTHENTIK_BOOTSTRAP_PASSWORD`. Loaded on every start — secrets are stable across restarts.
+    - **Shared service registry**: service key `"authentik-idp"`, consumer `"vault-oidc"`. Authentik stack is torn down on disable only when no consumers remain.
+    - **Demo users**: `alice / password` → group `admin` → Vault policy `admin` (all paths); `bob / password` → group `user-ro` → Vault policy `user-ro` (kv-oidc/team1 read).
+    - **OIDC role redirect URIs**: `http://localhost:8250/oidc/callback`, `http://127.0.0.1:8250/oidc/callback`, `http://vault.localhost:8200/ui/vault/auth/oidc/oidc/callback` — all three required for CLI and browser flows.
+    - **SCIM (`--scim`, Vault Enterprise only)**:
+        - Performs an early Enterprise gate check (`sys/license/status`) before any provisioning. Exits with a clear error if not Enterprise.
+        - Step 0: if a prior non-SCIM `hal vault oidc enable` ran, external groups `admin`/`user-ro` exist without a `scim_client_id`. These are deleted before SCIM setup so Authentik can take ownership without 409 conflicts.
+        - Activates SCIM feature flag via `sys/activation-flags/enable-scim/activate` (one-way, permanent).
+        - Creates `scim-client` policy covering `identity/scim/v2/*` with **create/read/update/patch/delete/list**. The `patch` capability is critical — Vault 1.14+ treats HTTP PATCH as a separate capability from `update`; without it group membership PATCH returns `permission denied` and member lists stay empty forever.
+        - Creates entity `scim-client-authentik` and token role `authentik-scim` (32-day renewable orphan).
+        - Creates SCIM client `authentik-scim` with `alias_mount_accessor = oidc/` — ensures SCIM-provisioned entities merge with OIDC-authenticated entities so group policies apply on login.
+        - Creates Authentik outbound SCIM provider `vault-scim-provider` with `compatibility_mode: "aws"`. Without AWS mode, Authentik 2026.x includes `"schemas"` inside PATCH Operation objects which Vault SCIM rejects with 400/`invalidValue` — member lists stay empty.
+        - Assigns SCIM provider as backchannel on `hashicorp-vault` application (required for outbound sync activation).
+        - OIDC path skips pre-creating external groups when `--scim` is active; Authentik SCIM owns group creation.
+        - **Group membership is NOT auto-propagated** when a user is added to a group (Authentik 2026.x ManyToMany table changes don't fire outbound SCIM events). Must use per-object sync endpoint: `POST /api/v3/providers/scim/{pk}/sync/object/` with `sync_object_model: "authentik.core.models.Group"` and `sync_object_id: "<group-pk>"`. The completion output prints exact curl commands with real token and provider PK.
+        - Valid `sync_object_model` enum values: `"authentik.core.models.Group"`, `"authentik.core.models.User"` (Python module path, from `SyncObjectModelEnum` in OpenAPI schema).
+        - SCIM endpoint inside containers: `http://hal-vault:8200/v1/identity/scim/v2`.
+    - **Future**: `hal tf saml enable [--scim]` on a separate branch will reuse the same Authentik stack with `AuthentikSharedServiceKey`.
+    - **Implementation files**: `cmd/vault/oidc.go`, `cmd/vault/scim.go`, `internal/integrations/authentik.go`.
 - Shared runtime helpers live under `internal/global`, especially engine detection and network management.
 - Engine resource advisory helpers live under `internal/global`; reuse them instead of open-coding engine-specific capacity checks in individual commands.
 - Vault k8s demo (`hal vault k8s`) now supports two explicit demo modes behind the same nginx endpoint (`http://web.localhost:8088`):

@@ -115,3 +115,13 @@ func ClearSharedService(service string) error {
 	delete(state, service)
 	return saveSharedServicesState(state)
 }
+
+// GetSharedServiceConsumers returns the list of consumers registered for a service key.
+// Returns an empty slice when the service has no consumers or the file does not exist.
+func GetSharedServiceConsumers(service string) []string {
+	state, err := loadSharedServicesState()
+	if err != nil {
+		return nil
+	}
+	return state[service]
+}
