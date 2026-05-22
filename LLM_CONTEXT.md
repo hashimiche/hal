@@ -107,6 +107,19 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - **Canonical URL**: `authentik.localhost:9100` via `--network-alias authentik.localhost`. macOS resolves `*.localhost` → 127.0.0.1; Docker containers resolve via network alias. This keeps the OIDC issuer URL identical from host browser and from the Vault container.
     - **Bootstrap token**: `AUTHENTIK_BOOTSTRAP_TOKEN` must be set on **both server and worker** containers. The worker runs Celery tasks that actually create the token record in the database — if the worker does not have it, the token is never persisted and all API calls get 403.
     - **Bootstrap token race**: After `WaitAuthentikHealthy()` (polls `/api/v3/root/config/` — unauthenticated), always call `WaitAuthentikTokenReady(token)` before any API calls. It polls `GET /api/v3/core/groups/` with `Authorization: Bearer <token>` until 200 (60 s timeout). This ensures admin-level access is ready, not just server health.
+    - **Default scope seeding lag**: On first boot, the bootstrap token can become usable before the worker finishes blueprint tasks that create the standard OAuth scope mappings (`openid`, `profile`, `email`). `WaitAuthentikScopesReady(token)` now polls `/api/v3/propertymappings/provider/scope/` for up to 180 s and prints visible progress (`0/3` -> `3/3`) before OIDC provisioning continues.
+    - **First-start migration race fix**: `StartAuthentikStack()` now waits for server API readiness immediately after launching `hal-authentik-server` and only then starts `hal-authentik-worker`. This avoids worker blueprint tasks racing DB migrations (observed error: `relation "authentik_tenants_tenant" does not exist` on first `hal vault oidc enable --scim`).
+    - **Execution order for `hal vault oidc enable --scim`** (authoritative runtime sequence):
+        1. Load/create secrets (`~/.hal/authentik/env`).
+        2. Start Authentik stack (pg -> server -> worker) if not already running.
+        3. Wait API health, then wait bootstrap token readiness.
+        4. On first boot, wait for default scope mappings (`openid/profile/email`) to be seeded. This wait is separate from token readiness and can take up to 180 s on a fresh Authentik database.
+        5. Provision Authentik OIDC objects (groups/users, OAuth2 provider, app).
+        6. Verify Vault can resolve/reach the Authentik OIDC discovery URL.
+        7. Configure Vault OIDC (auth mount, role, policies, identity groups/aliases).
+        8. Configure Vault SCIM (activation flag, `scim-client` policy incl. `patch`, entity, token role, SCIM client).
+        9. Mint SCIM bearer token, upsert Authentik SCIM provider, assign as app backchannel.
+        10. Run `syncSCIMObjects` (users first, then groups) for initial consistency.
     - **`update` pattern**: cleans Vault OIDC mounts/policies, deletes the Authentik application + OAuth2 provider by name, then falls through to the enable path for fresh re-provision. Does not bounce the Authentik stack. Always calls `WaitAuthentikTokenReady` even when Authentik is already running.
     - **Authentik REST API (version 2026.x / 2024.4+ changes)**:
         - Scope mappings: `/api/v3/propertymappings/provider/scope/` (was `/propertymappings/scope/` before 2024.4)

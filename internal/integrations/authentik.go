@@ -233,6 +233,13 @@ func StartAuthentikStack(engine, image, tag string, secrets *AuthentikSecrets) e
 		return fmt.Errorf("failed to start authentik server: %w\n%s", err, string(out))
 	}
 
+	// On first boot, the server performs DB migrations/initialization. Starting the
+	// worker too early can race blueprint tasks against migration completion, which
+	// may fail with "relation authentik_tenants_tenant does not exist".
+	if err := WaitAuthentikHealthy(); err != nil {
+		return fmt.Errorf("authentik server not ready before worker start: %w", err)
+	}
+
 	// ── 4. Worker (no docker socket) ─────────────────────────────────────────────
 	fmt.Println("  ⏳ Starting Authentik worker...")
 	workerArgs := []string{
@@ -326,16 +333,18 @@ func WaitAuthentikTokenReady(token string) error {
 }
 
 // WaitAuthentikScopesReady polls until the standard openid/profile/email scope
-// property mappings exist. Authentik seeds these asynchronously after the first
-// migration run, so they may not be present immediately after the bootstrap token
-// becomes usable. Timeout: 60 seconds.
+// property mappings exist. Authentik seeds these asynchronously via worker
+// blueprint tasks after the first migration run. On first boot this can take
+// well over 60s (worker startup + Celery beat + blueprint application queue).
+// Timeout: 180 seconds. Prints partial progress (X/3) so the wait is visible.
 func WaitAuthentikScopesReady(token string) error {
 	url := fmt.Sprintf("http://localhost:%s/api/v3/propertymappings/provider/scope/?page_size=100", AuthentikHTTPPort)
 	client := &http.Client{Timeout: 5 * time.Second}
-	deadline := time.Now().Add(60 * time.Second)
-	required := map[string]bool{"openid": false, "profile": false, "email": false}
+	deadline := time.Now().Add(180 * time.Second)
+	required := map[string]bool{"openid": true, "profile": true, "email": true}
 
-	fmt.Print("  ⏳ Waiting for Authentik scope mappings")
+	fmt.Printf("  ⏳ Waiting for Authentik scope mappings (0/%d)", len(required))
+	lastFound := -1
 	for time.Now().Before(deadline) {
 		req, _ := http.NewRequest("GET", url, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -357,6 +366,11 @@ func WaitAuthentikScopesReady(token string) error {
 					fmt.Println(" ✅")
 					return nil
 				}
+				// Print updated counter only when progress is made.
+				if found != lastFound {
+					fmt.Printf(" (%d/%d)", found, len(required))
+					lastFound = found
+				}
 			}
 		} else if resp != nil {
 			resp.Body.Close()
@@ -365,7 +379,7 @@ func WaitAuthentikScopesReady(token string) error {
 		time.Sleep(3 * time.Second)
 	}
 	fmt.Println()
-	return fmt.Errorf("authentik default scope mappings not ready within 60s — check: docker logs %s", AuthentikWorkerContainer)
+	return fmt.Errorf("authentik default scope mappings not ready within 180s — check: docker logs %s", AuthentikWorkerContainer)
 }
 
 // StopAuthentikStack stops and removes all Authentik containers.
