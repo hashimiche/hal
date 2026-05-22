@@ -82,6 +82,7 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - No socket mounts, no `--user` overrides, no `DOCKER_HOST` injection into `hal-mcp`. Podman stays rootless.
 - Terraform Enterprise local deployment depends on a mocked PostgreSQL, Redis, and MinIO stack and uses local TLS material under `~/.hal/tfe-certs`.
     - Rootless Podman path uses `https://tfe.localhost:8443` through `hal-tfe-proxy`.
+    - TFE admin HTTPS is exposed through the same proxy at `https://tfe.localhost:8444`.
     - Twin TFE lifecycle is target-based on product CRUD commands (for example `hal terraform create --target twin`) instead of a dedicated `hal terraform twin` subcommand.
     - Terraform helper subcommands are lifecycle-only: `hal terraform api-workflow`, `hal terraform vcs-workflow`, and `hal terraform agent` accept `status|enable|disable|update` (no `create|delete` aliases).
     - `hal terraform api-workflow` target scope is `primary|twin` only; do not suggest `--target both` for this helper.

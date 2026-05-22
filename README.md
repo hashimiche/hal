@@ -437,6 +437,7 @@ HAL uses environment variables and Docker/Podman networking — there is no conf
 | Consul | http://consul.localhost:8500 |
 | Boundary | http://boundary.localhost:9200 |
 | Terraform Enterprise | https://tfe.localhost:8443 |
+| Terraform Enterprise Admin | https://tfe.localhost:8444 |
 | MinIO API | http://127.0.0.1:19000 |
 | MinIO Console | http://127.0.0.1:19001 |
 | Grafana | http://grafana.localhost:3000 |
