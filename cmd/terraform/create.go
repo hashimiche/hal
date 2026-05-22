@@ -189,6 +189,7 @@ var deployCmd = &cobra.Command{
 			"-e", "TFE_RUN_PIPELINE_DOCKER_NETWORK=hal-net",
 			"-e", "TFE_HTTP_PORT=8080",
 			"-e", "TFE_HTTPS_PORT=8443",
+			"-e", "TFE_ADMIN_HTTPS_PORT=8444",
 			"-e", "TFE_TLS_CERT_FILE=/etc/ssl/tfe/cert.pem",
 			"-e", "TFE_TLS_KEY_FILE=/etc/ssl/tfe/key.pem",
 			"-e", "TFE_DISK_CACHE_VOLUME_NAME=hal-tfe-cache",
@@ -290,6 +291,28 @@ http {
 			proxy_redirect ~^https://hal-tfe(?::8443)?(/.*)$ https://tfe.localhost:8443$1;
 		}
 	}
+
+	server {
+		listen 8444 ssl;
+		server_name tfe.localhost;
+
+		ssl_certificate /etc/ssl/tfe/cert.pem;
+		ssl_certificate_key /etc/ssl/tfe/key.pem;
+
+		location / {
+			proxy_pass https://hal-tfe:8444;
+
+			proxy_set_header Host tfe.localhost:8444;
+			proxy_set_header X-Forwarded-Host tfe.localhost:8444;
+			proxy_set_header X-Forwarded-Port 8444;
+			proxy_set_header X-Real-IP $remote_addr;
+			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+			proxy_set_header X-Forwarded-Proto https;
+			proxy_set_header Accept-Encoding "";
+
+			proxy_ssl_verify off;
+		}
+	}
 }`
 		proxyConfPath := filepath.Join(homeDir, ".hal", "tfe-proxy.conf")
 		_ = os.WriteFile(proxyConfPath, []byte(nginxConfig), 0644)
@@ -297,6 +320,7 @@ http {
 		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-proxy", "--network", "hal-net", "--ip", proxyInternalIP,
 			"--network-alias", "tfe.localhost",
 			"-p", "8443:8443", // 🎯 Only the proxy exposes port 8443 to the host OS
+			"-p", "8444:8444", // 🎯 Expose the TFE admin HTTPS port through the proxy
 			"-v", fmt.Sprintf("%s:/etc/ssl/tfe:ro", certDir),
 			"-v", fmt.Sprintf("%s:/etc/nginx/nginx.conf:ro", proxyConfPath),
 			fmt.Sprintf("%s:%s", tfeProxyImage, tfeProxyNginxTag)).Run()
