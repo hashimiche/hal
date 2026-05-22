@@ -77,6 +77,7 @@ var deployCmd = &cobra.Command{
 			_ = exec.Command(engine, "rm", "-f", "hal-vault").Run()
 			_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-logs").Run()
 			_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-plugins").Run()
+			_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-data").Run()
 		}
 
 		// Determine the Image Repository and Version based on Edition
@@ -106,6 +107,7 @@ var deployCmd = &cobra.Command{
 		helperRef := vaultHelperImage + ":" + vaultHelperTag
 		_ = exec.Command(engine, "run", "--rm", "-v", "hal-vault-logs:/vault/logs", helperRef, "chown", "-R", "100:1000", "/vault/logs").Run()
 		_ = exec.Command(engine, "run", "--rm", "-v", "hal-vault-plugins:/vault/plugins", helperRef, "sh", "-c", "mkdir -p /vault/plugins && chown -R 100:1000 /vault/plugins").Run()
+		_ = exec.Command(engine, "run", "--rm", "-v", "hal-vault-data:/vault/file", helperRef, "chown", "-R", "100:1000", "/vault/file").Run()
 
 		// 2. Build the Docker run arguments
 		vaultArgs := []string{
@@ -116,6 +118,7 @@ var deployCmd = &cobra.Command{
 			"-p", "8200:8200",
 			"-v", "hal-vault-logs:/vault/logs",
 			"-v", "hal-vault-plugins:/vault/plugins",
+			"-v", "hal-vault-data:/vault/file",
 		}
 
 		// Vault 2.x tries to set SETFCAP capability which fails on Docker Desktop.

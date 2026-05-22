@@ -72,20 +72,9 @@ With `--scim` (Vault Enterprise only), also wire Authentik outbound SCIM to prov
 |-------|--------------------------|
 | User created in Authentik | ✅ Yes |
 | Group created in Authentik | ✅ Yes |
-| User added to / removed from group | ❌ No — requires manual per-object sync |
+| User added to / removed from group | ✅ Yes — Authentik 2026.2.3+ |
 
-To force-sync group membership after adding a user to a group, the bootstrap token and SCIM provider PK are printed at enable time. Run:
-```bash
-# 1. Find the group PK
-curl -s -H 'Authorization: Bearer <bootstrap-token>' \
-  'http://authentik.localhost:9100/api/v3/core/groups/?search=<group-name>' | jq '.results[0].pk'
-
-# 2. Trigger per-object sync
-curl -s -X POST -H 'Authorization: Bearer <bootstrap-token>' \
-  -H 'Content-Type: application/json' \
-  -d '{"sync_object_model":"authentik.core.models.Group","sync_object_id":"<pk>"}' \
-  'http://authentik.localhost:9100/api/v3/providers/scim/<scim-provider-pk>/sync/object/'
-```
+> Users that existed *before* the SCIM provider was first configured are not retroactively pushed by event. `hal vault oidc enable --scim` and `hal vault oidc update --scim` run a full `syncSCIMObjects` pass (all users + groups) at the end to ensure initial consistency.
 
 ## Side Effects
 - Creates/removes containers `hal-authentik-pg`, `hal-authentik-server`, `hal-authentik-worker`.

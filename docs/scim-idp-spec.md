@@ -222,17 +222,9 @@ When `--scim` is used:
 |-------|--------------------------|
 | User created in Authentik | ✅ Yes (event-driven) |
 | Group created in Authentik | ✅ Yes (event-driven) |
-| User added to / removed from group | ❌ No — Authentik does not fire an outbound SCIM event for ManyToMany membership changes |
+| User added to / removed from group | ✅ Yes — Authentik 2026.2.3+ fires outbound SCIM events for group membership changes |
 
-To propagate group membership changes, trigger a per-object sync as Authentik admin. The exact `curl` commands with the real bootstrap token and SCIM provider PK are printed by `hal vault oidc enable --scim`:
-
-```bash
-# Valid sync_object_model values: authentik.core.models.Group | authentik.core.models.User
-curl -s -X POST -H 'Authorization: Bearer <bootstrap-token>' \
-  -H 'Content-Type: application/json' \
-  -d '{"sync_object_model":"authentik.core.models.Group","sync_object_id":"<group-pk>"}' \
-  'http://authentik.localhost:9100/api/v3/providers/scim/<scim-provider-pk>/sync/object/'
-```
+> **Note:** Users that existed in Authentik *before* the SCIM provider was first configured are not retroactively pushed by event. `hal vault oidc enable --scim` (and `hal vault oidc update --scim`) call `syncSCIMObjects` at the end to push all users and groups explicitly — so the initial state is always consistent.
 
 ### Drift recovery
 

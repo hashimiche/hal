@@ -108,13 +108,6 @@ Provide a brief confirmation that the OIDC auth method is enabled.
 4. **403 on first enable after fresh stack:** Bootstrap token race — the Authentik worker creates the token asynchronously. `hal vault oidc update` retries safely.
 5. **User asks about Authentik admin password:** It is printed once at first enable and stored in `~/.hal/authentik/env` (field `AUTHENTIK_BOOTSTRAP_PASSWORD`). Username is `akadmin`.
 6. **"Expired or missing OAuth state" on second OIDC attempt:** Caused by the explicit-consent authorization flow orphaning the state. Fixed by using the implicit-consent flow. The `GetDefaultAuthorizationFlowPK` function now prefers slugs containing `implicit`.
-7. **SCIM group membership empty after adding a user:** Authentik 2026.x does not emit an outbound SCIM event when a user is added to a group (ManyToMany change). Must trigger a per-object sync manually:
-   ```bash
-   curl -s -X POST -H 'Authorization: Bearer <bootstrap-token>' \
-     -H 'Content-Type: application/json' \
-     -d '{"sync_object_model":"authentik.core.models.Group","sync_object_id":"<group-pk>"}' \
-     'http://authentik.localhost:9100/api/v3/providers/scim/<scim-provider-pk>/sync/object/'
-   ```
-   The bootstrap token and SCIM provider PK are printed by `hal vault oidc enable --scim`.
+7. **SCIM group membership empty after adding a user:** This was a known gap in older Authentik (ManyToMany signals not firing). **Fixed in Authentik 2026.2.3+** — membership changes now auto-propagate. If you see stale membership with an older Authentik version, use `hal vault oidc update --scim --sync` to force a full re-sync.
 8. **SCIM returns 400/invalidValue for group PATCH:** Authentik without `compatibility_mode: aws` includes `"schemas"` inside PatchOp Operations array items, which Vault SCIM rejects. This is already set by `hal`. If syncing manually, ensure provider has compatibility mode enabled.
 9. **SCIM returns permission denied on group PATCH:** The `scim-client` Vault policy must include the `patch` capability. Vault 1.14+ treats HTTP PATCH as a separate capability from `update`.

@@ -128,7 +128,8 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
         - Creates Authentik outbound SCIM provider `vault-scim-provider` with `compatibility_mode: "aws"`. Without AWS mode, Authentik 2026.x includes `"schemas"` inside PATCH Operation objects which Vault SCIM rejects with 400/`invalidValue` — member lists stay empty.
         - Assigns SCIM provider as backchannel on `hashicorp-vault` application (required for outbound sync activation).
         - OIDC path skips pre-creating external groups when `--scim` is active; Authentik SCIM owns group creation.
-        - **Group membership is NOT auto-propagated** when a user is added to a group (Authentik 2026.x ManyToMany table changes don't fire outbound SCIM events). Must use per-object sync endpoint: `POST /api/v3/providers/scim/{pk}/sync/object/` with `sync_object_model: "authentik.core.models.Group"` and `sync_object_id: "<group-pk>"`. The completion output prints exact curl commands with real token and provider PK.
+        - **Group membership IS auto-propagated** in Authentik 2026.2.3+ — the previously known ManyToMany Django signal gap has been fixed. Membership changes (add/remove user from group) now fire outbound SCIM events automatically.
+        - Users created *before* the SCIM provider was first configured are not retroactively pushed. `configureSCIM` and `syncSCIMObjects` call a full users+groups sync at the end to ensure initial consistency.
         - Valid `sync_object_model` enum values: `"authentik.core.models.Group"`, `"authentik.core.models.User"` (Python module path, from `SyncObjectModelEnum` in OpenAPI schema).
         - SCIM endpoint inside containers: `http://hal-vault:8200/v1/identity/scim/v2`.
     - **Future**: `hal tf saml enable [--scim]` on a separate branch will reuse the same Authentik stack with `AuthentikSharedServiceKey`.
