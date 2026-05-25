@@ -148,6 +148,16 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
         - SCIM endpoint inside containers: `http://hal-vault:8200/v1/identity/scim/v2`.
     - **Future**: `hal tf saml enable [--scim]` on a separate branch will reuse the same Authentik stack with `AuthentikSharedServiceKey`.
     - **Implementation files**: `cmd/vault/oidc.go`, `cmd/vault/scim.go`, `internal/integrations/authentik.go`.
+- `hal tf saml` deploys Authentik as a shared IdP and wires TFE SAML SSO. See `docs/scim-idp-spec.md` for full architecture.
+    - **Command**: `hal tf saml enable|disable|update|status`. Flags: `--scim`, `--target primary|twin`, `--tfe-url`, `--tfe-org`, `--authentik-image`, `--authentik-tag`.
+    - Reuses the same Authentik stack (`AuthentikSharedServiceKey = "authentik-idp"`). Shared-service consumers: `"tfe-saml"` (primary), `"tfe-bis-saml"` (twin).
+    - **Authentik objects**: groups `admins`/`devs`, users `alice`/`bob`, SAML property mappings `hal: SAML Username` (attr: `Username`) and `hal: SAML Groups` (attr: `MemberOf`), SAML provider `tfe-saml-provider`, application slug `tfe-saml`.
+    - **TFE SAML**: configured via `PATCH /api/v2/admin/saml-settings`. Admin token is auto-bootstrapped via `ensureTFEFoundation`. SSO endpoint and IdP cert are parsed from Authentik SAML metadata XML (`GetSAMLProviderMetadata` + `ParseSAMLMetadata`).
+    - **Twin target**: uses `tfe-bis-saml-provider` / `tfe-bis-saml` slug / `https://tfe-bis.localhost:9443`. Same code path with target-specific URL helpers.
+    - **SCIM (`--scim`)**: creates TFE org-scoped SCIM token via `POST /api/v2/organizations/:org/scim-tokens`, configures Authentik outbound SCIM provider `tfe-scim-provider` with `verify_ssl: false` (TFE self-signed cert), assigns as backchannel on `tfe-saml` application, runs `syncTFESCIMObjects` for initial consistency.
+    - **Authentik SAML metadata parse**: `integrations.ParseSAMLMetadata(xml)` extracts SSO redirect-binding URL and X509 certificate using string scanning (no XML library).
+    - **`update` pattern**: cleans TFE SAML via Admin API, deletes Authentik application + SAML/SCIM providers, then falls through to enable path.
+    - **Implementation files**: `cmd/terraform/saml.go`, `cmd/terraform/saml_scim.go`, `internal/integrations/authentik.go` (SAML methods appended).
 - Shared runtime helpers live under `internal/global`, especially engine detection and network management.
 - Engine resource advisory helpers live under `internal/global`; reuse them instead of open-coding engine-specific capacity checks in individual commands.
 - Vault k8s demo (`hal vault k8s`) now supports two explicit demo modes behind the same nginx endpoint (`http://web.localhost:8088`):

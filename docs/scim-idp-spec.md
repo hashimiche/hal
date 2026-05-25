@@ -7,7 +7,7 @@ Authentik is the shared Identity Provider (IdP) for HAL lab products. It is mana
 **Current status**:
 - ✅ `hal vault oidc enable` — Authentik IdP + Vault OIDC auth, fully working
 - ✅ `hal vault oidc enable --scim` — Vault Enterprise SCIM provisioning, fully working
-- 🔜 `hal tf saml enable [--scim]` — TFE SAML + optional SCIM (separate branch)
+- ✅ `hal tf saml enable [--scim]` — TFE SAML + optional SCIM, implemented on `feature/tfe-saml-scim`
 
 ---
 
@@ -188,7 +188,8 @@ Service key: `"authentik-idp"` in `~/.hal/shared-services.json`.
 
 Consumer values registered today:
 - `"vault-oidc"` — registered by `hal vault oidc enable`
-- `"vault-saml"` — future: `hal tf saml enable`
+- `"tfe-saml"` — registered by `hal tf saml enable` (primary target)
+- `"tfe-bis-saml"` — registered by `hal tf saml enable --target twin`
 
 Authentik stack is torn down on disable only when the consumer list reaches zero.
 
@@ -238,13 +239,101 @@ This re-activates the SCIM flag, recreates the SCIM client + provider, and trigg
 
 ---
 
-## TFE SAML + SCIM — Future Track (`feature/tf-saml`)
+## TFE SAML + SCIM (`feature/tfe-saml-scim`)
 
-`hal tf saml enable [--scim]`:
-- Shares the same Authentik stack via `"authentik-idp"` shared service key.
-- SAML provider in Authentik targeting TFE SAML endpoint.
-- Optional SCIM to `https://tfe.localhost/api/scim/v2/`.
-- Separate branch — do not implement on `feature/vault-scim`.
+`hal tf saml enable [--scim] [--target primary|twin]`
+
+Shares the same Authentik stack via `AuthentikSharedServiceKey`. The Authentik stack is started if not already running and is only torn down when no consumers remain.
+
+### User-Facing Commands
+
+```bash
+# Deploy Authentik, provision demo users/groups, configure TFE SAML
+hal tf saml enable
+
+# Re-provision TFE SAML (keeps Authentik running, fresh provider)
+hal tf saml update
+
+# Remove TFE SAML; stop Authentik only if no other product is using it
+hal tf saml disable
+
+# Show Authentik stack health + TFE SAML state
+hal tf saml
+
+# Twin TFE instance
+hal tf saml enable --target twin
+```
+
+Flags:
+| Flag | Default | Description |
+|---|---|---|
+| `--scim` | `false` | Also configure SCIM provisioning from Authentik to TFE |
+| `--sync` | `false` | With `--scim`: re-push all group membership without full re-provision |
+| `--target` | `primary` | TFE instance scope: `primary` or `twin` |
+| `--tfe-url` | _(auto)_ | Override TFE base URL |
+| `--tfe-org` | `hal-org` | TFE organization name |
+| `--tfe-token` | _(auto)_ | TFE admin API token (auto-bootstrapped if omitted) |
+| `--authentik-image` | `ghcr.io/goauthentik/server` | Authentik image |
+| `--authentik-tag` | `2026.2.3` | Authentik tag |
+
+### URLs (defaults)
+
+| Target | TFE base URL | ACS URL | SCIM endpoint (container-to-container) |
+|--------|-------------|---------|----------------------------------------|
+| primary | `https://tfe.localhost:8443` | `.../users/saml/auth` | `https://hal-tfe-proxy:8443/api/scim/v2` |
+| twin | `https://tfe-bis.localhost:9443` | `.../users/saml/auth` | `https://hal-tfe-bis-proxy:9443/api/scim/v2` |
+
+### What Gets Provisioned in Authentik
+
+| Object | Value |
+|--------|-------|
+| Group | `admins` |
+| Group | `devs` |
+| User | `alice / password` → group `admins` |
+| User | `bob / password` → group `devs` |
+| SAML property mapping | `hal: SAML Username` (attribute: `Username`, expr: `request.user.username`) |
+| SAML property mapping | `hal: SAML Groups` (attribute: `MemberOf`, expr: group names list) |
+| SAML provider | `tfe-saml-provider` (ACS URL, audience, implicit-consent flow, signing key) |
+| Application | slug `tfe-saml`, launch URL: TFE base URL |
+
+For twin target: provider name `tfe-bis-saml-provider`, slug `tfe-bis-saml`.
+
+### What Gets Configured in TFE
+
+Via `PATCH /api/v2/admin/saml-settings`:
+| Field | Value |
+|-------|-------|
+| `enabled` | `true` |
+| `idp_cert` | X509 certificate from Authentik SAML metadata |
+| `sso_endpoint_url` | Authentik SSO redirect-binding URL (parsed from metadata) |
+| `slo_endpoint_url` | Authentik SLO post-binding URL (derived from SSO URL) |
+| `attr_username` | `Username` |
+| `attr_groups` | `MemberOf` |
+| `attr_site_admin` | `SiteAdminRole` |
+| `site_admin_role` | `site-admins` |
+
+### SCIM (`--scim`)
+
+1. Creates a TFE org-scoped SCIM token via `POST /api/v2/organizations/:org/scim-tokens`.
+2. Configures Authentik outbound SCIM provider `tfe-scim-provider` pointing to  
+   `https://hal-tfe-proxy:8443/api/scim/v2` with `verify_ssl: false` (self-signed cert).
+3. Assigns SCIM provider as backchannel on the `tfe-saml` application.
+4. Runs `syncTFESCIMObjects` (users first, then groups) for initial consistency.
+
+TFE auto-creates teams from SCIM group pushes. Group membership changes in Authentik propagate automatically (Authentik 2026.2.3+).
+
+### Shared Service Registration
+
+Service key: `"authentik-idp"`.
+Consumer keys: `"tfe-saml"` (primary), `"tfe-bis-saml"` (twin).
+
+### File Locations
+
+| File | Role |
+|------|------|
+| `cmd/terraform/saml.go` | `hal tf saml` command — enable/disable/update/status flows |
+| `cmd/terraform/saml_scim.go` | TFE SCIM token creation + Authentik SCIM provider management |
+| `internal/integrations/authentik.go` | Shared Authentik stack lifecycle + REST API (SAML methods appended) |
 
 ---
 

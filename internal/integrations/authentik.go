@@ -1029,6 +1029,57 @@ func (c *AuthentikClient) UpdateSCIMProvider(pk int, name, baseURL, token string
 	return err
 }
 
+// CreateSCIMProviderWithVerifySSL creates a SCIM provider with explicit TLS
+// verification control. Use verifySSL=false when the target uses a self-signed cert.
+func (c *AuthentikClient) CreateSCIMProviderWithVerifySSL(
+	name, baseURL, token string, userMappingPKs, groupMappingPKs []string, verifySSL bool,
+) (int, error) {
+	body := map[string]interface{}{
+		"name":                    name,
+		"url":                     baseURL,
+		"token":                   token,
+		"property_mappings":       userMappingPKs,
+		"property_mappings_group": groupMappingPKs,
+		"compatibility_mode":      "aws",
+		"verify_ssl":              verifySSL,
+	}
+	data, _, err := c.do("POST", "/api/v3/providers/scim/", body)
+	if err != nil {
+		if strings.Contains(err.Error(), "400") {
+			existing, _, err2 := c.do("GET", "/api/v3/providers/scim/?search="+name, nil)
+			if err2 != nil {
+				return 0, err2
+			}
+			item, err2 := firstResult(existing)
+			if err2 != nil {
+				return 0, fmt.Errorf("scim provider %q: %w", name, err)
+			}
+			pkFloat, _ := item["pk"].(float64)
+			return int(pkFloat), nil
+		}
+		return 0, err
+	}
+	pkFloat, _ := data["pk"].(float64)
+	return int(pkFloat), nil
+}
+
+// UpdateSCIMProviderWithVerifySSL patches an existing SCIM provider with a new
+// bearer token and explicit TLS verification control.
+func (c *AuthentikClient) UpdateSCIMProviderWithVerifySSL(
+	pk int, name, baseURL, token string, userMappingPKs, groupMappingPKs []string, verifySSL bool,
+) error {
+	_, _, err := c.do("PATCH", fmt.Sprintf("/api/v3/providers/scim/%d/", pk), map[string]interface{}{
+		"name":                    name,
+		"url":                     baseURL,
+		"token":                   token,
+		"property_mappings":       userMappingPKs,
+		"property_mappings_group": groupMappingPKs,
+		"compatibility_mode":      "aws",
+		"verify_ssl":              verifySSL,
+	})
+	return err
+}
+
 // UpsertSCIMProvider creates the SCIM provider if it doesn't exist, or updates its
 // token if it does. Returns the provider PK. Use this instead of CreateSCIMProvider
 // for idempotent enable/update flows — avoids orphaned providers after "hal delete".
@@ -1132,4 +1183,225 @@ func (c *AuthentikClient) SyncSCIMObject(providerPK int, model, objectPK string)
 			"sync_object_id":    objectPK,
 		})
 	return err
+}
+
+// ─── SAML provider management ─────────────────────────────────────────────────
+
+// GetOrCreateSAMLUsernameMapping returns the PK of a SAML property mapping that
+// emits a plain "Username" attribute containing the Authentik username.
+// TFE expects attr_username to match this attribute name (default: "Username").
+func (c *AuthentikClient) GetOrCreateSAMLUsernameMapping() (string, error) {
+	const attrName = "Username"
+	const mappingName = "hal: SAML Username"
+
+	data, _, err := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+mappingName, nil)
+	if err == nil {
+		results, _ := data["results"].([]interface{})
+		for _, r := range results {
+			item, ok := r.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if item["name"] == mappingName {
+				return item["pk"].(string), nil
+			}
+		}
+	}
+
+	created, _, err := c.do("POST", "/api/v3/propertymappings/provider/saml/", map[string]interface{}{
+		"name":           mappingName,
+		"saml_name":      attrName,
+		"friendly_name":  attrName,
+		"expression":     "return request.user.username",
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "400") {
+			// Already exists under a different search — retry lookup
+			data2, _, _ := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+mappingName, nil)
+			if item, _ := firstResult(data2); item != nil {
+				return item["pk"].(string), nil
+			}
+		}
+		return "", fmt.Errorf("create SAML username mapping: %w", err)
+	}
+	return created["pk"].(string), nil
+}
+
+// GetOrCreateSAMLGroupsMapping returns the PK of a SAML property mapping that
+// emits a "MemberOf" attribute containing the user's group names as a list.
+// TFE expects attr_groups to match this attribute name (default: "MemberOf").
+func (c *AuthentikClient) GetOrCreateSAMLGroupsMapping() (string, error) {
+	const attrName = "MemberOf"
+	const mappingName = "hal: SAML Groups"
+
+	data, _, err := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+mappingName, nil)
+	if err == nil {
+		results, _ := data["results"].([]interface{})
+		for _, r := range results {
+			item, ok := r.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if item["name"] == mappingName {
+				return item["pk"].(string), nil
+			}
+		}
+	}
+
+	created, _, err := c.do("POST", "/api/v3/propertymappings/provider/saml/", map[string]interface{}{
+		"name":          mappingName,
+		"saml_name":     attrName,
+		"friendly_name": attrName,
+		"expression":    `return [group.name for group in request.user.ak_groups.all()]`,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "400") {
+			data2, _, _ := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+mappingName, nil)
+			if item, _ := firstResult(data2); item != nil {
+				return item["pk"].(string), nil
+			}
+		}
+		return "", fmt.Errorf("create SAML groups mapping: %w", err)
+	}
+	return created["pk"].(string), nil
+}
+
+// CreateSAMLProvider creates an Authentik SAML provider for a given SP.
+// acsURL is the SP's ACS URL (e.g. https://tfe.localhost:8443/users/saml/auth).
+// audience is the SP's entity ID / audience URI (e.g. the SP metadata URL).
+// Returns the provider integer PK.
+func (c *AuthentikClient) CreateSAMLProvider(
+	name, authFlowPK, invalidationFlowPK, signingKeyPK, acsURL, audience string,
+	propertyMappingPKs []string,
+) (int, error) {
+	body := map[string]interface{}{
+		"name":               name,
+		"authorization_flow": authFlowPK,
+		"invalidation_flow":  invalidationFlowPK,
+		"acs_url":            acsURL,
+		"audience":           audience,
+		"issuer":             c.baseURL,
+		"sp_binding":         "post",
+		// EmailAddress NameID — TFE can use the attr_username attribute for the
+		// actual username; the NameID is used as a stable session identifier.
+		"name_id_policy":    "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+		"signing_kp":        signingKeyPK,
+		"property_mappings": propertyMappingPKs,
+	}
+	data, _, err := c.do("POST", "/api/v3/providers/saml/", body)
+	if err != nil {
+		if strings.Contains(err.Error(), "400") {
+			// Already exists — look up by name and return existing PK.
+			existing, _, err2 := c.do("GET", "/api/v3/providers/saml/?search="+name, nil)
+			if err2 != nil {
+				return 0, fmt.Errorf("saml provider %q exists but lookup failed: %w", name, err2)
+			}
+			results, _ := existing["results"].([]interface{})
+			for _, r := range results {
+				item, ok := r.(map[string]interface{})
+				if !ok || item["name"] != name {
+					continue
+				}
+				// PATCH to refresh ACS URL and mappings.
+				pkFloat, _ := item["pk"].(float64)
+				pk := int(pkFloat)
+				_, _, _ = c.do("PATCH", fmt.Sprintf("/api/v3/providers/saml/%d/", pk), map[string]interface{}{
+					"acs_url":           acsURL,
+					"audience":          audience,
+					"property_mappings": propertyMappingPKs,
+				})
+				return pk, nil
+			}
+		}
+		return 0, fmt.Errorf("create SAML provider %q: %w", name, err)
+	}
+	pkFloat, _ := data["pk"].(float64)
+	return int(pkFloat), nil
+}
+
+// GetSAMLProviderMetadata fetches the raw IdP SAML metadata XML for a provider.
+func (c *AuthentikClient) GetSAMLProviderMetadata(providerPK int) ([]byte, error) {
+	req, err := http.NewRequest("GET",
+		fmt.Sprintf("%s/api/v3/providers/saml/%d/export_metadata/?download", c.baseURL, providerPK), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("get saml metadata %d → %d: %s", providerPK, resp.StatusCode, string(raw))
+	}
+	return raw, nil
+}
+
+// ParseSAMLMetadata extracts the SSO redirect-binding URL and X509 certificate
+// from a raw SAML IdP metadata XML document.
+func ParseSAMLMetadata(xmlData []byte) (ssoURL, idpCert string, err error) {
+	// Use simple string parsing — avoids an XML library dependency and works
+	// reliably with the stable Authentik metadata format.
+	xmlStr := string(xmlData)
+
+	// Extract SSO redirect binding URL.
+	const redirectMarker = `Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"`
+	idx := strings.Index(xmlStr, redirectMarker)
+	if idx >= 0 {
+		snippet := xmlStr[idx:]
+		locIdx := strings.Index(snippet, `Location="`)
+		if locIdx >= 0 {
+			rest := snippet[locIdx+len(`Location="`):]
+			end := strings.Index(rest, `"`)
+			if end >= 0 {
+				ssoURL = rest[:end]
+			}
+		}
+	}
+
+	// Extract X509Certificate value.
+	const certOpen = "<X509Certificate>"
+	const certClose = "</X509Certificate>"
+	certStart := strings.Index(xmlStr, certOpen)
+	if certStart >= 0 {
+		rest := xmlStr[certStart+len(certOpen):]
+		certEnd := strings.Index(rest, certClose)
+		if certEnd >= 0 {
+			raw := strings.TrimSpace(rest[:certEnd])
+			idpCert = "-----BEGIN CERTIFICATE-----\n" + raw + "\n-----END CERTIFICATE-----"
+		}
+	}
+
+	if ssoURL == "" {
+		return "", "", fmt.Errorf("could not parse SSO redirect URL from SAML metadata")
+	}
+	if idpCert == "" {
+		return "", "", fmt.Errorf("could not parse X509 certificate from SAML metadata")
+	}
+	return ssoURL, idpCert, nil
+}
+
+// DeleteSAMLProviderByName deletes a SAML provider by name. No-op if not found.
+func (c *AuthentikClient) DeleteSAMLProviderByName(name string) error {
+	data, _, err := c.do("GET", "/api/v3/providers/saml/?search="+name, nil)
+	if err != nil {
+		return err
+	}
+	results, _ := data["results"].([]interface{})
+	for _, r := range results {
+		item, ok := r.(map[string]interface{})
+		if !ok || item["name"] != name {
+			continue
+		}
+		pkFloat, _ := item["pk"].(float64)
+		pk := int(pkFloat)
+		_, _, delErr := c.do("DELETE", fmt.Sprintf("/api/v3/providers/saml/%d/", pk), nil)
+		if delErr != nil && strings.Contains(delErr.Error(), "404") {
+			return nil
+		}
+		return delErr
+	}
+	return nil // not found — nothing to do
 }
