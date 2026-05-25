@@ -52,6 +52,7 @@ With `--scim`, also wire Authentik outbound SCIM to provision users and teams in
 - `hal-authentik-pg` — PostgreSQL database
 - `hal-authentik-server` — API + UI at `http://authentik.localhost:9100`
 - `hal-authentik-worker` — Celery background tasks
+- `hal-authentik-saml-proxy` — nginx:alpine port-rewrite proxy at port `9102`; rewrites Authentik's ACS URL in the JSON flow response from portless port 443 to port 8443 so the browser can POST the SAML assertion. Config: `~/.hal/authentik-saml-proxy.conf`.
 
 **Authentik objects** (primary target):
 - Groups: `admins`, `devs`
@@ -63,9 +64,15 @@ With `--scim`, also wire Authentik outbound SCIM to provision users and teams in
 **TFE SAML settings** (via Admin API `PATCH /api/v2/admin/saml-settings`):
 - SAML enabled with Authentik as IdP
 - `attr_username: "Username"`, `attr_groups: "MemberOf"`
-- SSO endpoint and IdP certificate parsed from Authentik SAML metadata
+- SSO endpoint rewritten to port 9102 (through SAML proxy) and IdP certificate parsed from Authentik SAML metadata
 
-**With `--scim`**:
+**TFE teams** (created in the target org, default `hal-org`):
+- `admins` — manage-workspaces, manage-projects, manage-modules, manage-providers
+- `devs` — read-workspaces, read-projects
+
+TFE only adds SSO users to *existing* teams whose names match the `MemberOf` SAML attribute. Teams are pre-created by `provisionTFESAMLTeams` during `saml enable`/`update`.
+
+**With `--scim`** (pending — not yet implemented):
 - TFE SCIM token created via `POST /api/v2/organizations/:org/scim-tokens`
 - Authentik outbound SCIM provider `tfe-scim-provider` targeting `https://hal-tfe-proxy:8443/api/scim/v2`
 - SCIM provider assigned as backchannel on `tfe-saml` application
@@ -75,11 +82,11 @@ With `--scim`, also wire Authentik outbound SCIM to provision users and teams in
 
 | Event | Propagated automatically |
 |-------|--------------------------|
-| User created in Authentik | ✅ Yes |
-| Group created in Authentik | ✅ Yes |
-| User added to / removed from group | ✅ Yes — Authentik 2026.2.3+ |
+| User created in Authentik | ✅ Yes (when `--scim` active) |
+| Group created in Authentik | ✅ Yes (when `--scim` active) |
+| User added to / removed from group | ✅ Yes — Authentik 2026.2.3+ (when `--scim` active) |
 
-TFE auto-creates teams from SCIM group names. No manual team setup needed when `--scim` is active.
+> `--scim` is pending implementation. Without it, TFE teams `admins` and `devs` are pre-created by `hal tf saml enable` with org-level access. SSO users land in the correct team automatically on first login via SAML group mapping.
 
 ## Side Effects
 - Creates/removes containers `hal-authentik-pg`, `hal-authentik-server`, `hal-authentik-worker`.

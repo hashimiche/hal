@@ -245,6 +245,8 @@ This re-activates the SCIM flag, recreates the SCIM client + provider, and trigg
 
 Shares the same Authentik stack via `AuthentikSharedServiceKey`. The Authentik stack is started if not already running and is only torn down when no consumers remain.
 
+**Port 443 constraint**: TFE's ACS URL is always portless (`https://tfe.localhost/users/saml/auth`, port 443). macOS/Podman rootless cannot bind port 443 without root. An nginx proxy container `hal-authentik-saml-proxy` (port 9102) sits in front of Authentik and rewrites the ACS URL in Authentik's JSON flow-executor response (`sub_filter_types *`) from portless to `:8443` before the browser sees it. No host modifications required (no pfctl, no /etc/hosts).
+
 ### User-Facing Commands
 
 ```bash
@@ -278,10 +280,10 @@ Flags:
 
 ### URLs (defaults)
 
-| Target | TFE base URL | ACS URL | SCIM endpoint (container-to-container) |
-|--------|-------------|---------|----------------------------------------|
-| primary | `https://tfe.localhost:8443` | `.../users/saml/auth` | `https://hal-tfe-proxy:8443/api/scim/v2` |
-| twin | `https://tfe-bis.localhost:9443` | `.../users/saml/auth` | `https://hal-tfe-bis-proxy:9443/api/scim/v2` |
+| Target | TFE base URL | ACS URL (portless, TFE_HOSTNAME) | SSO URL (through proxy) | SCIM endpoint (container-to-container) |
+|--------|-------------|----------------------------------|-------------------------|----------------------------------------|
+| primary | `https://tfe.localhost:8443` | `https://tfe.localhost/users/saml/auth` | `http://authentik.localhost:9102/…/sso/binding/redirect/` | `https://hal-tfe-proxy:8443/api/scim/v2` |
+| twin | `https://tfe-bis.localhost:9443` | `https://tfe-bis.localhost/users/saml/auth` | `http://authentik.localhost:9102/…/sso/binding/redirect/` | `https://hal-tfe-bis-proxy:9443/api/scim/v2` |
 
 ### What Gets Provisioned in Authentik
 
@@ -293,10 +295,21 @@ Flags:
 | User | `bob / password` → group `devs` |
 | SAML property mapping | `hal: SAML Username` (attribute: `Username`, expr: `request.user.username`) |
 | SAML property mapping | `hal: SAML Groups` (attribute: `MemberOf`, expr: group names list) |
-| SAML provider | `tfe-saml-provider` (ACS URL, audience, implicit-consent flow, signing key) |
+| SAML provider | `tfe-saml-provider` (ACS URL portless, audience portless, implicit-consent flow, signing key, `sign_assertion: true`) |
 | Application | slug `tfe-saml`, launch URL: TFE base URL |
+| Container | `hal-authentik-saml-proxy` — nginx:alpine, port 9102, rewrites ACS URL in JSON responses |
 
 For twin target: provider name `tfe-bis-saml-provider`, slug `tfe-bis-saml`.
+
+### What Gets Created in TFE
+
+| Object | Value |
+|--------|-------|
+| SAML settings | enabled, IdP cert, SSO/SLO endpoints, attr mappings |
+| Team `admins` | org-level manage-workspaces/projects/modules/providers in `hal-org` |
+| Team `devs` | org-level read-workspaces/projects in `hal-org` |
+
+TFE does not auto-create teams from SAML group names. `provisionTFESAMLTeams` pre-creates them during `saml enable`/`update`.
 
 ### What Gets Configured in TFE
 
@@ -305,14 +318,14 @@ Via `PATCH /api/v2/admin/saml-settings`:
 |-------|-------|
 | `enabled` | `true` |
 | `idp_cert` | X509 certificate from Authentik SAML metadata |
-| `sso_endpoint_url` | Authentik SSO redirect-binding URL (parsed from metadata) |
+| `sso_endpoint_url` | Authentik SSO redirect-binding URL rewritten to port 9102 (through SAML proxy) |
 | `slo_endpoint_url` | Authentik SLO post-binding URL (derived from SSO URL) |
 | `attr_username` | `Username` |
 | `attr_groups` | `MemberOf` |
 | `attr_site_admin` | `SiteAdminRole` |
 | `site_admin_role` | `site-admins` |
 
-### SCIM (`--scim`)
+### SCIM (`--scim`) — pending, next session
 
 1. Creates a TFE org-scoped SCIM token via `POST /api/v2/organizations/:org/scim-tokens`.
 2. Configures Authentik outbound SCIM provider `tfe-scim-provider` pointing to  
@@ -320,7 +333,11 @@ Via `PATCH /api/v2/admin/saml-settings`:
 3. Assigns SCIM provider as backchannel on the `tfe-saml` application.
 4. Runs `syncTFESCIMObjects` (users first, then groups) for initial consistency.
 
-TFE auto-creates teams from SCIM group pushes. Group membership changes in Authentik propagate automatically (Authentik 2026.2.3+).
+Without `--scim`, teams `admins` and `devs` are pre-created in the target org by `provisionTFESAMLTeams` with org-level access. SSO users are added to their matching team automatically on first login via SAML `MemberOf` attribute.
+
+With `--scim` (once implemented), Authentik owns team creation and membership. New groups pushed by SCIM land as teams with no permissions — workspace/project access must still be assigned manually.
+
+Group membership changes in Authentik propagate automatically (Authentik 2026.2.3+).
 
 ### Shared Service Registration
 
@@ -333,7 +350,8 @@ Consumer keys: `"tfe-saml"` (primary), `"tfe-bis-saml"` (twin).
 |------|------|
 | `cmd/terraform/saml.go` | `hal tf saml` command — enable/disable/update/status flows |
 | `cmd/terraform/saml_scim.go` | TFE SCIM token creation + Authentik SCIM provider management |
-| `internal/integrations/authentik.go` | Shared Authentik stack lifecycle + REST API (SAML methods appended) |
+| `internal/integrations/authentik.go` | Shared Authentik stack lifecycle + REST API (SAML/proxy methods appended) |
+| `~/.hal/authentik-saml-proxy.conf` | nginx config for `hal-authentik-saml-proxy` (written on `saml enable`) |
 
 ---
 
