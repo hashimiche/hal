@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,6 +35,18 @@ const (
 
 	// Shared-services key used in ~/.hal/shared-services.json
 	AuthentikSharedServiceKey = "authentik-idp"
+
+	// AuthentikSAMLProxyContainer is the nginx container that rewrites TFE SAML
+	// form action URLs from portless HTTPS (port 443) to the accessible TFE proxy
+	// port before the browser receives the assertion. Required on macOS/Podman
+	// where binding port 443 is not possible without root.
+	AuthentikSAMLProxyContainer = "hal-authentik-saml-proxy"
+
+	// AuthentikSAMLProxyPort is the HTTP port the SAML proxy listens on. TFE's
+	// sso_endpoint_url is directed here instead of directly to Authentik (9100).
+	// The proxy rewrites the SAML response form action and routes all TFE SAML
+	// SSO traffic, keeping the full authentication flow within the proxy.
+	AuthentikSAMLProxyPort = "9102"
 )
 
 // AuthentikSecrets holds the secrets loaded from / generated into ~/.hal/authentik/env.
@@ -57,6 +70,13 @@ func AuthentikAdminURL() string {
 // Vault must use this URL for both oidc_discovery_url and callback validation.
 func AuthentikOIDCIssuer(slug string) string {
 	return fmt.Sprintf("http://authentik.localhost:%s/application/o/%s/", AuthentikHTTPPort, slug)
+}
+
+// AuthentikSAMLProxyURL returns the base URL of the nginx SAML proxy used for
+// TFE SAML SSO flows. TFE's sso_endpoint_url is directed here so form action
+// URLs in Authentik's SAML response are rewritten before the browser receives them.
+func AuthentikSAMLProxyURL() string {
+	return fmt.Sprintf("http://authentik.localhost:%s", AuthentikSAMLProxyPort)
 }
 
 // authentikDir returns ~/.hal/authentik.
@@ -384,7 +404,103 @@ func WaitAuthentikScopesReady(token string) error {
 
 // StopAuthentikStack stops and removes all Authentik containers.
 // If removeVolumes is true, the named volume hal-authentik-db is also removed.
+// StartAuthentikSAMLProxy starts (or re-creates) a thin nginx container that
+// rewrites TFE SAML ACS form action URLs in Authentik's HTML responses.
+//
+// Background: TFE derives its ACS URL from TFE_HOSTNAME which has no port, so
+// the ACS URL is always https://tfe.localhost/users/saml/auth (port 443).
+// On macOS/Podman, port 443 cannot be bound without root, so the browser cannot
+// POST the SAML assertion there. This proxy intercepts the Authentik SAML
+// response page before it reaches the browser and rewrites the form action to
+// use the accessible TFE nginx proxy port (8443 for primary, 9443 for twin).
+//
+// All TFE SAML SSO traffic is routed through port 9102 (this proxy) instead of
+// directly to Authentik at 9100. The proxy sets Host: authentik.localhost:9102
+// so Authentik generates redirect URLs that stay within the proxy for the entire
+// authentication flow — no host modifications, no pfctl, no sudo required.
+func StartAuthentikSAMLProxy(engine string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("could not determine home directory: %w", err)
+	}
+
+	confPath := filepath.Join(home, ".hal", "authentik-saml-proxy.conf")
+
+	// nginx's $variable syntax is preserved — Go's Sprintf only processes %.
+	nginxConf := fmt.Sprintf(`events {}
+http {
+    server {
+        listen %s;
+        server_name authentik.localhost;
+
+        location / {
+            proxy_pass http://%s:%s;
+
+            # Tell Authentik its base URL is port %s so all generated redirects
+            # stay in this proxy for the entire SAML authentication flow.
+            proxy_set_header Host              authentik.localhost:%s;
+            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto http;
+
+            # Disable gzip so sub_filter can scan response bodies.
+            proxy_set_header Accept-Encoding "";
+
+            # Buffer all responses; ignore upstream no-buffering hint.
+            proxy_buffering on;
+            proxy_ignore_headers X-Accel-Buffering;
+
+            # Apply to all content types: Authentik 2026 delivers the SAML
+            # assertion via ak-stage-autosubmit in a JSON flow-executor response
+            # (application/json), not a raw HTML form. Using * covers both JSON
+            # and any legacy HTML fallback.
+            sub_filter_types *;
+            sub_filter_once  off;
+            sub_filter 'https://tfe.localhost/users/saml/auth'
+                       'https://tfe.localhost:8443/users/saml/auth';
+            sub_filter 'https://tfe-bis.localhost/users/saml/auth'
+                       'https://tfe-bis.localhost:9443/users/saml/auth';
+        }
+    }
+}`,
+		AuthentikSAMLProxyPort,                      // %s 1: listen port
+		AuthentikServerContainer, AuthentikHTTPPort, // %s 2,3: proxy_pass target
+		AuthentikSAMLProxyPort, // %s 4: comment
+		AuthentikSAMLProxyPort, // %s 5: Host header port
+	)
+
+	if err := os.WriteFile(confPath, []byte(nginxConf), 0o644); err != nil {
+		return fmt.Errorf("failed to write SAML proxy config: %w", err)
+	}
+
+	// Remove any stale container before re-creating.
+	_ = exec.Command(engine, "rm", "-f", AuthentikSAMLProxyContainer).Run()
+
+	args := []string{
+		"run", "-d",
+		"--name", AuthentikSAMLProxyContainer,
+		"--network", global.HalNetName,
+		"--restart", "unless-stopped",
+		"-p", fmt.Sprintf("%s:%s", AuthentikSAMLProxyPort, AuthentikSAMLProxyPort),
+		"-v", fmt.Sprintf("%s:/etc/nginx/nginx.conf:ro", confPath),
+		"docker.io/library/nginx:alpine",
+	}
+
+	if out, err := exec.Command(engine, args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to start Authentik SAML proxy: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+
+	return nil
+}
+
+// StopAuthentikSAMLProxy stops and removes the Authentik SAML proxy container.
+// A no-op if the container is not running.
+func StopAuthentikSAMLProxy(engine string) {
+	_ = exec.Command(engine, "rm", "-f", AuthentikSAMLProxyContainer).Run()
+}
+
 func StopAuthentikStack(engine string, removeVolumes bool) error {
+	// Always stop the SAML proxy alongside the Authentik stack.
+	StopAuthentikSAMLProxy(engine)
 	for _, name := range []string{AuthentikWorkerContainer, AuthentikServerContainer, AuthentikPGContainer} {
 		_ = exec.Command(engine, "rm", "-f", name).Run()
 	}
@@ -1194,7 +1310,7 @@ func (c *AuthentikClient) GetOrCreateSAMLUsernameMapping() (string, error) {
 	const attrName = "Username"
 	const mappingName = "hal: SAML Username"
 
-	data, _, err := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+mappingName, nil)
+	data, _, err := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+url.QueryEscape(mappingName), nil)
 	if err == nil {
 		results, _ := data["results"].([]interface{})
 		for _, r := range results {
@@ -1209,15 +1325,15 @@ func (c *AuthentikClient) GetOrCreateSAMLUsernameMapping() (string, error) {
 	}
 
 	created, _, err := c.do("POST", "/api/v3/propertymappings/provider/saml/", map[string]interface{}{
-		"name":           mappingName,
-		"saml_name":      attrName,
-		"friendly_name":  attrName,
-		"expression":     "return request.user.username",
+		"name":          mappingName,
+		"saml_name":     attrName,
+		"friendly_name": attrName,
+		"expression":    "return request.user.username",
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "400") {
-			// Already exists under a different search — retry lookup
-			data2, _, _ := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+mappingName, nil)
+			// Already exists — retry lookup with encoded search
+			data2, _, _ := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+url.QueryEscape(mappingName), nil)
 			if item, _ := firstResult(data2); item != nil {
 				return item["pk"].(string), nil
 			}
@@ -1234,7 +1350,7 @@ func (c *AuthentikClient) GetOrCreateSAMLGroupsMapping() (string, error) {
 	const attrName = "MemberOf"
 	const mappingName = "hal: SAML Groups"
 
-	data, _, err := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+mappingName, nil)
+	data, _, err := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+url.QueryEscape(mappingName), nil)
 	if err == nil {
 		results, _ := data["results"].([]interface{})
 		for _, r := range results {
@@ -1256,7 +1372,8 @@ func (c *AuthentikClient) GetOrCreateSAMLGroupsMapping() (string, error) {
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "400") {
-			data2, _, _ := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+mappingName, nil)
+			// Already exists — retry lookup with encoded search
+			data2, _, _ := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+url.QueryEscape(mappingName), nil)
 			if item, _ := firstResult(data2); item != nil {
 				return item["pk"].(string), nil
 			}
@@ -1286,6 +1403,7 @@ func (c *AuthentikClient) CreateSAMLProvider(
 		// actual username; the NameID is used as a stable session identifier.
 		"name_id_policy":    "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
 		"signing_kp":        signingKeyPK,
+		"sign_assertion":    true,
 		"property_mappings": propertyMappingPKs,
 	}
 	data, _, err := c.do("POST", "/api/v3/providers/saml/", body)
@@ -1320,9 +1438,11 @@ func (c *AuthentikClient) CreateSAMLProvider(
 }
 
 // GetSAMLProviderMetadata fetches the raw IdP SAML metadata XML for a provider.
+// Authentik 2026.x renamed export_metadata → metadata; ?download=true returns
+// raw XML instead of the default JSON wrapper {"metadata": "<xml>..."}}.
 func (c *AuthentikClient) GetSAMLProviderMetadata(providerPK int) ([]byte, error) {
 	req, err := http.NewRequest("GET",
-		fmt.Sprintf("%s/api/v3/providers/saml/%d/export_metadata/?download", c.baseURL, providerPK), nil)
+		fmt.Sprintf("%s/api/v3/providers/saml/%d/metadata/?download=true", c.baseURL, providerPK), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1346,32 +1466,57 @@ func ParseSAMLMetadata(xmlData []byte) (ssoURL, idpCert string, err error) {
 	// reliably with the stable Authentik metadata format.
 	xmlStr := string(xmlData)
 
-	// Extract SSO redirect binding URL.
-	const redirectMarker = `Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"`
-	idx := strings.Index(xmlStr, redirectMarker)
-	if idx >= 0 {
-		snippet := xmlStr[idx:]
-		locIdx := strings.Index(snippet, `Location="`)
-		if locIdx >= 0 {
-			rest := snippet[locIdx+len(`Location="`):]
-			end := strings.Index(rest, `"`)
-			if end >= 0 {
-				ssoURL = rest[:end]
-			}
+	// Extract SSO redirect binding URL from SingleSignOnService elements only.
+	// (SLO elements also use HTTP-Redirect and appear first — must skip them.)
+	const ssoTag = "SingleSignOnService"
+	const redirectBinding = `urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect`
+	for search := xmlStr; ; {
+		ssoIdx := strings.Index(search, ssoTag)
+		if ssoIdx < 0 {
+			break
 		}
+		endIdx := strings.Index(search[ssoIdx:], "/>")
+		if endIdx < 0 {
+			break
+		}
+		element := search[ssoIdx : ssoIdx+endIdx+2]
+		if strings.Contains(element, redirectBinding) {
+			if locIdx := strings.Index(element, `Location="`); locIdx >= 0 {
+				rest := element[locIdx+len(`Location="`):]
+				if end := strings.Index(rest, `"`); end >= 0 {
+					ssoURL = rest[:end]
+				}
+			}
+			break
+		}
+		search = search[ssoIdx+1:]
 	}
 
-	// Extract X509Certificate value.
-	const certOpen = "<X509Certificate>"
-	const certClose = "</X509Certificate>"
-	certStart := strings.Index(xmlStr, certOpen)
-	if certStart >= 0 {
-		rest := xmlStr[certStart+len(certOpen):]
-		certEnd := strings.Index(rest, certClose)
-		if certEnd >= 0 {
-			raw := strings.TrimSpace(rest[:certEnd])
-			idpCert = "-----BEGIN CERTIFICATE-----\n" + raw + "\n-----END CERTIFICATE-----"
+	// Extract X509Certificate content. There are multiple elements with this
+	// tag name (ds:Signature block + IDPSSODescriptor KeyDescriptor). We scan
+	// ALL occurrences of the suffix and keep the last one that has non-empty
+	// base64 content between the tag and the next '<'. Closing tags like
+	// </ds:X509Certificate> also contain "X509Certificate>" but the content
+	// immediately after their '>' is the next XML element, so TrimSpace returns
+	// "" and they are skipped.
+	const certSuffix = "X509Certificate>"
+	raw := ""
+	for search := xmlStr; ; {
+		certPos := strings.Index(search, certSuffix)
+		if certPos < 0 {
+			break
 		}
+		rest := search[certPos+len(certSuffix):]
+		certEnd := strings.Index(rest, "<")
+		if certEnd >= 0 {
+			if candidate := strings.TrimSpace(rest[:certEnd]); candidate != "" {
+				raw = candidate
+			}
+		}
+		search = search[certPos+1:]
+	}
+	if raw != "" {
+		idpCert = "-----BEGIN CERTIFICATE-----\n" + raw + "\n-----END CERTIFICATE-----"
 	}
 
 	if ssoURL == "" {

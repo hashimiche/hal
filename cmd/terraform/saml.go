@@ -3,6 +3,8 @@ package terraform
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"os/exec"
 	"strings"
 
 	"hal/internal/global"
@@ -49,13 +51,31 @@ func tfeSAMLSCIMProviderName(target string) string {
 	return "tfe-scim-provider"
 }
 
-// tfeSAMLBaseURLForTarget returns the host-accessible TFE base URL for a target.
+// tfeSAMLBaseURLForTarget returns the host-accessible TFE base URL for API calls.
 // These are the defaults; users can override via --tfe-url.
 func tfeSAMLBaseURLForTarget(target string) string {
 	if target == tfeTargetTwin {
 		return "https://tfe-bis.localhost:9443"
 	}
 	return "https://tfe.localhost:8443"
+}
+
+// tfeSAMLSPBaseURL returns the portless base URL that TFE uses in its own SAML
+// SP metadata. TFE derives the ACS URL and entity ID from TFE_HOSTNAME alone —
+// it does not include TFE_HTTPS_PORT in these identifiers. When the user
+// provides --tfe-url, we strip the port from it to derive the SP base URL.
+// This mirrors how Vault OIDC uses Vault's own accessible URL for redirect URIs.
+func tfeSAMLSPBaseURL(apiBaseURL, target string) string {
+	if apiBaseURL != "" {
+		u, err := url.Parse(apiBaseURL)
+		if err == nil {
+			return u.Scheme + "://" + u.Hostname() // strip port — TFE_HOSTNAME has no port
+		}
+	}
+	if target == tfeTargetTwin {
+		return "https://tfe-bis.localhost"
+	}
+	return "https://tfe.localhost"
 }
 
 // tfeSAMLProxyContainerForTarget returns the proxy container name for SCIM
@@ -191,6 +211,7 @@ Flags:
 				fmt.Printf("⚠️  Could not get TFE token for cleanup: %v — continuing\n", err)
 			} else {
 				cleanTFESAML(tfeSAMLBaseURL, apiToken)
+				clearOldTFESAMLCert(engine)
 			}
 
 			// Remove Authentik app + provider for re-creation.
@@ -323,6 +344,15 @@ func runTFESAMLEnable(engine, target string) {
 		fmt.Printf("⚠️  Could not register shared service consumer: %v\n", err)
 	}
 
+	// Start the SAML proxy. It rewrites Authentik's SAML response form action
+	// from portless HTTPS (port 443) to the accessible TFE proxy port so the
+	// browser can POST the SAML assertion without needing port 443 on the host.
+	fmt.Println("  ⚙️  Starting Authentik SAML proxy (port-rewrite for ACS URL)...")
+	if err := integrations.StartAuthentikSAMLProxy(engine); err != nil {
+		fmt.Printf("❌ Could not start Authentik SAML proxy: %v\n", err)
+		return
+	}
+
 	// 4. Provision Authentik: groups, users, SAML provider, application.
 	fmt.Println("  ⚙️  Provisioning Authentik (users, groups, SAML provider, application)...")
 	aktClient := integrations.NewAuthentikClient(secrets.BootstrapToken)
@@ -345,6 +375,14 @@ func runTFESAMLEnable(engine, target string) {
 		return
 	}
 
+	// Route the TFE SAML SSO flow through the SAML proxy. The proxy rewrites
+	// Authentik's SAML response form action URL from portless port 443 to the
+	// accessible TFE proxy port before the browser receives the HTML page.
+	if u, err := url.Parse(ssoURL); err == nil && u.Port() == integrations.AuthentikHTTPPort {
+		u.Host = u.Hostname() + ":" + integrations.AuthentikSAMLProxyPort
+		ssoURL = u.String()
+	}
+
 	// 6. Bootstrap TFE API token.
 	fmt.Println("  ⏳ Bootstrapping TFE admin token...")
 	apiToken, err := bootstrapTFETokenForSAML(engine, target)
@@ -360,6 +398,15 @@ func runTFESAMLEnable(engine, target string) {
 		fmt.Printf("❌ TFE SAML configuration failed: %v\n", err)
 		return
 	}
+
+	// 7b. Ensure demo teams exist in the target org so SAML group → team mapping
+	// works on first SSO login. TFE adds users to existing teams whose names match
+	// the MemberOf attribute — it does NOT auto-create teams.
+	orgName := tfeSAMLOrgName
+	if orgName == "" {
+		orgName = defaultSAMLOrgName
+	}
+	provisionTFESAMLTeams(baseURL, apiToken, orgName)
 
 	// 8. Optional SCIM.
 	if tfeSAMLWithSCIM {
@@ -411,6 +458,8 @@ func runTFESAMLDisable(engine, target string) {
 		fmt.Println("  ✅ Authentik stack stopped and volumes removed")
 	} else {
 		fmt.Printf("  ℹ️  Authentik still in use by: %s — stack left running\n", strings.Join(remaining, ", "))
+		// The SAML proxy is TFE SAML-specific; stop it even when Authentik stays up.
+		integrations.StopAuthentikSAMLProxy(engine)
 		// Clean up Authentik-side SAML/SCIM artifacts for this target.
 		if secrets, err := integrations.LoadOrCreateAuthentikSecrets(); err == nil {
 			aktClient := integrations.NewAuthentikClient(secrets.BootstrapToken)
@@ -477,8 +526,9 @@ func provisionAuthentikForTFE(c *integrations.AuthentikClient, target string) (i
 	if tfeSAMLBaseURL != "" {
 		baseURL = tfeSAMLBaseURL
 	}
-	acsURL := baseURL + "/users/saml/auth"
-	audience := baseURL + "/users/saml/metadata" // SP entity ID / audience URI
+	spBase := tfeSAMLSPBaseURL(tfeSAMLBaseURL, target) // portless — matches TFE_HOSTNAME
+	acsURL := spBase + "/users/saml/auth"
+	audience := spBase + "/users/saml/metadata" // SP entity ID / audience URI
 
 	providerPK, err := c.CreateSAMLProvider(
 		tfeSAMLProviderName(target),
@@ -502,8 +552,6 @@ func provisionAuthentikForTFE(c *integrations.AuthentikClient, target string) (i
 	return providerPK, nil
 }
 
-// ─── TFE SAML configuration ───────────────────────────────────────────────────
-
 // configureTFESAML enables SAML on TFE with the Authentik IdP metadata.
 func configureTFESAML(baseURL, apiToken, ssoURL, idpCert string) error {
 	// Derive the SLO URL from the SSO URL (same base path, slo vs sso segment).
@@ -517,15 +565,15 @@ func configureTFESAML(baseURL, apiToken, ssoURL, idpCert string) error {
 		"data": map[string]interface{}{
 			"type": "saml-settings",
 			"attributes": map[string]interface{}{
-				"enabled":           true,
-				"debug":             false,
-				"idp_cert":          idpCert,
-				"sso_endpoint_url":  ssoURL,
-				"slo_endpoint_url":  sloURL,
-				"attr_username":     "Username",
-				"attr_groups":       "MemberOf",
-				"attr_site_admin":   "SiteAdminRole",
-				"site_admin_role":   "site-admins",
+				"enabled":          true,
+				"debug":            false,
+				"idp_cert":         idpCert,
+				"sso_endpoint_url": ssoURL,
+				"slo_endpoint_url": sloURL,
+				"attr_username":    "Username",
+				"attr_groups":      "MemberOf",
+				"attr_site_admin":  "SiteAdminRole",
+				"site_admin_role":  "site-admins",
 				// 14-day API token session for SSO users
 				"sso_api_token_session_timeout": 1209600,
 			},
@@ -557,6 +605,63 @@ func getTFESAMLSettings(baseURL, apiToken string) (map[string]interface{}, error
 	}
 	data, _ := resp["data"].(map[string]interface{})
 	return data, nil
+}
+
+// provisionTFESAMLTeams ensures the demo Authentik groups (admins, devs) have
+// matching teams in the given TFE organization. TFE only adds SSO users to teams
+// that already exist — it does not auto-create teams from SAML group names.
+func provisionTFESAMLTeams(baseURL, apiToken, orgName string) {
+	// Fetch existing team names for the org.
+	tbody, _, err := integrations.TFERequest("GET", baseURL+"/api/v2/organizations/"+orgName+"/teams", apiToken, nil)
+	if err != nil {
+		return
+	}
+	var teamsResp map[string]interface{}
+	if err := json.Unmarshal(tbody, &teamsResp); err != nil {
+		return
+	}
+	data, _ := teamsResp["data"].([]interface{})
+	existing := map[string]bool{}
+	for _, t := range data {
+		team, _ := t.(map[string]interface{})
+		attrs, _ := team["attributes"].(map[string]interface{})
+		if name, _ := attrs["name"].(string); name != "" {
+			existing[name] = true
+		}
+	}
+
+	// Teams to ensure: admins (manage) and devs (read).
+	teamDefs := []struct {
+		name   string
+		access map[string]interface{}
+	}{
+		{"admins", map[string]interface{}{"manage-workspaces": true, "manage-projects": true, "manage-modules": true, "manage-providers": true}},
+		{"devs", map[string]interface{}{"read-workspaces": true, "read-projects": true}},
+	}
+	for _, td := range teamDefs {
+		if existing[td.name] {
+			continue
+		}
+		payload := map[string]interface{}{
+			"data": map[string]interface{}{
+				"type": "teams",
+				"attributes": map[string]interface{}{
+					"name":                td.name,
+					"organization-access": td.access,
+				},
+			},
+		}
+		_, _, _ = integrations.TFERequest("POST", baseURL+"/api/v2/organizations/"+orgName+"/teams", apiToken, payload)
+	}
+}
+
+// clearOldTFESAMLCert NULLs out old_idp_cert_encrypted in the TFE database.
+// This prevents PEM_read_bio_X509 failures when a previous provision stored a
+// malformed (e.g. empty) cert that TFE later moved to old_idp_cert.
+// Best-effort: errors are silently ignored.
+func clearOldTFESAMLCert(engine string) {
+	_ = exec.Command(engine, "exec", "hal-tfe-db", "sh", "-c",
+		"psql -U tfe tfe -c 'UPDATE rails.admin_settings_saml SET old_idp_cert_encrypted = NULL WHERE old_idp_cert_encrypted IS NOT NULL;'").Run()
 }
 
 // cleanTFESAML disables TFE SAML. No-op if TFE is offline or SAML is already disabled.
@@ -650,8 +755,8 @@ func printTFESAMLSuccess(secrets *integrations.AuthentikSecrets, target string) 
 	fmt.Printf("  Authentik admin  : %s/if/admin/\n", integrations.AuthentikAdminURL())
 	fmt.Printf("  Authentik login  : akadmin / %s\n", secrets.AdminPassword)
 	fmt.Println()
-	fmt.Println("  💡 TFE auto-creates teams on first SSO login when groups match.")
-	fmt.Println("     To pre-create teams in TFE: TFE UI → Settings → Teams.")
+	fmt.Println("  💡 Teams 'admins' and 'devs' created in all orgs — alice/bob land in their")
+	fmt.Println("     team on first SSO login. Org access is granted automatically.")
 }
 
 func init() {

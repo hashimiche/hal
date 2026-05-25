@@ -518,7 +518,7 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	cmd.Flags().StringVar(&tfeProxyNginxTag, "tfe-proxy-tag", "alpine", "Nginx image tag for the TFE ingress proxy")
 	cmd.Flags().StringVar(&tfeProxyImage, "tfe-proxy-image", "nginx", "Nginx image name for the TFE ingress proxy")
 	cmd.Flags().StringVarP(&tfePassword, "password", "p", "hal-secret-encryption-password", "TFE Encryption Password")
-	cmd.Flags().StringVar(&deployTFEOrg, "tfe-org", "hal", "Terraform Enterprise organization name to auto-bootstrap during deploy")
+	cmd.Flags().StringVar(&deployTFEOrg, "tfe-org", "hal-org", "Terraform Enterprise organization name to auto-bootstrap during deploy")
 	cmd.Flags().StringVar(&deployTFEProject, "tfe-project", "Dave", "Terraform Enterprise project name to auto-bootstrap during deploy")
 	cmd.Flags().StringVar(&deployTFEAdminUser, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
 	cmd.Flags().StringVar(&deployTFEAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")

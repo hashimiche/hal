@@ -287,6 +287,13 @@ hal terraform agent disable
 hal terraform workspace enable
 hal terraform workspace update
 hal terraform workspace disable
+
+# SAML SSO via Authentik IdP
+hal terraform saml enable               # deploy Authentik + configure TFE SAML
+hal terraform saml enable --target twin # configure SAML for the twin TFE instance
+hal terraform saml update               # re-provision (new cert, config drift)
+hal terraform saml status               # show IdP + TFE SAML health
+hal terraform saml disable              # tear down SAML; stop Authentik if unused
 ```
 
 **Observability** (`--target primary | twin | both`)
