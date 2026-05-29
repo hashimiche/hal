@@ -136,6 +136,11 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
+			"name":        "get_tfe_vcs_workflow_status",
+			"description": "Return Terraform VCS-driven workflow readiness: shared GitLab + TFE workspace wiring, endpoints, lab credentials, and the manual push trigger.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
 			"name":        "get_k8s_integration_status",
 			"description": "Return Vault Kubernetes integration readiness including VSO/CSI checks.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
@@ -265,6 +270,12 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 			return opErrorForTool("get_tfe_api_workflow_status", codeParseError, err.Error(), nil, []string{"hal terraform api-workflow"}, nil, nil, nil), true
 		}
 		return handleTFECLIStatus(), true
+
+	case "get_tfe_vcs_workflow_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_tfe_vcs_workflow_status", codeParseError, err.Error(), nil, []string{"hal terraform vcs-workflow"}, nil, nil, nil), true
+		}
+		return handleTFEVCSWorkflowStatus(), true
 
 	case "get_k8s_integration_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
@@ -1068,4 +1079,99 @@ func handleTFECLIStatus() mcpToolCallResult {
 		return opErrorForTool("get_tfe_cli_status", codeNotDeployed, "tfe api helper is not ready; run hal terraform api-workflow", data, []string{"hal terraform api-workflow", "hal tf api-workflow enable"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
 	}
 	return opSuccessForTool("get_tfe_cli_status", "tfe api helper status collected", data, []string{"hal terraform api-workflow", "hal tf api-workflow enable"}, checks, nil, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+}
+
+// handleTFEVCSWorkflowStatus reports readiness of the Terraform VCS-driven workflow
+// (shared GitLab + TFE workspace wiring) plus the endpoints, lab credentials, and the
+// manual push trigger the user needs. v1 covers the primary target only; values reflect
+// hal defaults unless overridden at `hal terraform vcs-workflow enable` time.
+func handleTFEVCSWorkflowStatus() mcpToolCallResult {
+	docs := []string{
+		"https://developer.hashicorp.com/terraform/enterprise/workspaces/settings/vcs",
+		"https://developer.hashicorp.com/terraform/tutorials/automation/git-patterns",
+	}
+	recommended := []string{"hal terraform vcs-workflow status", "hal terraform vcs-workflow enable"}
+
+	engine, product, err := terraformRuntimeState()
+	if err != nil {
+		return opErrorForTool("get_tfe_vcs_workflow_status", codeTimeout, err.Error(), nil, []string{"hal status", "hal terraform status"}, []opCheck{{Name: "terraform_runtime", Status: "error", Details: "unable to resolve runtime state"}}, nil, docs)
+	}
+
+	state, _ := product["state"].(string)
+	reason, _ := product["reason"].(string)
+	tfeRunning := strings.EqualFold(strings.TrimSpace(state), "running")
+	gitlabRunning := global.IsContainerRunning(engine, "hal-gitlab")
+
+	homeDir, _ := os.UserHomeDir()
+	tokenPath := filepath.Join(homeDir, ".hal", "tfe-app-api-token")
+	_, tokenErr := os.Stat(tokenPath)
+	tokenReady := tokenErr == nil
+
+	// Canonical hal defaults for the primary VCS workflow (see vcs-workflow.go
+	// configureWorkspaceTargetDefaults). Centralized here so HAL Plus reads them
+	// from one authoritative place instead of duplicating them in its graph.
+	const (
+		tfeBase      = "https://tfe.localhost:8443"
+		tfeOrg       = "hal"
+		tfeProject   = "Dave"
+		tfeWorkspace = "tfe-agent-demo"
+		vcsBranch    = "main"
+		gitlabHost   = "http://127.0.0.1:8080"
+		gitlabRepo   = "root/tfe-agent-demo"
+	)
+	workspaceURL := fmt.Sprintf("%s/app/organizations/%s/workspaces/%s", tfeBase, tfeOrg, tfeWorkspace)
+	runsURL := workspaceURL + "/runs"
+	gitlabWebURL := fmt.Sprintf("%s/%s", gitlabHost, gitlabRepo)
+	ready := tfeRunning && gitlabRunning && tokenReady
+
+	checks := []opCheck{
+		{Name: "terraform_runtime", Status: checkStatusFromState(state), Details: reason},
+		{Name: "shared_gitlab", Status: checkStatusFromState(global.BoolState(gitlabRunning)), Details: "hal-gitlab container availability"},
+		{Name: "tfe_foundation_token", Status: checkStatusFromState(global.BoolState(tokenReady)), Details: tokenPath},
+	}
+
+	data := map[string]interface{}{
+		"target": "primary",
+		"gitlab": map[string]interface{}{
+			"running":        gitlabRunning,
+			"url":            gitlabHost,
+			"project_path":   gitlabRepo,
+			"web_url":        gitlabWebURL,
+			"default_branch": vcsBranch,
+			"seeded_files":   []string{"main.tf", ".gitlab-ci.yml"},
+		},
+		"tfe": map[string]interface{}{
+			"running":       tfeRunning,
+			"org":           tfeOrg,
+			"project":       tfeProject,
+			"workspace":     tfeWorkspace,
+			"workspace_url": workspaceURL,
+			"runs_url":      runsURL,
+			"auto_apply":    true,
+			"branch":        vcsBranch,
+		},
+		// lab_credentials are non-secret demo values already printed by the CLI
+		// and are intentionally surfaced here (lab-scoped, redaction-exempt).
+		"lab_credentials": map[string]interface{}{
+			"gitlab":    map[string]string{"username": "root", "password": "hal9000FTW"},
+			"tfe_admin": map[string]string{"username": "haladmin", "password": "hal9000FTW"},
+		},
+		"ready": ready,
+		"notes": "Values reflect hal defaults; flags at 'hal terraform vcs-workflow enable' can override them. Twin target is not surfaced by this tool in v1.",
+	}
+
+	if !tfeRunning {
+		return opErrorForTool("get_tfe_vcs_workflow_status", runtimeCodeFromState(state), "tfe runtime not healthy; deploy terraform first", data, []string{"hal terraform create", "hal terraform status"}, checks, nil, docs)
+	}
+	if !gitlabRunning {
+		return opErrorForTool("get_tfe_vcs_workflow_status", codeNotDeployed, "shared GitLab is not running; run hal terraform vcs-workflow enable to bootstrap it", data, recommended, checks, nil, docs)
+	}
+
+	next := []opNextStep{{
+		Order:           1,
+		Title:           "Trigger an auto-applied run",
+		ExpectedOutcome: "Pushing a commit to the main branch of the GitLab repo fires a webhook; TFE queues and auto-applies a run visible at the workspace runs page.",
+	}}
+
+	return opSuccessForTool("get_tfe_vcs_workflow_status", "tfe vcs workflow status collected", data, recommended, checks, next, nil, docs)
 }
