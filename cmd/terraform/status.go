@@ -93,7 +93,7 @@ func printTFETargetDetailedStatus(engine, target string) {
 	fmt.Println("\n💡 Tips:")
 	if !someExist {
 		fmt.Println("   To deploy a fresh Terraform Enterprise environment, run:")
-		fmt.Println("   export TFE_LICENSE='<your_license_string>'")
+		fmt.Println("   export TFE_LICENSE='<your_license_string>'        # or: export TFE_LICENSE_PATH='/path/to/terraform.hclic'")
 		fmt.Println("   hal terraform create")
 	} else if allRunning {
 		fmt.Println("   All systems green. TFE is operational.")
@@ -157,7 +157,7 @@ func printTFETwinDetailedStatus(engine string) {
 	fmt.Println("\n💡 Tips:")
 	if !someExist {
 		fmt.Println("   To deploy the twin Terraform Enterprise environment, run:")
-		fmt.Println("   export TFE_LICENSE='<your_license_string>'")
+		fmt.Println("   export TFE_LICENSE='<your_license_string>'        # or: export TFE_LICENSE_PATH='/path/to/terraform.hclic'")
 		fmt.Println("   hal terraform create --target twin")
 	} else if allRunning {
 		fmt.Println("   Twin systems are operational.")

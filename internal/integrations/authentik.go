@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,6 +35,18 @@ const (
 
 	// Shared-services key used in ~/.hal/shared-services.json
 	AuthentikSharedServiceKey = "authentik-idp"
+
+	// AuthentikSAMLProxyContainer is the nginx container that rewrites TFE SAML
+	// form action URLs from portless HTTPS (port 443) to the accessible TFE proxy
+	// port before the browser receives the assertion. Required on macOS/Podman
+	// where binding port 443 is not possible without root.
+	AuthentikSAMLProxyContainer = "hal-authentik-saml-proxy"
+
+	// AuthentikSAMLProxyPort is the HTTP port the SAML proxy listens on. TFE's
+	// sso_endpoint_url is directed here instead of directly to Authentik (9100).
+	// The proxy rewrites the SAML response form action and routes all TFE SAML
+	// SSO traffic, keeping the full authentication flow within the proxy.
+	AuthentikSAMLProxyPort = "9102"
 )
 
 // AuthentikSecrets holds the secrets loaded from / generated into ~/.hal/authentik/env.
@@ -57,6 +70,13 @@ func AuthentikAdminURL() string {
 // Vault must use this URL for both oidc_discovery_url and callback validation.
 func AuthentikOIDCIssuer(slug string) string {
 	return fmt.Sprintf("http://authentik.localhost:%s/application/o/%s/", AuthentikHTTPPort, slug)
+}
+
+// AuthentikSAMLProxyURL returns the base URL of the nginx SAML proxy used for
+// TFE SAML SSO flows. TFE's sso_endpoint_url is directed here so form action
+// URLs in Authentik's SAML response are rewritten before the browser receives them.
+func AuthentikSAMLProxyURL() string {
+	return fmt.Sprintf("http://authentik.localhost:%s", AuthentikSAMLProxyPort)
 }
 
 // authentikDir returns ~/.hal/authentik.
@@ -332,6 +352,49 @@ func WaitAuthentikTokenReady(token string) error {
 	return fmt.Errorf("authentik bootstrap token not ready within 60s — check: docker logs %s", AuthentikWorkerContainer)
 }
 
+// WaitAuthentikFlowsReady polls until at least one authorization flow and one
+// invalidation flow exist. These are seeded by Authentik's default blueprints
+// via the worker and can lag behind scope mappings by several seconds on first boot.
+// Called after WaitAuthentikScopesReady. Timeout: 120 seconds.
+func WaitAuthentikFlowsReady(token string) error {
+	client := &http.Client{Timeout: 5 * time.Second}
+	deadline := time.Now().Add(120 * time.Second)
+	base := fmt.Sprintf("http://localhost:%s/api/v3/flows/instances/", AuthentikHTTPPort)
+
+	fmt.Print("  ⏳ Waiting for Authentik default flows")
+	for time.Now().Before(deadline) {
+		authzOK, invOK := false, false
+		for _, desig := range []string{"authorization", "invalidation"} {
+			req, _ := http.NewRequest("GET", base+"?designation="+desig+"&page_size=1", nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			resp, err := client.Do(req)
+			if err != nil {
+				continue
+			}
+			var data map[string]interface{}
+			raw, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK && json.Unmarshal(raw, &data) == nil {
+				results, _ := data["results"].([]interface{})
+				if desig == "authorization" && len(results) > 0 {
+					authzOK = true
+				}
+				if desig == "invalidation" && len(results) > 0 {
+					invOK = true
+				}
+			}
+		}
+		if authzOK && invOK {
+			fmt.Println(" ✅")
+			return nil
+		}
+		fmt.Print(".")
+		time.Sleep(3 * time.Second)
+	}
+	fmt.Println()
+	return fmt.Errorf("authentik default flows not ready within 120s — check: docker logs %s", AuthentikWorkerContainer)
+}
+
 // WaitAuthentikScopesReady polls until the standard openid/profile/email scope
 // property mappings exist. Authentik seeds these asynchronously via worker
 // blueprint tasks after the first migration run. On first boot this can take
@@ -384,7 +447,103 @@ func WaitAuthentikScopesReady(token string) error {
 
 // StopAuthentikStack stops and removes all Authentik containers.
 // If removeVolumes is true, the named volume hal-authentik-db is also removed.
+// StartAuthentikSAMLProxy starts (or re-creates) a thin nginx container that
+// rewrites TFE SAML ACS form action URLs in Authentik's HTML responses.
+//
+// Background: TFE derives its ACS URL from TFE_HOSTNAME which has no port, so
+// the ACS URL is always https://tfe.localhost/users/saml/auth (port 443).
+// On macOS/Podman, port 443 cannot be bound without root, so the browser cannot
+// POST the SAML assertion there. This proxy intercepts the Authentik SAML
+// response page before it reaches the browser and rewrites the form action to
+// use the accessible TFE nginx proxy port (8443 for primary, 9443 for twin).
+//
+// All TFE SAML SSO traffic is routed through port 9102 (this proxy) instead of
+// directly to Authentik at 9100. The proxy sets Host: authentik.localhost:9102
+// so Authentik generates redirect URLs that stay within the proxy for the entire
+// authentication flow — no host modifications, no pfctl, no sudo required.
+func StartAuthentikSAMLProxy(engine string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("could not determine home directory: %w", err)
+	}
+
+	confPath := filepath.Join(home, ".hal", "authentik-saml-proxy.conf")
+
+	// nginx's $variable syntax is preserved — Go's Sprintf only processes %.
+	nginxConf := fmt.Sprintf(`events {}
+http {
+    server {
+        listen %s;
+        server_name authentik.localhost;
+
+        location / {
+            proxy_pass http://%s:%s;
+
+            # Tell Authentik its base URL is port %s so all generated redirects
+            # stay in this proxy for the entire SAML authentication flow.
+            proxy_set_header Host              authentik.localhost:%s;
+            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto http;
+
+            # Disable gzip so sub_filter can scan response bodies.
+            proxy_set_header Accept-Encoding "";
+
+            # Buffer all responses; ignore upstream no-buffering hint.
+            proxy_buffering on;
+            proxy_ignore_headers X-Accel-Buffering;
+
+            # Apply to all content types: Authentik 2026 delivers the SAML
+            # assertion via ak-stage-autosubmit in a JSON flow-executor response
+            # (application/json), not a raw HTML form. Using * covers both JSON
+            # and any legacy HTML fallback.
+            sub_filter_types *;
+            sub_filter_once  off;
+            sub_filter 'https://tfe.localhost/users/saml/auth'
+                       'https://tfe.localhost:8443/users/saml/auth';
+            sub_filter 'https://tfe-bis.localhost/users/saml/auth'
+                       'https://tfe-bis.localhost:9443/users/saml/auth';
+        }
+    }
+}`,
+		AuthentikSAMLProxyPort,                      // %s 1: listen port
+		AuthentikServerContainer, AuthentikHTTPPort, // %s 2,3: proxy_pass target
+		AuthentikSAMLProxyPort, // %s 4: comment
+		AuthentikSAMLProxyPort, // %s 5: Host header port
+	)
+
+	if err := os.WriteFile(confPath, []byte(nginxConf), 0o644); err != nil {
+		return fmt.Errorf("failed to write SAML proxy config: %w", err)
+	}
+
+	// Remove any stale container before re-creating.
+	_ = exec.Command(engine, "rm", "-f", AuthentikSAMLProxyContainer).Run()
+
+	args := []string{
+		"run", "-d",
+		"--name", AuthentikSAMLProxyContainer,
+		"--network", global.HalNetName,
+		"--restart", "unless-stopped",
+		"-p", fmt.Sprintf("%s:%s", AuthentikSAMLProxyPort, AuthentikSAMLProxyPort),
+		"-v", fmt.Sprintf("%s:/etc/nginx/nginx.conf:ro", confPath),
+		"docker.io/library/nginx:alpine",
+	}
+
+	if out, err := exec.Command(engine, args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to start Authentik SAML proxy: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+
+	return nil
+}
+
+// StopAuthentikSAMLProxy stops and removes the Authentik SAML proxy container.
+// A no-op if the container is not running.
+func StopAuthentikSAMLProxy(engine string) {
+	_ = exec.Command(engine, "rm", "-f", AuthentikSAMLProxyContainer).Run()
+}
+
 func StopAuthentikStack(engine string, removeVolumes bool) error {
+	// Always stop the SAML proxy alongside the Authentik stack.
+	StopAuthentikSAMLProxy(engine)
 	for _, name := range []string{AuthentikWorkerContainer, AuthentikServerContainer, AuthentikPGContainer} {
 		_ = exec.Command(engine, "rm", "-f", name).Run()
 	}
@@ -1029,6 +1188,57 @@ func (c *AuthentikClient) UpdateSCIMProvider(pk int, name, baseURL, token string
 	return err
 }
 
+// CreateSCIMProviderWithVerifySSL creates a SCIM provider with explicit TLS
+// verification control. Use verifySSL=false when the target uses a self-signed cert.
+func (c *AuthentikClient) CreateSCIMProviderWithVerifySSL(
+	name, baseURL, token string, userMappingPKs, groupMappingPKs []string, verifySSL bool,
+) (int, error) {
+	body := map[string]interface{}{
+		"name":                    name,
+		"url":                     baseURL,
+		"token":                   token,
+		"property_mappings":       userMappingPKs,
+		"property_mappings_group": groupMappingPKs,
+		"compatibility_mode":      "default",
+		"verify_certificates":     verifySSL,
+	}
+	data, _, err := c.do("POST", "/api/v3/providers/scim/", body)
+	if err != nil {
+		if strings.Contains(err.Error(), "400") {
+			existing, _, err2 := c.do("GET", "/api/v3/providers/scim/?search="+name, nil)
+			if err2 != nil {
+				return 0, err2
+			}
+			item, err2 := firstResult(existing)
+			if err2 != nil {
+				return 0, fmt.Errorf("scim provider %q: %w", name, err)
+			}
+			pkFloat, _ := item["pk"].(float64)
+			return int(pkFloat), nil
+		}
+		return 0, err
+	}
+	pkFloat, _ := data["pk"].(float64)
+	return int(pkFloat), nil
+}
+
+// UpdateSCIMProviderWithVerifySSL patches an existing SCIM provider with a new
+// bearer token and explicit TLS verification control.
+func (c *AuthentikClient) UpdateSCIMProviderWithVerifySSL(
+	pk int, name, baseURL, token string, userMappingPKs, groupMappingPKs []string, verifySSL bool,
+) error {
+	_, _, err := c.do("PATCH", fmt.Sprintf("/api/v3/providers/scim/%d/", pk), map[string]interface{}{
+		"name":                    name,
+		"url":                     baseURL,
+		"token":                   token,
+		"property_mappings":       userMappingPKs,
+		"property_mappings_group": groupMappingPKs,
+		"compatibility_mode":      "default",
+		"verify_certificates":     verifySSL,
+	})
+	return err
+}
+
 // UpsertSCIMProvider creates the SCIM provider if it doesn't exist, or updates its
 // token if it does. Returns the provider PK. Use this instead of CreateSCIMProvider
 // for idempotent enable/update flows — avoids orphaned providers after "hal delete".
@@ -1052,10 +1262,11 @@ type AuthentikGroup struct {
 	Name string
 }
 
-// AuthentikUser holds the minimal fields needed for per-object SCIM sync.
+// AuthentikUser holds the minimal fields needed for SCIM push.
 type AuthentikUser struct {
 	PK       string
 	Username string
+	Email    string
 }
 
 // GetAllUsers returns all non-service users in Authentik.
@@ -1082,7 +1293,8 @@ func (c *AuthentikClient) GetAllUsers() ([]AuthentikUser, error) {
 				pk = fmt.Sprintf("%.0f", v)
 			}
 			username, _ := item["username"].(string)
-			users = append(users, AuthentikUser{PK: pk, Username: username})
+			email, _ := item["email"].(string)
+			users = append(users, AuthentikUser{PK: pk, Username: username, Email: email})
 		}
 		nextRaw, _ := data["next"].(string)
 		if nextRaw == "" || nextRaw == "null" {
@@ -1091,6 +1303,53 @@ func (c *AuthentikClient) GetAllUsers() ([]AuthentikUser, error) {
 		nextURL = strings.TrimPrefix(nextRaw, c.baseURL)
 	}
 	return users, nil
+}
+
+// AuthentikGroupWithMembers holds a group and its member usernames for SCIM push.
+type AuthentikGroupWithMembers struct {
+	PK      string
+	Name    string
+	Members []string // Authentik usernames of group members
+}
+
+// GetGroupsWithMembers returns all Authentik groups with their member usernames.
+// Uses the detail endpoint for each group to get members_obj (N+1 but fine for lab scale).
+func (c *AuthentikClient) GetGroupsWithMembers() ([]AuthentikGroupWithMembers, error) {
+	base, err := c.GetAllGroups()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]AuthentikGroupWithMembers, 0, len(base))
+	for _, g := range base {
+		detail, _, err := c.do("GET", "/api/v3/core/groups/"+g.PK+"/", nil)
+		if err != nil {
+			result = append(result, AuthentikGroupWithMembers{PK: g.PK, Name: g.Name})
+			continue
+		}
+		var members []string
+		if membersObj, ok := detail["members_obj"].([]interface{}); ok {
+			for _, m := range membersObj {
+				if mItem, ok := m.(map[string]interface{}); ok {
+					if uname, ok := mItem["username"].(string); ok {
+						members = append(members, uname)
+					}
+				}
+			}
+		}
+		result = append(result, AuthentikGroupWithMembers{PK: g.PK, Name: g.Name, Members: members})
+	}
+	return result, nil
+}
+
+// GetSCIMProviderToken returns the bearer token currently stored in a SCIM provider.
+// Used by the update --sync path to get the active token without rotating it.
+func (c *AuthentikClient) GetSCIMProviderToken(pk int) (string, error) {
+	data, _, err := c.do("GET", fmt.Sprintf("/api/v3/providers/scim/%d/", pk), nil)
+	if err != nil {
+		return "", err
+	}
+	token, _ := data["token"].(string)
+	return token, nil
 }
 
 // GetAllGroups returns all groups in Authentik.
@@ -1132,4 +1391,254 @@ func (c *AuthentikClient) SyncSCIMObject(providerPK int, model, objectPK string)
 			"sync_object_id":    objectPK,
 		})
 	return err
+}
+
+// ─── SAML provider management ─────────────────────────────────────────────────
+
+// GetOrCreateSAMLUsernameMapping returns the PK of a SAML property mapping that
+// emits a plain "Username" attribute containing the Authentik username.
+// TFE expects attr_username to match this attribute name (default: "Username").
+func (c *AuthentikClient) GetOrCreateSAMLUsernameMapping() (string, error) {
+	const attrName = "Username"
+	const mappingName = "hal: SAML Username"
+
+	data, _, err := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+url.QueryEscape(mappingName), nil)
+	if err == nil {
+		results, _ := data["results"].([]interface{})
+		for _, r := range results {
+			item, ok := r.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if item["name"] == mappingName {
+				return item["pk"].(string), nil
+			}
+		}
+	}
+
+	created, _, err := c.do("POST", "/api/v3/propertymappings/provider/saml/", map[string]interface{}{
+		"name":          mappingName,
+		"saml_name":     attrName,
+		"friendly_name": attrName,
+		"expression":    "return request.user.username",
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "400") {
+			// Already exists — retry lookup with encoded search
+			data2, _, _ := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+url.QueryEscape(mappingName), nil)
+			if item, _ := firstResult(data2); item != nil {
+				return item["pk"].(string), nil
+			}
+		}
+		return "", fmt.Errorf("create SAML username mapping: %w", err)
+	}
+	return created["pk"].(string), nil
+}
+
+// GetOrCreateSAMLGroupsMapping returns the PK of a SAML property mapping that
+// emits a "MemberOf" attribute containing the user's group names as a list.
+// TFE expects attr_groups to match this attribute name (default: "MemberOf").
+func (c *AuthentikClient) GetOrCreateSAMLGroupsMapping() (string, error) {
+	const attrName = "MemberOf"
+	const mappingName = "hal: SAML Groups"
+
+	data, _, err := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+url.QueryEscape(mappingName), nil)
+	if err == nil {
+		results, _ := data["results"].([]interface{})
+		for _, r := range results {
+			item, ok := r.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if item["name"] == mappingName {
+				return item["pk"].(string), nil
+			}
+		}
+	}
+
+	created, _, err := c.do("POST", "/api/v3/propertymappings/provider/saml/", map[string]interface{}{
+		"name":          mappingName,
+		"saml_name":     attrName,
+		"friendly_name": attrName,
+		"expression":    `return [group.name for group in request.user.ak_groups.all()]`,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "400") {
+			// Already exists — retry lookup with encoded search
+			data2, _, _ := c.do("GET", "/api/v3/propertymappings/provider/saml/?search="+url.QueryEscape(mappingName), nil)
+			if item, _ := firstResult(data2); item != nil {
+				return item["pk"].(string), nil
+			}
+		}
+		return "", fmt.Errorf("create SAML groups mapping: %w", err)
+	}
+	return created["pk"].(string), nil
+}
+
+// CreateSAMLProvider creates an Authentik SAML provider for a given SP.
+// acsURL is the SP's ACS URL (e.g. https://tfe.localhost:8443/users/saml/auth).
+// audience is the SP's entity ID / audience URI (e.g. the SP metadata URL).
+// Returns the provider integer PK.
+func (c *AuthentikClient) CreateSAMLProvider(
+	name, authFlowPK, invalidationFlowPK, signingKeyPK, acsURL, audience string,
+	propertyMappingPKs []string,
+) (int, error) {
+	body := map[string]interface{}{
+		"name":               name,
+		"authorization_flow": authFlowPK,
+		"invalidation_flow":  invalidationFlowPK,
+		"acs_url":            acsURL,
+		"audience":           audience,
+		"issuer":             c.baseURL,
+		"sp_binding":         "post",
+		// EmailAddress NameID — TFE can use the attr_username attribute for the
+		// actual username; the NameID is used as a stable session identifier.
+		"name_id_policy":    "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+		"signing_kp":        signingKeyPK,
+		"sign_assertion":    true,
+		"property_mappings": propertyMappingPKs,
+	}
+	data, _, err := c.do("POST", "/api/v3/providers/saml/", body)
+	if err != nil {
+		if strings.Contains(err.Error(), "400") {
+			// Already exists — look up by name and return existing PK.
+			existing, _, err2 := c.do("GET", "/api/v3/providers/saml/?search="+name, nil)
+			if err2 != nil {
+				return 0, fmt.Errorf("saml provider %q exists but lookup failed: %w", name, err2)
+			}
+			results, _ := existing["results"].([]interface{})
+			for _, r := range results {
+				item, ok := r.(map[string]interface{})
+				if !ok || item["name"] != name {
+					continue
+				}
+				// PATCH to refresh ACS URL and mappings.
+				pkFloat, _ := item["pk"].(float64)
+				pk := int(pkFloat)
+				_, _, _ = c.do("PATCH", fmt.Sprintf("/api/v3/providers/saml/%d/", pk), map[string]interface{}{
+					"acs_url":           acsURL,
+					"audience":          audience,
+					"property_mappings": propertyMappingPKs,
+				})
+				return pk, nil
+			}
+		}
+		return 0, fmt.Errorf("create SAML provider %q: %w", name, err)
+	}
+	pkFloat, _ := data["pk"].(float64)
+	return int(pkFloat), nil
+}
+
+// GetSAMLProviderMetadata fetches the raw IdP SAML metadata XML for a provider.
+// Authentik 2026.x renamed export_metadata → metadata; ?download=true returns
+// raw XML instead of the default JSON wrapper {"metadata": "<xml>..."}}.
+func (c *AuthentikClient) GetSAMLProviderMetadata(providerPK int) ([]byte, error) {
+	req, err := http.NewRequest("GET",
+		fmt.Sprintf("%s/api/v3/providers/saml/%d/metadata/?download=true", c.baseURL, providerPK), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("get saml metadata %d → %d: %s", providerPK, resp.StatusCode, string(raw))
+	}
+	return raw, nil
+}
+
+// ParseSAMLMetadata extracts the SSO redirect-binding URL and X509 certificate
+// from a raw SAML IdP metadata XML document.
+func ParseSAMLMetadata(xmlData []byte) (ssoURL, idpCert string, err error) {
+	// Use simple string parsing — avoids an XML library dependency and works
+	// reliably with the stable Authentik metadata format.
+	xmlStr := string(xmlData)
+
+	// Extract SSO redirect binding URL from SingleSignOnService elements only.
+	// (SLO elements also use HTTP-Redirect and appear first — must skip them.)
+	const ssoTag = "SingleSignOnService"
+	const redirectBinding = `urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect`
+	for search := xmlStr; ; {
+		ssoIdx := strings.Index(search, ssoTag)
+		if ssoIdx < 0 {
+			break
+		}
+		endIdx := strings.Index(search[ssoIdx:], "/>")
+		if endIdx < 0 {
+			break
+		}
+		element := search[ssoIdx : ssoIdx+endIdx+2]
+		if strings.Contains(element, redirectBinding) {
+			if locIdx := strings.Index(element, `Location="`); locIdx >= 0 {
+				rest := element[locIdx+len(`Location="`):]
+				if end := strings.Index(rest, `"`); end >= 0 {
+					ssoURL = rest[:end]
+				}
+			}
+			break
+		}
+		search = search[ssoIdx+1:]
+	}
+
+	// Extract X509Certificate content. There are multiple elements with this
+	// tag name (ds:Signature block + IDPSSODescriptor KeyDescriptor). We scan
+	// ALL occurrences of the suffix and keep the last one that has non-empty
+	// base64 content between the tag and the next '<'. Closing tags like
+	// </ds:X509Certificate> also contain "X509Certificate>" but the content
+	// immediately after their '>' is the next XML element, so TrimSpace returns
+	// "" and they are skipped.
+	const certSuffix = "X509Certificate>"
+	raw := ""
+	for search := xmlStr; ; {
+		certPos := strings.Index(search, certSuffix)
+		if certPos < 0 {
+			break
+		}
+		rest := search[certPos+len(certSuffix):]
+		certEnd := strings.Index(rest, "<")
+		if certEnd >= 0 {
+			if candidate := strings.TrimSpace(rest[:certEnd]); candidate != "" {
+				raw = candidate
+			}
+		}
+		search = search[certPos+1:]
+	}
+	if raw != "" {
+		idpCert = "-----BEGIN CERTIFICATE-----\n" + raw + "\n-----END CERTIFICATE-----"
+	}
+
+	if ssoURL == "" {
+		return "", "", fmt.Errorf("could not parse SSO redirect URL from SAML metadata")
+	}
+	if idpCert == "" {
+		return "", "", fmt.Errorf("could not parse X509 certificate from SAML metadata")
+	}
+	return ssoURL, idpCert, nil
+}
+
+// DeleteSAMLProviderByName deletes a SAML provider by name. No-op if not found.
+func (c *AuthentikClient) DeleteSAMLProviderByName(name string) error {
+	data, _, err := c.do("GET", "/api/v3/providers/saml/?search="+name, nil)
+	if err != nil {
+		return err
+	}
+	results, _ := data["results"].([]interface{})
+	for _, r := range results {
+		item, ok := r.(map[string]interface{})
+		if !ok || item["name"] != name {
+			continue
+		}
+		pkFloat, _ := item["pk"].(float64)
+		pk := int(pkFloat)
+		_, _, delErr := c.do("DELETE", fmt.Sprintf("/api/v3/providers/saml/%d/", pk), nil)
+		if delErr != nil && strings.Contains(delErr.Error(), "404") {
+			return nil
+		}
+		return delErr
+	}
+	return nil // not found — nothing to do
 }

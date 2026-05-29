@@ -67,12 +67,23 @@ var deployCmd = &cobra.Command{
 
 		// 1. STRICT LICENSE ENFORCEMENT
 		license := os.Getenv("TFE_LICENSE")
+		licensePath := os.Getenv("TFE_LICENSE_PATH")
+		if license == "" && licensePath != "" {
+			licenseBytes, err := os.ReadFile(licensePath)
+			if err != nil {
+				fmt.Printf("❌ Error: Failed to read license from TFE_LICENSE_PATH: %v\n", err)
+				return
+			}
+			license = strings.TrimSpace(string(licenseBytes))
+		}
 		if license == "" {
 			fmt.Println("❌ Error: TFE requires a valid license to boot.")
-			fmt.Println("   💡 Export your license to your environment before running this command:")
-			fmt.Println("      export TFE_LICENSE='your_massive_ibm_hashicorp_license_string'")
+			fmt.Println("   💡 Set one of:")
+			fmt.Println("      export TFE_LICENSE='your_license_string'")
+			fmt.Println("      export TFE_LICENSE_PATH='/path/to/terraform.hclic'")
 			return
 		}
+		os.Setenv("TFE_LICENSE", license)
 
 		os.Setenv("TFE_ENCRYPTION_PASSWORD", tfePassword)
 		os.Setenv("TFE_DATABASE_PASSWORD", "tfe_password")
@@ -505,7 +516,7 @@ var updateCmd = &cobra.Command{
 }
 
 func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
-	cmd.Flags().StringVarP(&tfeVersion, "tfe-tag", "v", "1.2.0", "TFE container image tag")
+	cmd.Flags().StringVarP(&tfeVersion, "tfe-tag", "v", "2.0.2", "TFE container image tag")
 	cmd.Flags().StringVar(&tfeImage, "tfe-image", "images.releases.hashicorp.com/hashicorp/terraform-enterprise", "TFE container image name")
 	cmd.Flags().StringVar(&pgVersion, "tfe-pg-tag", "16-alpine", "PostgreSQL image tag for TFE backend")
 	cmd.Flags().StringVar(&pgImage, "tfe-pg-image", "postgres", "PostgreSQL image name for TFE backend")
@@ -518,7 +529,7 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	cmd.Flags().StringVar(&tfeProxyNginxTag, "tfe-proxy-tag", "alpine", "Nginx image tag for the TFE ingress proxy")
 	cmd.Flags().StringVar(&tfeProxyImage, "tfe-proxy-image", "nginx", "Nginx image name for the TFE ingress proxy")
 	cmd.Flags().StringVarP(&tfePassword, "password", "p", "hal-secret-encryption-password", "TFE Encryption Password")
-	cmd.Flags().StringVar(&deployTFEOrg, "tfe-org", "hal", "Terraform Enterprise organization name to auto-bootstrap during deploy")
+	cmd.Flags().StringVar(&deployTFEOrg, "tfe-org", "hal-org", "Terraform Enterprise organization name to auto-bootstrap during deploy")
 	cmd.Flags().StringVar(&deployTFEProject, "tfe-project", "Dave", "Terraform Enterprise project name to auto-bootstrap during deploy")
 	cmd.Flags().StringVar(&deployTFEAdminUser, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
 	cmd.Flags().StringVar(&deployTFEAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
