@@ -89,7 +89,7 @@ var deployCmd = &cobra.Command{
 
 			// If the user didn't explicitly specify a tag, give them the Enterprise default
 			if !cmd.Flags().Changed("vault-tag") {
-				actualVersion = "2.0.1+ent"
+				actualVersion = "2.0.1-ent"
 			}
 		}
 		// --vault-image overrides the per-edition image name entirely
