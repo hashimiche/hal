@@ -89,7 +89,7 @@ var deployCmd = &cobra.Command{
 
 			// If the user didn't explicitly specify a tag, give them the Enterprise default
 			if !cmd.Flags().Changed("vault-tag") {
-				actualVersion = "2.0-ent"
+				actualVersion = "2.0.1+ent"
 			}
 		}
 		// --vault-image overrides the per-edition image name entirely
@@ -233,7 +233,7 @@ var updateCmd = &cobra.Command{
 }
 
 func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
-	cmd.Flags().StringVarP(&vaultVersion, "vault-tag", "v", "2.0", "Vault container image tag")
+	cmd.Flags().StringVarP(&vaultVersion, "vault-tag", "v", "2.0.1", "Vault container image tag")
 	cmd.Flags().StringVar(&vaultImage, "vault-image", "", "Vault container image name (overrides per-edition default: hashicorp/vault or hashicorp/vault-enterprise)")
 	cmd.Flags().StringVarP(&vaultEdition, "edition", "e", "ce", "Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise)")
 	cmd.Flags().StringVar(&vaultHelperImage, "vault-helper-image", "alpine", "Helper container image name for one-shot setup tasks during Vault deploy")

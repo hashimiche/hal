@@ -352,6 +352,49 @@ func WaitAuthentikTokenReady(token string) error {
 	return fmt.Errorf("authentik bootstrap token not ready within 60s — check: docker logs %s", AuthentikWorkerContainer)
 }
 
+// WaitAuthentikFlowsReady polls until at least one authorization flow and one
+// invalidation flow exist. These are seeded by Authentik's default blueprints
+// via the worker and can lag behind scope mappings by several seconds on first boot.
+// Called after WaitAuthentikScopesReady. Timeout: 120 seconds.
+func WaitAuthentikFlowsReady(token string) error {
+	client := &http.Client{Timeout: 5 * time.Second}
+	deadline := time.Now().Add(120 * time.Second)
+	base := fmt.Sprintf("http://localhost:%s/api/v3/flows/instances/", AuthentikHTTPPort)
+
+	fmt.Print("  ⏳ Waiting for Authentik default flows")
+	for time.Now().Before(deadline) {
+		authzOK, invOK := false, false
+		for _, desig := range []string{"authorization", "invalidation"} {
+			req, _ := http.NewRequest("GET", base+"?designation="+desig+"&page_size=1", nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			resp, err := client.Do(req)
+			if err != nil {
+				continue
+			}
+			var data map[string]interface{}
+			raw, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK && json.Unmarshal(raw, &data) == nil {
+				results, _ := data["results"].([]interface{})
+				if desig == "authorization" && len(results) > 0 {
+					authzOK = true
+				}
+				if desig == "invalidation" && len(results) > 0 {
+					invOK = true
+				}
+			}
+		}
+		if authzOK && invOK {
+			fmt.Println(" ✅")
+			return nil
+		}
+		fmt.Print(".")
+		time.Sleep(3 * time.Second)
+	}
+	fmt.Println()
+	return fmt.Errorf("authentik default flows not ready within 120s — check: docker logs %s", AuthentikWorkerContainer)
+}
+
 // WaitAuthentikScopesReady polls until the standard openid/profile/email scope
 // property mappings exist. Authentik seeds these asynchronously via worker
 // blueprint tasks after the first migration run. On first boot this can take
@@ -1156,8 +1199,8 @@ func (c *AuthentikClient) CreateSCIMProviderWithVerifySSL(
 		"token":                   token,
 		"property_mappings":       userMappingPKs,
 		"property_mappings_group": groupMappingPKs,
-		"compatibility_mode":      "aws",
-		"verify_ssl":              verifySSL,
+		"compatibility_mode":      "default",
+		"verify_certificates":     verifySSL,
 	}
 	data, _, err := c.do("POST", "/api/v3/providers/scim/", body)
 	if err != nil {
@@ -1190,8 +1233,8 @@ func (c *AuthentikClient) UpdateSCIMProviderWithVerifySSL(
 		"token":                   token,
 		"property_mappings":       userMappingPKs,
 		"property_mappings_group": groupMappingPKs,
-		"compatibility_mode":      "aws",
-		"verify_ssl":              verifySSL,
+		"compatibility_mode":      "default",
+		"verify_certificates":     verifySSL,
 	})
 	return err
 }
@@ -1219,10 +1262,11 @@ type AuthentikGroup struct {
 	Name string
 }
 
-// AuthentikUser holds the minimal fields needed for per-object SCIM sync.
+// AuthentikUser holds the minimal fields needed for SCIM push.
 type AuthentikUser struct {
 	PK       string
 	Username string
+	Email    string
 }
 
 // GetAllUsers returns all non-service users in Authentik.
@@ -1249,7 +1293,8 @@ func (c *AuthentikClient) GetAllUsers() ([]AuthentikUser, error) {
 				pk = fmt.Sprintf("%.0f", v)
 			}
 			username, _ := item["username"].(string)
-			users = append(users, AuthentikUser{PK: pk, Username: username})
+			email, _ := item["email"].(string)
+			users = append(users, AuthentikUser{PK: pk, Username: username, Email: email})
 		}
 		nextRaw, _ := data["next"].(string)
 		if nextRaw == "" || nextRaw == "null" {
@@ -1258,6 +1303,53 @@ func (c *AuthentikClient) GetAllUsers() ([]AuthentikUser, error) {
 		nextURL = strings.TrimPrefix(nextRaw, c.baseURL)
 	}
 	return users, nil
+}
+
+// AuthentikGroupWithMembers holds a group and its member usernames for SCIM push.
+type AuthentikGroupWithMembers struct {
+	PK      string
+	Name    string
+	Members []string // Authentik usernames of group members
+}
+
+// GetGroupsWithMembers returns all Authentik groups with their member usernames.
+// Uses the detail endpoint for each group to get members_obj (N+1 but fine for lab scale).
+func (c *AuthentikClient) GetGroupsWithMembers() ([]AuthentikGroupWithMembers, error) {
+	base, err := c.GetAllGroups()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]AuthentikGroupWithMembers, 0, len(base))
+	for _, g := range base {
+		detail, _, err := c.do("GET", "/api/v3/core/groups/"+g.PK+"/", nil)
+		if err != nil {
+			result = append(result, AuthentikGroupWithMembers{PK: g.PK, Name: g.Name})
+			continue
+		}
+		var members []string
+		if membersObj, ok := detail["members_obj"].([]interface{}); ok {
+			for _, m := range membersObj {
+				if mItem, ok := m.(map[string]interface{}); ok {
+					if uname, ok := mItem["username"].(string); ok {
+						members = append(members, uname)
+					}
+				}
+			}
+		}
+		result = append(result, AuthentikGroupWithMembers{PK: g.PK, Name: g.Name, Members: members})
+	}
+	return result, nil
+}
+
+// GetSCIMProviderToken returns the bearer token currently stored in a SCIM provider.
+// Used by the update --sync path to get the active token without rotating it.
+func (c *AuthentikClient) GetSCIMProviderToken(pk int) (string, error) {
+	data, _, err := c.do("GET", fmt.Sprintf("/api/v3/providers/scim/%d/", pk), nil)
+	if err != nil {
+		return "", err
+	}
+	token, _ := data["token"].(string)
+	return token, nil
 }
 
 // GetAllGroups returns all groups in Authentik.

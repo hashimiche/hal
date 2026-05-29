@@ -35,6 +35,7 @@ This skill covers the Authentik-backed SAML SSO demo implemented by `hal tf saml
 - `sso_endpoint_url`: Authentik SSO redirect-binding URL rewritten to port 9102 (via SAML proxy)
 - `idp_cert`: Authentik X509 certificate (from metadata XML)
 - `slo_endpoint_url`: Authentik SLO post-binding URL
+- `provider_type: "saml"` — required so TFE treats Authentik as a recognized IdP; without this, `PATCH /api/v2/admin/scim-settings` returns 422 with "SCIM provisioning requires a recognized identity provider"
 
 **TFE teams** (created in the target org, default `hal-org`):
 - `admins` — org-level manage-workspaces/projects/modules/providers
@@ -42,11 +43,17 @@ This skill covers the Authentik-backed SAML SSO demo implemented by `hal tf saml
 
 TFE only adds SSO users to *existing* teams whose names match `MemberOf`. It does not auto-create teams from SAML group attributes. `provisionTFESAMLTeams` handles this as step 7b.
 
-**With `--scim`** (pending — not yet implemented):
-- TFE org-scoped SCIM token via `POST /api/v2/organizations/hal-org/scim-tokens`
-- Authentik outbound SCIM provider `tfe-scim-provider` targeting `https://hal-tfe-proxy:8443/api/scim/v2` (`verify_ssl: false`)
-- SCIM provider assigned as backchannel on `tfe-saml` application
-- Initial users+groups sync via `syncTFESCIMObjects`
+**With `--scim`** (demo/experimental — see limitation note below):
+- Deletes TFE teams `admins`/`devs` if manually pre-created by a prior non-SCIM enable (`cleanPreSCIMTFETeams`). Lets SCIM create them fresh so provisioning is visible.
+- Skips `provisionTFESAMLTeams` — SCIM owns team creation.
+- Enables TFE SCIM via `PATCH /api/v2/admin/scim-settings` with `enabled: true` (TFE 2.0+ only; SAML must be on first, `provider_type` must not be `"unknown"`). 404 silently skipped for TFE 1.x. 422 treated as non-fatal.
+- Creates TFE SCIM token via `POST /api/v2/admin/scim-tokens` (site-admin scope, instance-level groups).
+- Authentik outbound SCIM provider `tfe-scim-provider` targeting `https://hal-tfe-proxy:8443/scim/v2`. Critical fields: `verify_certificates: false`, `compatibility_mode: "default"`.
+- SCIM provider assigned as backchannel on `tfe-saml` application.
+- Initial sync via `authentikInitialSCIMSync`: (1) sync all users via Authentik per-object API (`authentik.core.models.User`), (2) sync all groups pass 1 (`authentik.core.models.Group`), (3) create `scim-group-mapping` for each group (TFE 2.0 two-stage model — links instance-level SCIM group to org team), (4) sync all groups pass 2 to trigger TFE team membership reconciliation.
+- Re-sync manually with: `hal tf saml update --scim --sync`
+
+**⚠️ TFE SCIM limitation**: TFE Admin UI explicitly states SCIM is only compatible with **Microsoft Entra ID** and **Okta**. Authentik is not in the supported IdP list. This means automatic team-membership reconciliation is partially broken (users appear in TFE SCIM at instance level but org-team linking via `scim-group-mapping` may not fully reconcile). The initial seed works as a demo. For reliable org access, the SAML-only path (`attr_groups: MemberOf`) is the documented and supported approach.
 
 ## Execution Order (`hal tf saml enable`)
 
@@ -59,8 +66,8 @@ TFE only adds SSO users to *existing* teams whose names match `MemberOf`. It doe
 6. Fetch SAML metadata from Authentik and parse SSO URL + X509 cert. Rewrite SSO URL port 9100→9102 so TFE routes the auth redirect through the proxy.
 7. Bootstrap TFE admin token via `ensureTFEFoundation`.
 8. Configure TFE SAML settings via Admin API (`PATCH /api/v2/admin/saml-settings`).
-7b. Create `admins` and `devs` teams in the target org (`hal-org`) if they don't exist.
-9. (`--scim`, pending) Create TFE SCIM token, configure Authentik SCIM provider, assign backchannel, run initial sync.
+7b. Create `admins` and `devs` teams in the target org (`hal-org`) if they don't exist. **Skipped when `--scim` is active** — SCIM owns team creation.
+9. (`--scim`) `cleanPreSCIMTFETeams`: delete any manually pre-created `admins`/`devs` teams so SCIM creates them fresh. Create TFE SCIM token, configure Authentik outbound SCIM provider, assign backchannel, run initial sync via `authentikInitialSCIMSync` (4-step: sync users → sync groups pass 1 → create `scim-group-mapping` per group → sync groups pass 2 for reconciliation).
 
 ## Workflow
 
@@ -109,7 +116,9 @@ Or via API:
 2. **TFE is offline during enable**: Run `hal tf create` first. The saml command checks that the TFE core container is running before proceeding.
 3. **First boot Authentik stuck**: See the Vault OIDC skill for Authentik startup troubleshooting — the same wait logic applies here.
 4. **Teams not visible after SSO login**: TFE adds SSO users to *existing* teams. `provisionTFESAMLTeams` pre-creates `admins` and `devs` in `hal-org` during `saml enable`. If a team is still missing, check the org name matches `--tfe-org` and re-run `hal tf saml update`.
-5. **SCIM SSL errors from Authentik**: The TFE proxy uses a self-signed cert. The Authentik SCIM provider is created with `verify_ssl: false`. If the provider shows SSL errors, check that the proxy container name (`hal-tfe-proxy`) is reachable from `hal-authentik-server` on `hal-net`.
+5. **SCIM SSL errors from Authentik**: The TFE proxy uses a self-signed cert. The Authentik SCIM provider is created with `verify_certificates: false` (the correct Authentik API field name; `verify_ssl` is wrong and silently ignored, leaving verification enabled). If the provider still shows SSL errors, verify the field is `False` via `GET /api/v3/providers/scim/{pk}/`.
+5b. **SCIM sync shows "done" but TFE has no users/groups**: Check (a) `verify_certificates` is `False` in the SCIM provider — if `True`, Authentik worker can't reach TFE (self-signed cert). (b) `compatibility_mode` is `"default"` — `"aws"` sends a different SCIM schema that TFE may not handle. (c) `provider-type` in TFE SAML settings is not `"unknown"` — without a recognized IdP type, `PATCH /api/v2/admin/scim-settings` 422s even though it says "already enabled", and SCIM stays disabled. (d) TFE only officially supports SCIM with Entra ID and Okta — Authentik is unsupported, so team-membership reconciliation after `scim-group-mapping` may not fully sync.
+9. **New Authentik group not appearing in TFE org**: Authentik's event-driven SCIM pushes new objects to TFE automatically (check Authentik system task log). However, even if the SCIM group lands in TFE, it won't become an org team until `hal tf saml update --sync --scim` is run — the `scim-group-mapping` admin API step can only be done by hal, Authentik has no knowledge of it.
 6. **ACS URL / port 443 error**: TFE's ACS URL is portless (`https://tfe.localhost/users/saml/auth`, port 443). `hal-authentik-saml-proxy` rewrites this in Authentik's JSON flow response to port 8443 before the browser sees it. If SSO fails with a connection error on port 443, check the proxy is running (`podman ps | grep saml-proxy`) and its nginx config has `sub_filter_types *`.
 7. **`PEM_read_bio_X509` error in TFE**: TFE tries to parse both `idp_cert` and `old_idp_cert`. If `old_idp_cert` is a malformed empty PEM (from a previous failed provision), TFE crashes. Fix: run `hal tf saml update` — it calls `clearOldTFESAMLCert` which NULLs `old_idp_cert_encrypted` in the TFE DB before re-provisioning.
 8. **Shared Authentik stack conflict with Vault OIDC**: If `hal vault oidc` is also running, Authentik is already up. `hal tf saml enable` detects this and skips the stack start. The demo users `alice` and `bob` are shared — they will have both `admin`/`user-ro` (from OIDC) and `admins`/`devs` (from SAML) groups. This is expected.

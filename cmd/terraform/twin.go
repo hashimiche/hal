@@ -109,12 +109,23 @@ var twinCmd = &cobra.Command{
 		}
 
 		license := os.Getenv("TFE_LICENSE")
+		licensePath := os.Getenv("TFE_LICENSE_PATH")
+		if license == "" && licensePath != "" {
+			licenseBytes, err := os.ReadFile(licensePath)
+			if err != nil {
+				fmt.Printf("❌ Error: Failed to read license from TFE_LICENSE_PATH: %v\n", err)
+				return
+			}
+			license = strings.TrimSpace(string(licenseBytes))
+		}
 		if license == "" {
 			fmt.Println("❌ Error: TFE requires a valid license to boot.")
-			fmt.Println("   💡 Export your license to your environment before running this command:")
-			fmt.Println("      export TFE_LICENSE='your_massive_ibm_hashicorp_license_string'")
+			fmt.Println("   💡 Set one of:")
+			fmt.Println("      export TFE_LICENSE='your_license_string'")
+			fmt.Println("      export TFE_LICENSE_PATH='/path/to/terraform.hclic'")
 			return
 		}
+		os.Setenv("TFE_LICENSE", license)
 
 		os.Setenv("TFE_ENCRYPTION_PASSWORD", tfeTwinPassword)
 		os.Setenv("TFE_DATABASE_PASSWORD", tfeTwinDatabasePassword)
@@ -683,7 +694,7 @@ func runTFETwinLifecycle(enable, disable, update bool) {
 }
 
 func bindTwinFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&tfeTwinVersion, "twin-tag", "1.2.0", "TFE container image tag for the twin instance")
+	cmd.Flags().StringVar(&tfeTwinVersion, "twin-tag", "2.0.2", "TFE container image tag for the twin instance")
 	cmd.Flags().StringVar(&tfeTwinImage, "twin-image", "images.releases.hashicorp.com/hashicorp/terraform-enterprise", "TFE container image name for the twin instance")
 	cmd.Flags().StringVar(&tfeTwinPassword, "twin-password", "hal-secret-encryption-password", "Twin TFE encryption password")
 	cmd.Flags().StringVar(&tfeTwinOrg, "twin-tfe-org", "hal-bis", "Terraform Enterprise organization name to auto-bootstrap for the twin instance")

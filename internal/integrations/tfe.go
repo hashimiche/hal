@@ -59,6 +59,27 @@ func TFERequest(method, urlStr, token string, payload interface{}) ([]byte, int,
 	return respBody, resp.StatusCode, nil
 }
 
+// GetTFEVersion returns the TFE version string from the X-TFE-Version response
+// header exposed by GET /api/v2/ping. Returns an empty string when the header
+// is absent (very old builds) rather than an error.
+func GetTFEVersion(baseURL, apiToken string) (string, error) {
+	req, err := http.NewRequest("GET", baseURL+"/api/v2/ping", nil)
+	if err != nil {
+		return "", err
+	}
+	if apiToken != "" {
+		req.Header.Set("Authorization", "Bearer "+apiToken)
+	}
+	req.Header.Set("Accept", tfeJSONAPI)
+	resp, err := tfeHTTPClient().Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	_, _ = io.ReadAll(resp.Body)
+	return resp.Header.Get("X-TFE-Version"), nil
+}
+
 func TFECreateInitialAdmin(baseURL, iactToken, username, email, password string) (string, []byte, int, error) {
 	endpoint := fmt.Sprintf("%s/admin/initial-admin-user?token=%s", baseURL, url.QueryEscape(iactToken))
 	payload := map[string]string{

@@ -196,7 +196,21 @@ Flags:
 					fmt.Println("   Run: hal tf saml enable --scim")
 					return
 				}
-				if err := syncTFESCIMObjects(aktClient, pk); err != nil {
+				scimToken, err := aktClient.GetSCIMProviderToken(pk)
+				if err != nil || scimToken == "" {
+					fmt.Printf("❌ Could not get SCIM token from provider %q: %v\n", scimProviderName, err)
+					return
+				}
+				apiToken, err := bootstrapTFETokenForSAML(engine, target)
+				if err != nil {
+					fmt.Printf("❌ Could not get TFE API token: %v\n", err)
+					return
+				}
+				orgName := tfeSAMLOrgName
+				if orgName == "" {
+					orgName = defaultSAMLOrgName
+				}
+				if err := authentikInitialSCIMSync(tfeSAMLBaseURL, scimToken, apiToken, orgName, pk, aktClient); err != nil {
 					fmt.Printf("❌ Sync failed: %v\n", err)
 					return
 				}
@@ -335,6 +349,10 @@ func runTFESAMLEnable(engine, target string) {
 			fmt.Printf("❌ %v\n", err)
 			return
 		}
+		if err := integrations.WaitAuthentikFlowsReady(secrets.BootstrapToken); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
 		printTFESAMLAuthentikCredentials(secrets)
 	}
 
@@ -402,23 +420,31 @@ func runTFESAMLEnable(engine, target string) {
 	// 7b. Ensure demo teams exist in the target org so SAML group → team mapping
 	// works on first SSO login. TFE adds users to existing teams whose names match
 	// the MemberOf attribute — it does NOT auto-create teams.
+	// Skip when --scim is active: Authentik SCIM owns team creation via group sync.
 	orgName := tfeSAMLOrgName
 	if orgName == "" {
 		orgName = defaultSAMLOrgName
 	}
-	provisionTFESAMLTeams(baseURL, apiToken, orgName)
+	if !tfeSAMLWithSCIM {
+		provisionTFESAMLTeams(baseURL, apiToken, orgName)
+	}
 
 	// 8. Optional SCIM.
 	if tfeSAMLWithSCIM {
 		fmt.Println()
 		fmt.Println("🔗 Configuring SCIM provisioning (Authentik → TFE)...")
-		orgName := tfeSAMLOrgName
-		if orgName == "" {
-			orgName = defaultSAMLOrgName
+		// Version gate: TFE SCIM requires 2.0+.
+		if err := requireTFESCIMVersion(baseURL, apiToken); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
 		}
+		// Step 0: remove teams that were manually created by a prior non-SCIM enable
+		// so Authentik SCIM takes ownership and the user sees them created via sync.
+		cleanPreSCIMTFETeams(baseURL, apiToken, orgName)
 		if err := configureTFESCIM(baseURL, apiToken, aktClient, tfeSAMLAppSlug(target), tfeSAMLSCIMProviderName(target), orgName, target); err != nil {
 			fmt.Printf("❌ SCIM setup failed: %v\n", err)
-			fmt.Println("   SAML is still active. Fix the error and re-run with --scim to retry.")
+			fmt.Println("   SAML is still active. To retry SCIM only, run:")
+			fmt.Printf("     hal tf saml update --scim\n")
 		}
 	}
 
@@ -441,7 +467,12 @@ func runTFESAMLDisable(engine, target string) {
 	if err != nil {
 		fmt.Printf("⚠️  Could not get TFE token — skipping TFE SAML cleanup: %v\n", err)
 	} else {
+		orgName := tfeSAMLOrgName
+		if orgName == "" {
+			orgName = defaultSAMLOrgName
+		}
 		cleanTFESAML(baseURL, apiToken)
+		disableTFESCIMOnTFE(baseURL, apiToken, orgName)
 	}
 
 	serviceKey := tfeSAMLSharedServiceKey(target)
@@ -576,6 +607,9 @@ func configureTFESAML(baseURL, apiToken, ssoURL, idpCert string) error {
 				"site_admin_role":  "site-admins",
 				// 14-day API token session for SSO users
 				"sso_api_token_session_timeout": 1209600,
+				// Required for TFE SCIM: provider type must not be "unknown".
+				// "saml" is the correct value for a generic SAML 2.0 IdP (Authentik).
+				"provider_type": "saml",
 			},
 		},
 	}
@@ -755,8 +789,19 @@ func printTFESAMLSuccess(secrets *integrations.AuthentikSecrets, target string) 
 	fmt.Printf("  Authentik admin  : %s/if/admin/\n", integrations.AuthentikAdminURL())
 	fmt.Printf("  Authentik login  : akadmin / %s\n", secrets.AdminPassword)
 	fmt.Println()
-	fmt.Println("  💡 Teams 'admins' and 'devs' created in all orgs — alice/bob land in their")
-	fmt.Println("     team on first SSO login. Org access is granted automatically.")
+	if tfeSAMLWithSCIM {
+		fmt.Println("  SCIM sync        : Authentik → TFE  (teams + users provisioned via outbound SCIM)")
+		fmt.Printf("  Sync dashboard   : %s/if/admin/#/core/providers\n", integrations.AuthentikAdminURL())
+		fmt.Println("  Re-sync manually : hal tf saml update --scim --sync")
+		fmt.Println()
+		fmt.Println("  💡 alice/bob and their teams were provisioned by SCIM — not manually created.")
+		fmt.Println("     Changes in Authentik (add/remove group members) are pushed to TFE automatically.")
+	} else {
+		fmt.Println("  💡 Teams 'admins' and 'devs' created in all orgs — alice/bob land in their")
+		fmt.Println("     team on first SSO login. Org access is granted automatically.")
+		fmt.Println()
+		fmt.Println("  Tip: run with --scim to let Authentik provision teams+users via SCIM instead.")
+	}
 }
 
 func init() {

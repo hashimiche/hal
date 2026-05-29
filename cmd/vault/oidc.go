@@ -239,6 +239,10 @@ func runOIDCEnable(engine string, client *vault.Client, vaultErr error) {
 			fmt.Printf("❌ %v\n", err)
 			return
 		}
+		if err := integrations.WaitAuthentikFlowsReady(secrets.BootstrapToken); err != nil {
+			fmt.Printf("❌ %v\n", err)
+			return
+		}
 	}
 
 	if firstBoot {
