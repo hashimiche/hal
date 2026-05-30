@@ -64,7 +64,7 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 - HAL MCP command namespace (`hal mcp`) supports two transports:
     - **stdio** (default, local/dev): `hal mcp serve` — spawned directly by HAL Plus; protocol `2024-11-05`.
     - **streamable-HTTP** (container): `hal mcp serve --transport streamable-http --http-host 0.0.0.0 --http-port 8080 --http-path /mcp`; protocol `2025-03-26`.
-    - `hal mcp create --http` pulls `ghcr.io/hashimiche/hal-mcp:latest` from GHCR. No source tree or Go toolchain required on the user machine.
+    - `hal mcp create --http` provisions the `ghcr.io/hashimiche/hal-mcp:latest` image for the streamable-http transport. It **uses a locally present image if one exists** (e.g. one built with `podman build -t ghcr.io/hashimiche/hal-mcp:latest -f Dockerfile.mcp .`) and only pulls from GHCR when the image is absent; pass `--pull` to force a registry refresh. No source tree or Go toolchain required on the user machine when pulling.
     - The image is published automatically by the release workflow (`Dockerfile.mcp`) on every version tag as `ghcr.io/hashimiche/hal-mcp:latest` and `ghcr.io/hashimiche/hal-mcp:<version>`. It runs as a non-root user (`hal`, uid 10001).
     - `--http-tag` flag overrides the pulled image tag (e.g. to pin a specific version).
     - `hal mcp create|serve|status|delete` remains the primary operator surface.
