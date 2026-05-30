@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"hal/cmd/creds"
 	"hal/internal/global"
 )
 
@@ -175,6 +176,11 @@ func mcpOpsTools() []map[string]interface{} {
 			"description": "Return observability stack status and checks.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
+		{
+			"name":        "get_active_credentials",
+			"description": "Return structured per-service credentials for currently running lab services (URLs, usernames, demo passwords, and the cached TFE API token) — the structured equivalent of `hal creds status`.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
 	}
 }
 
@@ -324,9 +330,27 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		return handleStatusCommandTool("get_obs_status", []string{"obs", "status"}, []string{"hal obs status", "hal obs create"}, []string{"https://grafana.com/docs/", "https://prometheus.io/docs/", "https://grafana.com/oss/loki/"}), true
 
+	case "get_active_credentials":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_active_credentials", codeParseError, err.Error(), nil, []string{"hal creds status"}, nil, nil, nil), true
+		}
+		return handleActiveCredentials(), true
+
 	default:
 		return mcpToolCallResult{}, false
 	}
+}
+
+func handleActiveCredentials() mcpToolCallResult {
+	active, err := creds.CollectActiveCredentials()
+	if err != nil {
+		return opErrorForTool("get_active_credentials", classifyContractError(err.Error()), err.Error(), nil, []string{"hal creds status"}, nil, nil, nil)
+	}
+	data := map[string]interface{}{"any_active": active.AnyActive, "services": active.Services}
+	if !active.AnyActive {
+		return opErrorForTool("get_active_credentials", codeNotDeployed, "no active lab services detected; start a service first", data, []string{"hal vault create", "hal terraform create"}, nil, nil, nil)
+	}
+	return opSuccessForTool("get_active_credentials", "active lab credentials collected", data, []string{"hal creds status"}, nil, nil, nil, nil)
 }
 
 func opSuccess(message string, data interface{}, commands []string, docs []string) mcpToolCallResult {
@@ -1092,24 +1116,12 @@ func handleTFEVCSWorkflowStatus() mcpToolCallResult {
 	}
 	recommended := []string{"hal terraform vcs-workflow status", "hal terraform vcs-workflow enable"}
 
-	engine, product, err := terraformRuntimeState()
-	if err != nil {
-		return opErrorForTool("get_tfe_vcs_workflow_status", codeTimeout, err.Error(), nil, []string{"hal status", "hal terraform status"}, []opCheck{{Name: "terraform_runtime", Status: "error", Details: "unable to resolve runtime state"}}, nil, docs)
-	}
-
-	state, _ := product["state"].(string)
-	reason, _ := product["reason"].(string)
-	tfeRunning := strings.EqualFold(strings.TrimSpace(state), "running")
-	gitlabRunning := global.IsContainerRunning(engine, "hal-gitlab")
-
-	homeDir, _ := os.UserHomeDir()
-	tokenPath := filepath.Join(homeDir, ".hal", "tfe-app-api-token")
-	_, tokenErr := os.Stat(tokenPath)
-	tokenReady := tokenErr == nil
-
 	// Canonical hal defaults for the primary VCS workflow (see vcs-workflow.go
 	// configureWorkspaceTargetDefaults). Centralized here so HAL Plus reads them
-	// from one authoritative place instead of duplicating them in its graph.
+	// from one authoritative place instead of duplicating them in its graph. These
+	// are static defaults that do not depend on runtime state, so we compute them
+	// up front and always surface them (even when the runtime is unavailable) so
+	// HAL Plus can render the Access section deterministically.
 	const (
 		tfeBase      = "https://tfe.localhost:8443"
 		tfeOrg       = "hal"
@@ -1122,6 +1134,60 @@ func handleTFEVCSWorkflowStatus() mcpToolCallResult {
 	workspaceURL := fmt.Sprintf("%s/app/organizations/%s/workspaces/%s", tfeBase, tfeOrg, tfeWorkspace)
 	runsURL := workspaceURL + "/runs"
 	gitlabWebURL := fmt.Sprintf("%s/%s", gitlabHost, gitlabRepo)
+
+	homeDir, _ := os.UserHomeDir()
+	tokenPath := filepath.Join(homeDir, ".hal", "tfe-app-api-token")
+	_, tokenErr := os.Stat(tokenPath)
+	tokenReady := tokenErr == nil
+
+	// buildVCSWorkflowData assembles the contract data map for the given runtime
+	// flags. Canonical endpoints/credentials are always present; only the live
+	// running/ready flags vary.
+	buildVCSWorkflowData := func(tfeRunning, gitlabRunning, ready bool) map[string]interface{} {
+		return map[string]interface{}{
+			"target": "primary",
+			"gitlab": map[string]interface{}{
+				"running":        gitlabRunning,
+				"url":            gitlabHost,
+				"project_path":   gitlabRepo,
+				"web_url":        gitlabWebURL,
+				"default_branch": vcsBranch,
+				"seeded_files":   []string{"main.tf", ".gitlab-ci.yml"},
+			},
+			"tfe": map[string]interface{}{
+				"running":       tfeRunning,
+				"org":           tfeOrg,
+				"project":       tfeProject,
+				"workspace":     tfeWorkspace,
+				"workspace_url": workspaceURL,
+				"runs_url":      runsURL,
+				"auto_apply":    true,
+				"branch":        vcsBranch,
+			},
+			// lab_credentials are non-secret demo values already printed by the CLI
+			// and are intentionally surfaced here (lab-scoped, redaction-exempt).
+			"lab_credentials": map[string]interface{}{
+				"gitlab":    map[string]string{"username": "root", "password": "hal9000FTW"},
+				"tfe_admin": map[string]string{"username": "haladmin", "password": "hal9000FTW"},
+			},
+			"ready": ready,
+			"notes": "Values reflect hal defaults; flags at 'hal terraform vcs-workflow enable' can override them. Twin target is not surfaced by this tool in v1.",
+		}
+	}
+
+	engine, product, err := terraformRuntimeState()
+	if err != nil {
+		// Runtime is unavailable, but the canonical endpoints/credentials are static
+		// hal defaults, so surface them anyway (flags default to not-running) so
+		// HAL Plus can still render Access deterministically.
+		data := buildVCSWorkflowData(false, false, false)
+		return opErrorForTool("get_tfe_vcs_workflow_status", codeTimeout, err.Error(), data, []string{"hal status", "hal terraform status"}, []opCheck{{Name: "terraform_runtime", Status: "error", Details: "unable to resolve runtime state"}}, nil, docs)
+	}
+
+	state, _ := product["state"].(string)
+	reason, _ := product["reason"].(string)
+	tfeRunning := strings.EqualFold(strings.TrimSpace(state), "running")
+	gitlabRunning := global.IsContainerRunning(engine, "hal-gitlab")
 	ready := tfeRunning && gitlabRunning && tokenReady
 
 	checks := []opCheck{
@@ -1130,35 +1196,7 @@ func handleTFEVCSWorkflowStatus() mcpToolCallResult {
 		{Name: "tfe_foundation_token", Status: checkStatusFromState(global.BoolState(tokenReady)), Details: tokenPath},
 	}
 
-	data := map[string]interface{}{
-		"target": "primary",
-		"gitlab": map[string]interface{}{
-			"running":        gitlabRunning,
-			"url":            gitlabHost,
-			"project_path":   gitlabRepo,
-			"web_url":        gitlabWebURL,
-			"default_branch": vcsBranch,
-			"seeded_files":   []string{"main.tf", ".gitlab-ci.yml"},
-		},
-		"tfe": map[string]interface{}{
-			"running":       tfeRunning,
-			"org":           tfeOrg,
-			"project":       tfeProject,
-			"workspace":     tfeWorkspace,
-			"workspace_url": workspaceURL,
-			"runs_url":      runsURL,
-			"auto_apply":    true,
-			"branch":        vcsBranch,
-		},
-		// lab_credentials are non-secret demo values already printed by the CLI
-		// and are intentionally surfaced here (lab-scoped, redaction-exempt).
-		"lab_credentials": map[string]interface{}{
-			"gitlab":    map[string]string{"username": "root", "password": "hal9000FTW"},
-			"tfe_admin": map[string]string{"username": "haladmin", "password": "hal9000FTW"},
-		},
-		"ready": ready,
-		"notes": "Values reflect hal defaults; flags at 'hal terraform vcs-workflow enable' can override them. Twin target is not surfaced by this tool in v1.",
-	}
+	data := buildVCSWorkflowData(tfeRunning, gitlabRunning, ready)
 
 	if !tfeRunning {
 		return opErrorForTool("get_tfe_vcs_workflow_status", runtimeCodeFromState(state), "tfe runtime not healthy; deploy terraform first", data, []string{"hal terraform create", "hal terraform status"}, checks, nil, docs)
