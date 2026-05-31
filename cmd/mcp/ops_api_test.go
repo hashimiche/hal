@@ -32,6 +32,9 @@ func TestRequiredOpsToolsRegistered(t *testing.T) {
 		"get_nomad_status",
 		"get_obs_status",
 		"get_active_credentials",
+		"get_capabilities",
+		"hal_policy_profile",
+		"validate_command",
 	}
 	tools := mcpOpsTools()
 	seen := map[string]bool{}
@@ -65,6 +68,9 @@ func TestOpsResponsesContainContractFields(t *testing.T) {
 		{name: "get_nomad_status", args: map[string]interface{}{}},
 		{name: "get_obs_status", args: map[string]interface{}{}},
 		{name: "get_active_credentials", args: map[string]interface{}{}},
+		{name: "get_capabilities", args: map[string]interface{}{}},
+		{name: "hal_policy_profile", args: map[string]interface{}{}},
+		{name: "validate_command", args: map[string]interface{}{"command": "hal vault status"}},
 	}
 
 	for _, tc := range invocations {
