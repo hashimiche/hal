@@ -147,6 +147,11 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
+			"name":        "get_vault_pki_status",
+			"description": "Return Vault PKI readiness: Root/Intermediate CA engines, hal-role, and the optional cert-manager (--k8s) and ACME/Caddy (--acme) demo layers.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
 			"name":        "get_ldap_status",
 			"description": "Return Vault LDAP demo readiness and key checks.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
@@ -328,6 +333,17 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 			return opErrorForTool("get_k8s_integration_status", classifyContractError(execRes.Output), "k8s integration check failed; inspect vault and kind prerequisites", map[string]interface{}{"execution": execRes}, []string{"hal vault status", "hal vault k8s enable"}, checks, nil, nil), true
 		}
 		return opSuccessForTool("get_k8s_integration_status", "vault k8s integration status collected", map[string]interface{}{"execution": execRes}, []string{"hal vault k8s", "hal vault k8s enable", "hal vault k8s enable --csi"}, checks, nil, nil, nil), true
+
+	case "get_vault_pki_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_vault_pki_status", codeParseError, err.Error(), nil, []string{"hal vault pki"}, nil, nil, nil), true
+		}
+		execRes := runHAL("vault", "pki")
+		checks := []opCheck{{Name: "vault_pki_status", Status: statusFromExecution(execRes), Details: "vault pki engines + cert-manager/acme demo check"}}
+		if execRes.ExitCode != 0 {
+			return opErrorForTool("get_vault_pki_status", classifyContractError(execRes.Output), "vault pki check failed; ensure Vault is reachable and PKI engines are enabled", map[string]interface{}{"execution": execRes}, []string{"hal vault status", "hal vault pki enable"}, checks, nil, nil), true
+		}
+		return opSuccessForTool("get_vault_pki_status", "vault pki status collected", map[string]interface{}{"execution": execRes}, []string{"hal vault pki", "hal vault pki enable", "hal vault pki enable --acme", "hal vault pki enable --k8s"}, checks, nil, nil, []string{"https://developer.hashicorp.com/vault/docs/secrets/pki"}), true
 
 	case "get_ldap_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
