@@ -23,13 +23,19 @@ func TestRequiredOpsToolsRegistered(t *testing.T) {
 		"get_boundary_status",
 		"get_tfe_status",
 		"get_tfe_api_workflow_status",
+		"get_tfe_vcs_workflow_status",
 		"get_k8s_integration_status",
+		"get_vault_pki_status",
 		"get_ldap_status",
 		"get_vault_database_status",
 		"get_boundary_mariadb_status",
 		"get_consul_status",
 		"get_nomad_status",
 		"get_obs_status",
+		"get_active_credentials",
+		"get_capabilities",
+		"hal_policy_profile",
+		"validate_command",
 	}
 	tools := mcpOpsTools()
 	seen := map[string]bool{}
@@ -54,13 +60,19 @@ func TestOpsResponsesContainContractFields(t *testing.T) {
 		{name: "get_jwt_status", args: map[string]interface{}{}},
 		{name: "get_boundary_status", args: map[string]interface{}{}},
 		{name: "get_tfe_status", args: map[string]interface{}{}},
+		{name: "get_tfe_vcs_workflow_status", args: map[string]interface{}{}},
 		{name: "get_k8s_integration_status", args: map[string]interface{}{}},
+		{name: "get_vault_pki_status", args: map[string]interface{}{}},
 		{name: "get_ldap_status", args: map[string]interface{}{}},
 		{name: "get_vault_database_status", args: map[string]interface{}{}},
 		{name: "get_boundary_mariadb_status", args: map[string]interface{}{}},
 		{name: "get_consul_status", args: map[string]interface{}{}},
 		{name: "get_nomad_status", args: map[string]interface{}{}},
 		{name: "get_obs_status", args: map[string]interface{}{}},
+		{name: "get_active_credentials", args: map[string]interface{}{}},
+		{name: "get_capabilities", args: map[string]interface{}{}},
+		{name: "hal_policy_profile", args: map[string]interface{}{}},
+		{name: "validate_command", args: map[string]interface{}{"command": "hal vault status"}},
 	}
 
 	for _, tc := range invocations {
@@ -96,6 +108,7 @@ func TestRecommendedCommandsAreExecutableSyntax(t *testing.T) {
 		{name: "get_boundary_status", args: map[string]interface{}{}},
 		{name: "get_tfe_status", args: map[string]interface{}{}},
 		{name: "get_k8s_integration_status", args: map[string]interface{}{}},
+		{name: "get_vault_pki_status", args: map[string]interface{}{}},
 		{name: "get_ldap_status", args: map[string]interface{}{}},
 		{name: "get_vault_database_status", args: map[string]interface{}{}},
 		{name: "get_boundary_mariadb_status", args: map[string]interface{}{}},

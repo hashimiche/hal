@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"hal/cmd/creds"
 	"hal/internal/global"
 )
 
@@ -136,8 +137,18 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
+			"name":        "get_tfe_vcs_workflow_status",
+			"description": "Return Terraform VCS-driven workflow readiness: shared GitLab + TFE workspace wiring, endpoints, lab credentials, and the manual push trigger.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
 			"name":        "get_k8s_integration_status",
 			"description": "Return Vault Kubernetes integration readiness including VSO/CSI checks.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "get_vault_pki_status",
+			"description": "Return Vault PKI readiness: Root/Intermediate CA engines, hal-role, and the optional cert-manager (--k8s) and ACME/Caddy (--acme) demo layers.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
@@ -169,6 +180,46 @@ func mcpOpsTools() []map[string]interface{} {
 			"name":        "get_obs_status",
 			"description": "Return observability stack status and checks.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "get_active_credentials",
+			"description": "Return structured per-service credentials for currently running lab services (URLs, usernames, demo passwords, and the cached TFE API token) — the structured equivalent of `hal creds status`.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "get_capabilities",
+			"description": "Return HAL's capability catalog: exposed MCP tools, real CLI commands, action keys, and embedded skills count. Engine-independent and read-only.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "hal_policy_profile",
+			"description": "Return the HAL runtime answer/tool policy profile (hal_first, strict by default) that grounds assistant behavior. Read-only.",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"profile": map[string]interface{}{
+						"type":        "string",
+						"description": "policy profile name (default: strict)",
+					},
+				},
+			},
+		},
+		{
+			"name":        "validate_command",
+			"description": "Validate a proposed HAL command against the real command surface (rejects unknown/deprecated commands, normalizes aliases). Read-only; never executes.",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"command": map[string]interface{}{
+						"type":        "string",
+						"description": "proposed hal command to validate, e.g. 'hal vault status'",
+					},
+					"proposed_command": map[string]interface{}{
+						"type":        "string",
+						"description": "alias of command",
+					},
+				},
+			},
 		},
 	}
 }
@@ -266,6 +317,12 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		return handleTFECLIStatus(), true
 
+	case "get_tfe_vcs_workflow_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_tfe_vcs_workflow_status", codeParseError, err.Error(), nil, []string{"hal terraform vcs-workflow"}, nil, nil, nil), true
+		}
+		return handleTFEVCSWorkflowStatus(), true
+
 	case "get_k8s_integration_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
 			return opErrorForTool("get_k8s_integration_status", codeParseError, err.Error(), nil, []string{"hal vault k8s"}, nil, nil, nil), true
@@ -276,6 +333,17 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 			return opErrorForTool("get_k8s_integration_status", classifyContractError(execRes.Output), "k8s integration check failed; inspect vault and kind prerequisites", map[string]interface{}{"execution": execRes}, []string{"hal vault status", "hal vault k8s enable"}, checks, nil, nil), true
 		}
 		return opSuccessForTool("get_k8s_integration_status", "vault k8s integration status collected", map[string]interface{}{"execution": execRes}, []string{"hal vault k8s", "hal vault k8s enable", "hal vault k8s enable --csi"}, checks, nil, nil, nil), true
+
+	case "get_vault_pki_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_vault_pki_status", codeParseError, err.Error(), nil, []string{"hal vault pki"}, nil, nil, nil), true
+		}
+		execRes := runHAL("vault", "pki")
+		checks := []opCheck{{Name: "vault_pki_status", Status: statusFromExecution(execRes), Details: "vault pki engines + cert-manager/acme demo check"}}
+		if execRes.ExitCode != 0 {
+			return opErrorForTool("get_vault_pki_status", classifyContractError(execRes.Output), "vault pki check failed; ensure Vault is reachable and PKI engines are enabled", map[string]interface{}{"execution": execRes}, []string{"hal vault status", "hal vault pki enable"}, checks, nil, nil), true
+		}
+		return opSuccessForTool("get_vault_pki_status", "vault pki status collected", map[string]interface{}{"execution": execRes}, []string{"hal vault pki", "hal vault pki enable", "hal vault pki enable --acme", "hal vault pki enable --k8s"}, checks, nil, nil, []string{"https://developer.hashicorp.com/vault/docs/secrets/pki"}), true
 
 	case "get_ldap_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
@@ -313,9 +381,180 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		return handleStatusCommandTool("get_obs_status", []string{"obs", "status"}, []string{"hal obs status", "hal obs create"}, []string{"https://grafana.com/docs/", "https://prometheus.io/docs/", "https://grafana.com/oss/loki/"}), true
 
+	case "get_active_credentials":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_active_credentials", codeParseError, err.Error(), nil, []string{"hal creds status"}, nil, nil, nil), true
+		}
+		return handleActiveCredentials(), true
+
+	case "get_capabilities":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_capabilities", codeParseError, err.Error(), nil, []string{"hal catalog"}, nil, nil, nil), true
+		}
+		caps := buildCapabilities()
+		checks := []opCheck{{Name: "capabilities", Status: "ok", Details: "catalog enumerated"}}
+		return opSuccessForTool("get_capabilities", "hal capability catalog collected", caps, []string{"hal catalog", "hal --help"}, checks, nil, nil, nil), true
+
+	case "hal_policy_profile":
+		if err := ensureOnlyKeys(args, map[string]bool{"profile": true}); err != nil {
+			return opErrorForTool("hal_policy_profile", codeParseError, err.Error(), nil, []string{"hal mcp status"}, nil, nil, nil), true
+		}
+		profile := "strict"
+		if raw, ok := args["profile"]; ok {
+			if v, ok := raw.(string); ok && strings.TrimSpace(v) != "" {
+				profile = strings.TrimSpace(v)
+			}
+		}
+		checks := []opCheck{{Name: "policy_profile", Status: "ok", Details: profile}}
+		return opSuccessForTool("hal_policy_profile", "hal runtime policy profile collected", buildPolicyProfile(profile), []string{"hal mcp status", "hal status"}, checks, nil, nil, nil), true
+
+	case "validate_command":
+		if err := ensureOnlyKeys(args, map[string]bool{"command": true, "proposed_command": true}); err != nil {
+			return opErrorForTool("validate_command", codeParseError, err.Error(), nil, []string{"hal --help"}, nil, nil, nil), true
+		}
+		proposed := ""
+		if raw, ok := args["command"]; ok {
+			if v, ok := raw.(string); ok {
+				proposed = strings.TrimSpace(v)
+			}
+		}
+		if proposed == "" {
+			if raw, ok := args["proposed_command"]; ok {
+				if v, ok := raw.(string); ok {
+					proposed = strings.TrimSpace(v)
+				}
+			}
+		}
+		if proposed == "" {
+			return opErrorForTool("validate_command", codeParseError, "command is required; run a recommended command for remediation", nil, []string{"hal --help"}, nil, nil, nil), true
+		}
+		return handleValidateCommand(proposed), true
+
 	default:
 		return mcpToolCallResult{}, false
 	}
+}
+
+func handleValidateCommand(proposed string) mcpToolCallResult {
+	check := validateCommand(proposed)
+	valid, _ := check["valid"].(bool)
+	normalized, _ := check["normalized_command"].(string)
+	suggestions := []string{}
+	if raw, ok := check["suggestions"].([]string); ok {
+		suggestions = raw
+	}
+	if valid {
+		commands := []string{}
+		if strings.HasPrefix(normalized, "hal") {
+			commands = append(commands, normalized)
+		}
+		commands = append(commands, "hal --help")
+		checks := []opCheck{{Name: "command_validation", Status: "ok", Details: normalized}}
+		return opSuccessForTool("validate_command", "proposed command is valid against the hal command surface", check, commands, checks, nil, nil, nil)
+	}
+	commands := []string{"hal --help"}
+	if len(suggestions) > 0 {
+		commands = suggestions
+	}
+	checks := []opCheck{{Name: "command_validation", Status: "warn", Details: normalized}}
+	return opErrorForTool("validate_command", codeCommandNotFound, "proposed command failed validation; run a recommended command for remediation", check, commands, checks, nil, nil)
+}
+
+// buildCapabilities enumerates HAL's read-only capability surface: exposed MCP
+// tools, real CLI commands, action keys, and embedded skills. Engine-independent.
+func buildCapabilities() map[string]interface{} {
+	toolNames := []string{}
+	for _, tool := range declaredTools() {
+		if n, ok := tool["name"].(string); ok && strings.TrimSpace(n) != "" {
+			toolNames = append(toolNames, strings.TrimSpace(n))
+		}
+	}
+	sort.Strings(toolNames)
+
+	commands := []string{}
+	actions := []string{}
+	skillNames := []string{}
+	deprecated := map[string]string{}
+	skillsCount := 0
+	if idx, err := getSkillIndex(); err == nil && idx != nil {
+		commands = append(commands, idx.Commands...)
+		for key := range idx.CommandsByActionKey {
+			actions = append(actions, key)
+		}
+		sort.Strings(actions)
+		for _, skill := range idx.Skills {
+			name := strings.TrimSpace(skill.Name)
+			if name == "" {
+				name = skill.Path
+			}
+			skillNames = append(skillNames, name)
+		}
+		skillsCount = len(idx.Skills)
+		for k, v := range idx.DeprecatedCommands {
+			deprecated[k] = v
+		}
+	}
+	// Guarantee a non-empty actions surface even if skills are unavailable.
+	if len(actions) == 0 {
+		actions = append(actions, toolNames...)
+	}
+
+	return map[string]interface{}{
+		"contract_version":    mcpContractVersion,
+		"policy_version":      mcpPolicyVersion,
+		"tools":               toolNames,
+		"actions":             actions,
+		"commands":            commands,
+		"deprecated_commands": deprecated,
+		"skills": map[string]interface{}{
+			"skills_count": skillsCount,
+			"names":        skillNames,
+		},
+	}
+}
+
+// buildPolicyProfile returns the HAL runtime answer/tool policy profile that
+// grounds assistant behavior. The required_prefetch_tools all map to real,
+// registered MCP tools.
+func buildPolicyProfile(profile string) map[string]interface{} {
+	if strings.TrimSpace(profile) == "" {
+		profile = "strict"
+	}
+	return map[string]interface{}{
+		"policy_version":   mcpPolicyVersion,
+		"contract_version": mcpContractVersion,
+		"profile":          profile,
+		"answer_policy": map[string]interface{}{
+			"mode":                           "hal_first",
+			"disallow_unverified_claims":     true,
+			"disallow_non_hal_primary_paths": true,
+			"include_verification_commands":  true,
+			"include_official_docs":          true,
+		},
+		"tool_policy": map[string]interface{}{
+			"required_prefetch_tools": []string{"hal_status_baseline", "get_capabilities", "hal_policy_profile", "validate_command"},
+			"on_uncertain_then_call":  []string{"validate_command", "hal_help", "get_capabilities"},
+			"fallback": map[string]interface{}{
+				"mode":         "fail_closed",
+				"allow_answer": false,
+				"message":      "HAL MCP policy unavailable; run hal mcp status and retry.",
+			},
+		},
+		"recommended_bootstrap": []string{"hal mcp status", "hal status", "hal --help"},
+		"source":                "hal-mcp-runtime",
+	}
+}
+
+func handleActiveCredentials() mcpToolCallResult {
+	active, err := creds.CollectActiveCredentials()
+	if err != nil {
+		return opErrorForTool("get_active_credentials", classifyContractError(err.Error()), err.Error(), nil, []string{"hal creds status"}, nil, nil, nil)
+	}
+	data := map[string]interface{}{"any_active": active.AnyActive, "services": active.Services}
+	if !active.AnyActive {
+		return opErrorForTool("get_active_credentials", codeNotDeployed, "no active lab services detected; start a service first", data, []string{"hal vault create", "hal terraform create"}, nil, nil, nil)
+	}
+	return opSuccessForTool("get_active_credentials", "active lab credentials collected", data, []string{"hal creds status"}, nil, nil, nil, nil)
 }
 
 func opSuccess(message string, data interface{}, commands []string, docs []string) mcpToolCallResult {
@@ -1068,4 +1307,113 @@ func handleTFECLIStatus() mcpToolCallResult {
 		return opErrorForTool("get_tfe_cli_status", codeNotDeployed, "tfe api helper is not ready; run hal terraform api-workflow", data, []string{"hal terraform api-workflow", "hal tf api-workflow enable"}, checks, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
 	}
 	return opSuccessForTool("get_tfe_cli_status", "tfe api helper status collected", data, []string{"hal terraform api-workflow", "hal tf api-workflow enable"}, checks, nil, nil, []string{"https://developer.hashicorp.com/terraform/enterprise"})
+}
+
+// handleTFEVCSWorkflowStatus reports readiness of the Terraform VCS-driven workflow
+// (shared GitLab + TFE workspace wiring) plus the endpoints, lab credentials, and the
+// manual push trigger the user needs. v1 covers the primary target only; values reflect
+// hal defaults unless overridden at `hal terraform vcs-workflow enable` time.
+func handleTFEVCSWorkflowStatus() mcpToolCallResult {
+	docs := []string{
+		"https://developer.hashicorp.com/terraform/enterprise/workspaces/settings/vcs",
+		"https://developer.hashicorp.com/terraform/tutorials/automation/git-patterns",
+	}
+	recommended := []string{"hal terraform vcs-workflow status", "hal terraform vcs-workflow enable"}
+
+	// Canonical hal defaults for the primary VCS workflow (see vcs-workflow.go
+	// configureWorkspaceTargetDefaults). Centralized here so HAL Plus reads them
+	// from one authoritative place instead of duplicating them in its graph. These
+	// are static defaults that do not depend on runtime state, so we compute them
+	// up front and always surface them (even when the runtime is unavailable) so
+	// HAL Plus can render the Access section deterministically.
+	const (
+		tfeBase      = "https://tfe.localhost:8443"
+		tfeOrg       = "hal"
+		tfeProject   = "Dave"
+		tfeWorkspace = "tfe-agent-demo"
+		vcsBranch    = "main"
+		gitlabHost   = "http://127.0.0.1:8080"
+		gitlabRepo   = "root/tfe-agent-demo"
+	)
+	workspaceURL := fmt.Sprintf("%s/app/organizations/%s/workspaces/%s", tfeBase, tfeOrg, tfeWorkspace)
+	runsURL := workspaceURL + "/runs"
+	gitlabWebURL := fmt.Sprintf("%s/%s", gitlabHost, gitlabRepo)
+
+	homeDir, _ := os.UserHomeDir()
+	tokenPath := filepath.Join(homeDir, ".hal", "tfe-app-api-token")
+	_, tokenErr := os.Stat(tokenPath)
+	tokenReady := tokenErr == nil
+
+	// buildVCSWorkflowData assembles the contract data map for the given runtime
+	// flags. Canonical endpoints/credentials are always present; only the live
+	// running/ready flags vary.
+	buildVCSWorkflowData := func(tfeRunning, gitlabRunning, ready bool) map[string]interface{} {
+		return map[string]interface{}{
+			"target": "primary",
+			"gitlab": map[string]interface{}{
+				"running":        gitlabRunning,
+				"url":            gitlabHost,
+				"project_path":   gitlabRepo,
+				"web_url":        gitlabWebURL,
+				"default_branch": vcsBranch,
+				"seeded_files":   []string{"main.tf", ".gitlab-ci.yml"},
+			},
+			"tfe": map[string]interface{}{
+				"running":       tfeRunning,
+				"org":           tfeOrg,
+				"project":       tfeProject,
+				"workspace":     tfeWorkspace,
+				"workspace_url": workspaceURL,
+				"runs_url":      runsURL,
+				"auto_apply":    true,
+				"branch":        vcsBranch,
+			},
+			// lab_credentials are non-secret demo values already printed by the CLI
+			// and are intentionally surfaced here (lab-scoped, redaction-exempt).
+			"lab_credentials": map[string]interface{}{
+				"gitlab":    map[string]string{"username": "root", "password": "hal9000FTW"},
+				"tfe_admin": map[string]string{"username": "haladmin", "password": "hal9000FTW"},
+			},
+			"ready": ready,
+			"notes": "Values reflect hal defaults; flags at 'hal terraform vcs-workflow enable' can override them. Twin target is not surfaced by this tool in v1.",
+		}
+	}
+
+	engine, product, err := terraformRuntimeState()
+	if err != nil {
+		// Runtime is unavailable, but the canonical endpoints/credentials are static
+		// hal defaults, so surface them anyway (flags default to not-running) so
+		// HAL Plus can still render Access deterministically.
+		data := buildVCSWorkflowData(false, false, false)
+		return opErrorForTool("get_tfe_vcs_workflow_status", codeTimeout, err.Error(), data, []string{"hal status", "hal terraform status"}, []opCheck{{Name: "terraform_runtime", Status: "error", Details: "unable to resolve runtime state"}}, nil, docs)
+	}
+
+	state, _ := product["state"].(string)
+	reason, _ := product["reason"].(string)
+	tfeRunning := strings.EqualFold(strings.TrimSpace(state), "running")
+	gitlabRunning := global.IsContainerRunning(engine, "hal-gitlab")
+	ready := tfeRunning && gitlabRunning && tokenReady
+
+	checks := []opCheck{
+		{Name: "terraform_runtime", Status: checkStatusFromState(state), Details: reason},
+		{Name: "shared_gitlab", Status: checkStatusFromState(global.BoolState(gitlabRunning)), Details: "hal-gitlab container availability"},
+		{Name: "tfe_foundation_token", Status: checkStatusFromState(global.BoolState(tokenReady)), Details: tokenPath},
+	}
+
+	data := buildVCSWorkflowData(tfeRunning, gitlabRunning, ready)
+
+	if !tfeRunning {
+		return opErrorForTool("get_tfe_vcs_workflow_status", runtimeCodeFromState(state), "tfe runtime not healthy; deploy terraform first", data, []string{"hal terraform create", "hal terraform status"}, checks, nil, docs)
+	}
+	if !gitlabRunning {
+		return opErrorForTool("get_tfe_vcs_workflow_status", codeNotDeployed, "shared GitLab is not running; run hal terraform vcs-workflow enable to bootstrap it", data, recommended, checks, nil, docs)
+	}
+
+	next := []opNextStep{{
+		Order:           1,
+		Title:           "Trigger an auto-applied run",
+		ExpectedOutcome: "Pushing a commit to the main branch of the GitLab repo fires a webhook; TFE queues and auto-applies a run visible at the workspace runs page.",
+	}}
+
+	return opSuccessForTool("get_tfe_vcs_workflow_status", "tfe vcs workflow status collected", data, recommended, checks, next, nil, docs)
 }

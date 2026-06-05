@@ -54,12 +54,13 @@ const (
 )
 
 var (
-	createCommandName   string
-	createBinaryPath    string
-	createJSONOnly      bool
-	createHTTPImage     bool
-	mcpContainerImage   string
-	mcpContainerTag     string
+	createCommandName string
+	createBinaryPath  string
+	createJSONOnly    bool
+	createHTTPImage   bool
+	createMCPPull     bool
+	mcpContainerImage string
+	mcpContainerTag   string
 	upTransport       string
 	upHTTPHost        string
 	upHTTPPort        int
@@ -375,6 +376,16 @@ func provisionManagedMCPBinary(targetPath string) (string, error) {
 }
 
 func buildManagedMCPHTTPImage(engine, imageTag string) error {
+	// Prefer a locally present image (e.g. one built by `podman build -t
+	// ghcr.io/hashimiche/hal-mcp:latest .`). Only pull from the registry when the
+	// image is absent locally, or when the caller forces it with --pull. This
+	// mirrors `hal plus create` semantics and lets developers iterate on a local
+	// image without it being overwritten by the published one.
+	if !createMCPPull && mcpImageExistsLocally(engine, imageTag) {
+		fmt.Printf("📦 Using local image %s (already present; pass --pull to refresh from registry).\n", imageTag)
+		return nil
+	}
+
 	pullCmd := exec.Command(engine, "pull", imageTag)
 	pullCmd.Stdout = os.Stdout
 	pullCmd.Stderr = os.Stderr
@@ -382,6 +393,12 @@ func buildManagedMCPHTTPImage(engine, imageTag string) error {
 		return fmt.Errorf("pull %s: %w", imageTag, err)
 	}
 	return nil
+}
+
+// mcpImageExistsLocally reports whether the given image is already present in the
+// local engine image store.
+func mcpImageExistsLocally(engine, imageTag string) bool {
+	return exec.Command(engine, "image", "inspect", imageTag).Run() == nil
 }
 
 func serveStdioMCP(stdin io.Reader, stdout io.Writer) error {
@@ -980,7 +997,8 @@ func init() {
 	createCmd.Flags().StringVar(&createCommandName, "command", "hal", "HAL command name/path to use in generated MCP client config")
 	createCmd.Flags().StringVar(&createBinaryPath, "binary-path", "", "Path to write the managed HAL binary used by MCP clients (default ~/.hal/bin/hal-mcp)")
 	createCmd.Flags().BoolVar(&createJSONOnly, "json", false, "Only generate/replace MCP config JSON (skip managed binary provisioning)")
-	createCmd.Flags().BoolVar(&createHTTPImage, "http", false, "Build a local HAL MCP container image for streamable-http transport")
+	createCmd.Flags().BoolVar(&createHTTPImage, "http", false, "Provision the HAL MCP streamable-http container image (uses a local image if present; pulls only when absent)")
+	createCmd.Flags().BoolVar(&createMCPPull, "pull", false, "Force pulling the HAL MCP image from the registry even when a local image exists (used with --http)")
 	createCmd.Flags().StringVar(&mcpContainerImage, "mcp-image", "ghcr.io/hashimiche/hal-mcp", "HAL MCP container image name (used when --http is set)")
 	createCmd.Flags().StringVar(&mcpContainerTag, "mcp-tag", "latest", "HAL MCP container image tag (used when --http is set)")
 	upCmd.Flags().StringVar(&upTransport, "transport", transportStdio, "MCP transport to use: stdio or streamable-http")

@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	halPlusContainerName = "hal-plus"
-	halMCPContainerName  = "hal-mcp"
+	halPlusContainerName   = "hal-plus"
+	halMCPContainerName    = "hal-mcp"
+	halQdrantContainerName = "hal-qdrant"
 )
 
 var (
@@ -24,6 +25,11 @@ var (
 	mcpImage           string
 	mcpImageName       string
 	mcpImageTag        string
+	qdrantImage        string
+	qdrantImageName    string
+	qdrantImageTag     string
+	ragBackend         string
+	embedModel         string
 	plusPull           bool
 	plusPort           int
 	plusModel          string
@@ -42,6 +48,7 @@ var Cmd = &cobra.Command{
 		// Combine image name + tag into the full refs used by all subcommands.
 		plusImage = plusImageName + ":" + plusImageTag
 		mcpImage = mcpImageName + ":" + mcpImageTag
+		qdrantImage = qdrantImageName + ":" + qdrantImageTag
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		statusCmd.Run(cmd, args)
@@ -166,10 +173,15 @@ func init() {
 	plusImageTag = "latest"
 	mcpImageName = "ghcr.io/hashimiche/hal-mcp"
 	mcpImageTag = "latest"
+	qdrantImageName = "ghcr.io/hashimiche/hal-plus-qdrant"
+	qdrantImageTag = "latest"
+	ragBackend = "qdrant"
+	embedModel = "nomic-embed-text"
 	plusImage = plusImageName + ":" + plusImageTag
 	mcpImage = mcpImageName + ":" + mcpImageTag
+	qdrantImage = qdrantImageName + ":" + qdrantImageTag
 	plusPort = 9000
-	plusModel = "qwen3.5"
+	plusModel = "gemma4"
 	plusModelConfig = ""
 	ollamaHostURL = "http://127.0.0.1:11434"
 	ollamaContainerURL = ""
@@ -186,11 +198,17 @@ func init() {
 	createCmd.Flags().StringVar(&ollamaHostURL, "ollama-host-url", ollamaHostURL, "Host-side Ollama URL used for preflight checks")
 	createCmd.Flags().StringVar(&ollamaContainerURL, "ollama-base-url", ollamaContainerURL, "Container-side OLLAMA_BASE_URL override (defaults by engine)")
 	createCmd.Flags().StringVar(&ollamaKeepAlive, "keep-alive", ollamaKeepAlive, "Ollama model keep-alive duration for HAL Plus chat requests (for example 10m or 0)")
+	createCmd.Flags().StringVar(&ragBackend, "rag", ragBackend, "Retrieval backend for HAL Plus doc search: qdrant (pre-seeded vector container) or local (in-process)")
+	createCmd.Flags().StringVar(&embedModel, "embed-model", embedModel, "Ollama embedding model used for Qdrant query vectors")
+	createCmd.Flags().StringVar(&qdrantImageName, "qdrant-image", qdrantImageName, "Pre-seeded HAL Plus Qdrant container image name")
+	createCmd.Flags().StringVar(&qdrantImageTag, "qdrant-tag", qdrantImageTag, "Pre-seeded HAL Plus Qdrant container image tag")
 
 	statusCmd.Flags().StringVar(&plusImageName, "plus-image", plusImageName, "HAL Plus container image name")
 	statusCmd.Flags().StringVar(&plusImageTag, "plus-tag", plusImageTag, "HAL Plus container image tag")
 	statusCmd.Flags().StringVar(&mcpImageName, "plus-mcp-image", mcpImageName, "HAL MCP container image name")
 	statusCmd.Flags().StringVar(&mcpImageTag, "plus-mcp-tag", mcpImageTag, "HAL MCP container image tag")
+	statusCmd.Flags().StringVar(&qdrantImageName, "qdrant-image", qdrantImageName, "Pre-seeded HAL Plus Qdrant container image name")
+	statusCmd.Flags().StringVar(&qdrantImageTag, "qdrant-tag", qdrantImageTag, "Pre-seeded HAL Plus Qdrant container image tag")
 
 	Cmd.AddCommand(createCmd)
 	Cmd.AddCommand(statusCmd)
@@ -200,4 +218,6 @@ func init() {
 	deleteCmd.Flags().StringVar(&plusImageTag, "plus-tag", plusImageTag, "HAL Plus container image tag")
 	deleteCmd.Flags().StringVar(&mcpImageName, "plus-mcp-image", mcpImageName, "HAL MCP container image name")
 	deleteCmd.Flags().StringVar(&mcpImageTag, "plus-mcp-tag", mcpImageTag, "HAL MCP container image tag")
+	deleteCmd.Flags().StringVar(&qdrantImageName, "qdrant-image", qdrantImageName, "Pre-seeded HAL Plus Qdrant container image name")
+	deleteCmd.Flags().StringVar(&qdrantImageTag, "qdrant-tag", qdrantImageTag, "Pre-seeded HAL Plus Qdrant container image tag")
 }

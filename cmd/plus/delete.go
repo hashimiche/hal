@@ -21,12 +21,12 @@ var deleteCmd = &cobra.Command{
 		}
 
 		if global.DryRun {
-			fmt.Printf("[DRY RUN] Would remove containers: %s, %s\n", halPlusContainerName, halMCPContainerName)
+			fmt.Printf("[DRY RUN] Would remove containers: %s, %s, %s\n", halPlusContainerName, halMCPContainerName, halQdrantContainerName)
 			fmt.Println("[DRY RUN] Would clean hal-net if unused")
 			return
 		}
 
-		for _, c := range []string{halPlusContainerName, halMCPContainerName} {
+		for _, c := range []string{halPlusContainerName, halMCPContainerName, halQdrantContainerName} {
 			_ = exec.Command(engine, "rm", "-f", c).Run()
 		}
 		global.RemoveHalHealth(engine)
