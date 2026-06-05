@@ -3,6 +3,7 @@ package plus
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"hal/internal/global"
 
@@ -28,6 +29,8 @@ var createCmd = &cobra.Command{
 
 		containerOllamaURL := detectOllamaContainerURL(engine)
 
+		qdrantEnabled := strings.EqualFold(strings.TrimSpace(ragBackend), "qdrant")
+
 		if global.DryRun {
 			fmt.Printf("[DRY RUN] Would verify Ollama host endpoint: %s\n", ollamaHostURL)
 			if runtimeConfig.ManagedByHAL {
@@ -45,6 +48,11 @@ var createCmd = &cobra.Command{
 			fmt.Println("[DRY RUN] Would ensure hal-net exists")
 			fmt.Printf("[DRY RUN] Would use local HAL Plus image if present, otherwise pull: %s\n", plusImage)
 			fmt.Println("[DRY RUN] Would start container hal-mcp on hal-net")
+			if qdrantEnabled {
+				fmt.Printf("[DRY RUN] Would ensure Ollama embedding model exists locally: %s\n", embedModel)
+				fmt.Printf("[DRY RUN] Would use local pre-seeded Qdrant image if present, otherwise pull: %s\n", qdrantImage)
+				fmt.Println("[DRY RUN] Would start container hal-qdrant on hal-net")
+			}
 			fmt.Println("[DRY RUN] Would start container hal-plus on hal-net")
 			fmt.Printf("[DRY RUN] Would set OLLAMA_BASE_URL=%s\n", containerOllamaURL)
 			fmt.Printf("[DRY RUN] Would set OLLAMA_MODEL=%s\n", runtimeConfig.RuntimeModel)
@@ -53,6 +61,11 @@ var createCmd = &cobra.Command{
 			}
 			fmt.Printf("[DRY RUN] Would set OLLAMA_KEEP_ALIVE=%s\n", runtimeConfig.KeepAlive)
 			fmt.Println("[DRY RUN] Would set HAL_MCP_HTTP_URL=http://hal-mcp:8080/mcp")
+			if qdrantEnabled {
+				fmt.Println("[DRY RUN] Would set HAL_RAG_BACKEND=qdrant")
+				fmt.Println("[DRY RUN] Would set HAL_QDRANT_URL=http://hal-qdrant:6333")
+				fmt.Printf("[DRY RUN] Would set HAL_DOC_SEARCH_EMBED_MODEL=%s\n", embedModel)
+			}
 			return
 		}
 
@@ -72,6 +85,14 @@ var createCmd = &cobra.Command{
 			fmt.Printf("❌ Ollama model '%s' was not found at %s after reconciliation\n", runtimeConfig.RuntimeModel, ollamaHostURL)
 			fmt.Printf("   💡 Check the configured model source or Modelfile and retry 'hal plus create'.\n")
 			return
+		}
+
+		if qdrantEnabled {
+			if err := ensureEmbedModel(embedModel); err != nil {
+				fmt.Printf("❌ Failed to prepare embedding model '%s': %v\n", embedModel, err)
+				fmt.Printf("   💡 Ensure Ollama is reachable at %s, or rerun with --rag local.\n", ollamaHostURL)
+				return
+			}
 		}
 
 		if !imageExists(engine, mcpImage) {
@@ -103,6 +124,25 @@ var createCmd = &cobra.Command{
 			return
 		}
 
+		if qdrantEnabled {
+			if plusPull {
+				if err := pullImage(engine, qdrantImage); err != nil {
+					fmt.Printf("❌ %v\n", err)
+					return
+				}
+			} else if !imageExists(engine, qdrantImage) {
+				if out, err := exec.Command(engine, "pull", qdrantImage).CombinedOutput(); err != nil {
+					fmt.Printf("❌ Failed to pull pre-seeded HAL Plus Qdrant image %s: %v\n%s\n", qdrantImage, err, string(out))
+					fmt.Println("   💡 Rerun with '--rag local' to use the in-process retrieval backend instead.")
+					return
+				}
+			}
+			if err := ensureRunningContainer(engine, halQdrantContainerName, []string{"--network", "hal-net", qdrantImage}); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return
+			}
+		}
+
 		plusArgs := []string{
 			"--network", "hal-net",
 			"-p", fmt.Sprintf("%d:9000", plusPort),
@@ -119,6 +159,14 @@ var createCmd = &cobra.Command{
 		if runtimeConfig.ContextWindow > 0 {
 			plusArgs = append(plusArgs[:len(plusArgs)-1], append([]string{"-e", fmt.Sprintf("OLLAMA_CONTEXT_WINDOW=%d", runtimeConfig.ContextWindow)}, plusArgs[len(plusArgs)-1])...)
 		}
+		if qdrantEnabled {
+			qdrantEnv := []string{
+				"-e", "HAL_RAG_BACKEND=qdrant",
+				"-e", "HAL_QDRANT_URL=http://hal-qdrant:6333",
+				"-e", fmt.Sprintf("HAL_DOC_SEARCH_EMBED_MODEL=%s", embedModel),
+			}
+			plusArgs = append(plusArgs[:len(plusArgs)-1], append(qdrantEnv, plusArgs[len(plusArgs)-1])...)
+		}
 		if err := ensureRunningContainer(engine, halPlusContainerName, plusArgs); err != nil {
 			fmt.Printf("❌ %v\n", err)
 			return
@@ -129,6 +177,12 @@ var createCmd = &cobra.Command{
 		fmt.Printf("🐳 Engine:       %s\n", engine)
 		fmt.Printf("🐳 HAL Plus:     %s\n", plusImage)
 		fmt.Printf("🐳 HAL MCP:      %s\n", mcpImage)
+		if qdrantEnabled {
+			fmt.Printf("🐳 HAL Qdrant:   %s\n", qdrantImage)
+			fmt.Printf("🔎 RAG backend:  qdrant (embed model: %s)\n", embedModel)
+		} else {
+			fmt.Println("🔎 RAG backend:  local (in-process)")
+		}
 		fmt.Printf("🧠 Ollama model: %s\n", runtimeConfig.RuntimeModel)
 		if runtimeConfig.RequestedModel != runtimeConfig.RuntimeModel {
 			fmt.Printf("🧩 Model preset: %s\n", runtimeConfig.RequestedModel)

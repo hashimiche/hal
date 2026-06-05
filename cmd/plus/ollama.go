@@ -40,9 +40,12 @@ var ollamaModelPresets = map[string]ollamaModelPreset{
 		BaseModel:     "gemma4:e4b",
 		ManagedModel:  "hal-plus-gemma4",
 		ContextWindow: 32768,
-		Temperature:   1.0,
+		// Tuned for a grounded docs assistant (less creative than Gemma's
+		// default temp 1.0 / top_k 64): mirror the conservative qwen preset so
+		// the model stays literal and is less prone to inventing flags/URLs.
+		Temperature:   0.7,
 		TopP:          0.95,
-		TopK:          64,
+		TopK:          20,
 		MinP:          0.0,
 		RepeatPenalty: 1.0,
 	},
@@ -231,6 +234,27 @@ func reconcileOllamaModel(config ollamaRuntimeConfig) error {
 	out, err := exec.Command("ollama", "pull", config.RuntimeModel).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ollama pull %s failed: %v (%s)", config.RuntimeModel, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// ensureEmbedModel makes sure the given embedding model is available on the
+// host Ollama instance, pulling it if necessary. Used for the Qdrant retrieval
+// backend, which embeds queries on the host before searching the vector store.
+func ensureEmbedModel(model string) error {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return fmt.Errorf("embedding model name is empty")
+	}
+	if _, err := exec.LookPath("ollama"); err != nil {
+		return fmt.Errorf("ollama CLI not found in PATH")
+	}
+	if ok, err := ollamaModelAvailable(ollamaHostURL, model); err == nil && ok {
+		return nil
+	}
+	out, err := exec.Command("ollama", "pull", model).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ollama pull %s failed: %v (%s)", model, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

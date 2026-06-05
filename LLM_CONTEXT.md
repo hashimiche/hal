@@ -78,10 +78,11 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - AI clients must treat this engine-unavailable baseline as **runtime unknown**, not as product up/down evidence. For quick status prompts, respond with `Unknown` and recommend the product-specific status command (for example `hal vault status`).
     - There is no SSH-based MCP transport pattern. Do not introduce or suggest SSH tunnelling for MCP.
 - HAL Plus stack lifecycle is managed via `hal plus create|status|delete`:
-    - `hal plus create` runs preflight checks (Ollama reachability, model availability, local MCP image presence), ensures `hal-net` exists, then starts `hal-mcp` and `hal-plus` containers on `hal-net`.
+    - `hal plus create` runs preflight checks (Ollama reachability, model availability, local MCP image presence), ensures `hal-net` exists, then starts `hal-mcp`, `hal-qdrant`, and `hal-plus` containers on `hal-net`.
     - `hal plus create --image <tag>` uses a local image directly if it exists (no forced pull); pulls from registry only when image is absent.
-    - `hal plus delete` tears down both containers.
-    - `hal plus status` reports image presence, container state, and endpoint health.
+    - **Retrieval backend (`--rag`, default `qdrant`):** with `--rag qdrant` (default), create also preflights an embedding model (`--embed-model`, default `nomic-embed-text`, pulled on the host if missing), pulls/starts the pre-seeded `hal-qdrant` container (`ghcr.io/hashimiche/hal-plus-qdrant:latest`, override with `--qdrant-image`/`--qdrant-tag`), and injects `HAL_RAG_BACKEND=qdrant`, `HAL_QDRANT_URL=http://hal-qdrant:6333`, `HAL_DOC_SEARCH_EMBED_MODEL` into the `hal-plus` container. `--rag local` skips Qdrant entirely and uses the in-process (MiniSearch + Ollama rerank) backend. The pre-seeded image bakes the full vector corpus into `/qdrant/storage` (Qdrant v1.13.6 declares no VOLUME), so no crawl/embed of the corpus is needed at runtime — only the query is embedded via host Ollama. **The `hal-plus-qdrant` image is built/published by CI in its own dedicated repo (monthly cron + on-demand), independently of the hal binary release; it is NOT built locally or pushed from a laptop.** Tags: `:latest` + dated `:YYYY.MM.DD`.
+    - `hal plus delete` tears down all three containers (`hal-plus`, `hal-mcp`, `hal-qdrant`).
+    - `hal plus status` reports image presence, container state, and endpoint health for all three containers.
     - Ollama must run on the **host**. HAL Plus contacts it from inside the container via `host.containers.internal:11434` (podman) or `host.docker.internal:11434` (docker). `OLLAMA_BASE_URL` env var overrides the resolved URL.
     - No socket mounts, no `--user` overrides, no `DOCKER_HOST` injection into `hal-mcp`. Podman stays rootless.
 - Terraform Enterprise local deployment depends on a mocked PostgreSQL, Redis, and MinIO stack and uses local TLS material under `~/.hal/tfe-certs`.
