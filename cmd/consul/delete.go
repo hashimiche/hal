@@ -27,7 +27,7 @@ var destroyCmd = &cobra.Command{
 			return
 		}
 
-		out, err := exec.Command(engine, "rm", "-f", "hal-consul").Output()
+		out, err := exec.Command(engine, "rm", "-f", consulContainer).Output()
 		if err == nil && string(out) != "" {
 			fmt.Println("  ✅ Destroyed container: hal-consul")
 		}

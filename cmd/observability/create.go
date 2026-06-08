@@ -44,7 +44,7 @@ var deployCmd = &cobra.Command{
 
 		if obsUpdate {
 			fmt.Println("♻️  Update requested. Reconciling observability stack...")
-			_ = exec.Command(engine, "rm", "-f", "hal-grafana", "hal-promtail", "hal-loki", "hal-prometheus").Run()
+			_ = exec.Command(engine, "rm", "-f", obsGrafanaContainer, obsPromtailContainer, obsLokiContainer, obsPrometheusContainer).Run()
 			homeDir, _ := os.UserHomeDir()
 			_ = os.RemoveAll(filepath.Join(homeDir, ".hal", "obs"))
 		}
@@ -226,10 +226,10 @@ providers:
 			}
 		}
 
-		bootContainer("Prometheus", "run", "-d", "--name", "hal-prometheus", "--network", "hal-net", "-p", "9090:9090", "-v", filepath.Join(configDir, "prometheus.yml")+":/etc/prometheus/prometheus.yml", "-v", targetsDir+":/etc/prometheus/targets", promImage+":"+promVer)
-		bootContainer("Loki", "run", "-d", "--name", "hal-loki", "--network", "hal-net", "-p", "3100:3100", "-v", filepath.Join(configDir, "loki-config.yaml")+":/etc/loki/local-config.yaml", lokiImage+":"+lokiVer, "-config.file=/etc/loki/local-config.yaml")
-		bootContainer("Promtail", "run", "-d", "--name", "hal-promtail", "--network", "hal-net", "-v", "hal-vault-logs:/vault/logs:ro", "-v", filepath.Join(configDir, "promtail-config.yaml")+":/etc/promtail/config.yml", promtailImage+":"+promtailVer, "-config.file=/etc/promtail/config.yml")
-		bootContainer("Grafana", "run", "-d", "--name", "hal-grafana", "--network", "hal-net", "-p", "3000:3000", "-v", filepath.Join(configDir, "datasources.yml")+":/etc/grafana/provisioning/datasources/datasources.yml", "-v", filepath.Join(configDir, "dashboards.yml")+":/etc/grafana/provisioning/dashboards/dashboards.yml", "-v", dashboardsDir+":/var/lib/grafana/dashboards", "-e", "GF_AUTH_ANONYMOUS_ENABLED=true", "-e", "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin", grafanaImage+":"+grafanaVer)
+		bootContainer("Prometheus", "run", "-d", "--name", obsPrometheusContainer, "--network", global.HalNetName, "-p", "9090:9090", "-v", filepath.Join(configDir, "prometheus.yml")+":/etc/prometheus/prometheus.yml", "-v", targetsDir+":/etc/prometheus/targets", promImage+":"+promVer)
+		bootContainer("Loki", "run", "-d", "--name", obsLokiContainer, "--network", global.HalNetName, "-p", "3100:3100", "-v", filepath.Join(configDir, "loki-config.yaml")+":/etc/loki/local-config.yaml", lokiImage+":"+lokiVer, "-config.file=/etc/loki/local-config.yaml")
+		bootContainer("Promtail", "run", "-d", "--name", obsPromtailContainer, "--network", global.HalNetName, "-v", "hal-vault-logs:/vault/logs:ro", "-v", filepath.Join(configDir, "promtail-config.yaml")+":/etc/promtail/config.yml", promtailImage+":"+promtailVer, "-config.file=/etc/promtail/config.yml")
+		bootContainer("Grafana", "run", "-d", "--name", obsGrafanaContainer, "--network", global.HalNetName, "-p", "3000:3000", "-v", filepath.Join(configDir, "datasources.yml")+":/etc/grafana/provisioning/datasources/datasources.yml", "-v", filepath.Join(configDir, "dashboards.yml")+":/etc/grafana/provisioning/dashboards/dashboards.yml", "-v", dashboardsDir+":/var/lib/grafana/dashboards", "-e", "GF_AUTH_ANONYMOUS_ENABLED=true", "-e", "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin", grafanaImage+":"+grafanaVer)
 
 		fmt.Println("⏳ Waiting for Prometheus, Loki, and Grafana health checks...")
 		if err := waitForObsHealth(engine); err != nil {
@@ -242,9 +242,9 @@ providers:
 		fmt.Println("✅ Observability Stack Deployed Successfully!")
 		global.RefreshHalHealth(engine)
 		fmt.Println("---------------------------------------------------------")
-		fmt.Println("🔗 Grafana:    http://grafana.localhost:3000 (Auto-logged in as Admin)")
-		fmt.Println("🔗 Prometheus: http://prometheus.localhost:9090")
-		fmt.Println("🔗 Loki API:   http://loki.localhost:3100/ready")
+		fmt.Printf("🔗 Grafana:    %s (Auto-logged in as Admin)\n", obsGrafanaURL)
+		fmt.Printf("🔗 Prometheus: %s\n", obsPrometheusURL)
+		fmt.Printf("🔗 Loki API:   %s\n", obsLokiReadyURL)
 		fmt.Println("---------------------------------------------------------")
 
 		if obsJobName != "" {
@@ -319,7 +319,7 @@ func readinessLabel(ok bool) string {
 }
 
 func firstNonRunningObsContainer(engine string) (string, error) {
-	containers := []string{"hal-prometheus", "hal-loki", "hal-promtail", "hal-grafana"}
+	containers := []string{obsPrometheusContainer, obsLokiContainer, obsPromtailContainer, obsGrafanaContainer}
 	for _, c := range containers {
 		out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", c).CombinedOutput()
 		if err != nil {
@@ -398,14 +398,14 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&obsUpdate, "update", "u", false, "Reconcile an existing observability stack in place")
 	}
-	cmd.Flags().StringVar(&lokiVer, "loki-tag", "3.7", "Tag for the Loki image")
-	cmd.Flags().StringVar(&lokiImage, "loki-image", "grafana/loki", "Loki container image name")
-	cmd.Flags().StringVar(&grafanaVer, "grafana-tag", "main", "Tag for the Grafana image")
-	cmd.Flags().StringVar(&grafanaImage, "grafana-image", "grafana/grafana", "Grafana container image name")
-	cmd.Flags().StringVar(&promVer, "prometheus-tag", "main", "Tag for the Prometheus image")
-	cmd.Flags().StringVar(&promImage, "prometheus-image", "prom/prometheus", "Prometheus container image name")
-	cmd.Flags().StringVar(&promtailVer, "promtail-tag", "3.6", "Tag for the Promtail image")
-	cmd.Flags().StringVar(&promtailImage, "promtail-image", "grafana/promtail", "Promtail container image name")
+	cmd.Flags().StringVar(&lokiVer, "loki-tag", defaultLokiTag, "Tag for the Loki image")
+	cmd.Flags().StringVar(&lokiImage, "loki-image", defaultLokiImage, "Loki container image name")
+	cmd.Flags().StringVar(&grafanaVer, "grafana-tag", defaultGrafanaTag, "Tag for the Grafana image")
+	cmd.Flags().StringVar(&grafanaImage, "grafana-image", defaultGrafanaImage, "Grafana container image name")
+	cmd.Flags().StringVar(&promVer, "prometheus-tag", defaultPromTag, "Tag for the Prometheus image")
+	cmd.Flags().StringVar(&promImage, "prometheus-image", defaultPromImage, "Prometheus container image name")
+	cmd.Flags().StringVar(&promtailVer, "promtail-tag", defaultPromtailTag, "Tag for the Promtail image")
+	cmd.Flags().StringVar(&promtailImage, "promtail-image", defaultPromtailImage, "Promtail container image name")
 	cmd.Flags().StringVar(&promConfigPath, "prom-config-path", "", "Path to a custom prometheus.yml; skips the generated config when set")
 	cmd.Flags().StringVar(&obsJobName, "job-name", "", "Register a custom Prometheus scrape job with this name (no local TFE required)")
 	cmd.Flags().StringVar(&obsMetricsPath, "metrics-path", "/metrics", "Metrics path for the custom job (only used when --job-name is set)")

@@ -25,13 +25,13 @@ var consulStatusCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Println("  [ Control Plane ]")
 
-		out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-consul").Output()
+		out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", consulContainer).Output()
 		status := strings.TrimSpace(string(out))
 
 		if err != nil {
 			fmt.Println("  ⚪ hal-consul : Down (hal consul create to start)")
 		} else if status == "running" {
-			fmt.Println("  🟢 hal-consul : Up   (http://consul.localhost:8500)")
+			fmt.Printf("  🟢 hal-consul : Up   (%s)\n", consulBaseURL)
 		} else {
 			fmt.Printf("  🟡 hal-consul : %s\n", strings.ToUpper(status))
 		}

@@ -42,7 +42,7 @@ var statusCmd = &cobra.Command{
 		fmt.Printf("HAL Plus health:     %s\n", boolLabel(uiReady))
 		fmt.Printf("HAL MCP health:      %s\n", boolLabel(mcpReady))
 		fmt.Printf("HAL Qdrant health:   %s\n", boolLabel(qdrantReady))
-		fmt.Printf("UI endpoint:         http://hal.localhost:%d\n", plusPort)
+		fmt.Printf("UI endpoint:         http://%s:%d\n", plusUIHostname, plusPort)
 
 		if plusState != "running" || mcpState != "running" {
 			fmt.Println("💡 Tip: Run 'hal plus create' to start or reconcile HAL Plus and HAL MCP containers.")

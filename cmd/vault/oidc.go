@@ -372,7 +372,7 @@ func provisionAuthentikForVault(c *integrations.AuthentikClient) (string, string
 	// OAuth2 provider
 	redirectURIs := []integrations.AuthentikRedirectURI{
 		{MatchingMode: "strict", URL: "http://localhost:8250/oidc/callback"},
-		{MatchingMode: "strict", URL: "http://vault.localhost:8200/ui/vault/auth/oidc/oidc/callback"},
+		{MatchingMode: "strict", URL: vaultPublicURL + "/ui/vault/auth/oidc/oidc/callback"},
 		{MatchingMode: "strict", URL: "http://127.0.0.1:8250/oidc/callback"},
 	}
 	providerPK, clientID, clientSecret, err := c.CreateOAuth2Provider(
@@ -384,7 +384,7 @@ func provisionAuthentikForVault(c *integrations.AuthentikClient) (string, string
 
 	// Application — set meta_launch_url so the Authentik portal tile points to the
 	// browser-accessible Vault UI OIDC page, not an auto-computed internal URL.
-	vaultUIURL := "http://vault.localhost:8200/ui/vault/auth/oidc"
+	vaultUIURL := vaultPublicURL + "/ui/vault/auth/oidc"
 	if err := c.CreateApplication("HashiCorp Vault", authentikVaultSlug, providerPK, vaultUIURL); err != nil {
 		return "", "", fmt.Errorf("create application: %w", err)
 	}
@@ -446,7 +446,7 @@ path "kv-oidc/metadata/team1" { capabilities = ["read", "list"] }
 		"allowed_redirect_uris": []string{
 			"http://localhost:8250/oidc/callback",
 			"http://127.0.0.1:8250/oidc/callback",
-			"http://vault.localhost:8200/ui/vault/auth/oidc/oidc/callback",
+			vaultPublicURL + "/ui/vault/auth/oidc/oidc/callback",
 		},
 		"oidc_scopes": []string{"openid", "profile", "email", "groups"},
 	})
@@ -517,7 +517,7 @@ func printOIDCSuccess(secrets *integrations.AuthentikSecrets) {
 	fmt.Println()
 	fmt.Println("✅ Vault OIDC + Authentik IdP ready!")
 	fmt.Println()
-	fmt.Println("  UI login   : http://vault.localhost:8200  (select 'OIDC', leave role blank)")
+	fmt.Printf("  UI login   : %s  (select 'OIDC', leave role blank)\n", vaultPublicURL)
 	fmt.Println("  CLI login  : vault login -method=oidc")
 	fmt.Println()
 	fmt.Println("  Demo users:")

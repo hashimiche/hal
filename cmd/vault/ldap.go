@@ -45,8 +45,8 @@ var vaultLdapCmd = &cobra.Command{
 			fmt.Println("🔍 Checking Vault LDAP / Directory Status...")
 
 			// Check Docker
-			ldapExists := (exec.Command(engine, "inspect", "hal-openldap").Run() == nil)
-			uiExists := (exec.Command(engine, "inspect", "hal-phpldapadmin").Run() == nil)
+			ldapExists := (exec.Command(engine, "inspect", openLDAPContainer).Run() == nil)
+			uiExists := (exec.Command(engine, "inspect", phpLDAPAdminContainer).Run() == nil)
 
 			// Check Vault API (if Vault is alive)
 			authMounted := false
@@ -129,7 +129,7 @@ var vaultLdapCmd = &cobra.Command{
 				}
 
 				fmt.Println("⚙️  Removing OpenLDAP and phpLDAPadmin containers...")
-				_ = exec.Command(engine, "rm", "-f", "hal-openldap", "hal-phpldapadmin").Run()
+				_ = exec.Command(engine, "rm", "-f", openLDAPContainer, phpLDAPAdminContainer).Run()
 
 				homeDir, _ := os.UserHomeDir()
 				if homeDir != "" {
@@ -166,10 +166,10 @@ var vaultLdapCmd = &cobra.Command{
 			global.EnsureNetwork(engine)
 
 			fmt.Println("🚀 Booting OpenLDAP Directory Server...")
-			_ = exec.Command(engine, "rm", "-f", "hal-openldap").Run()
+			_ = exec.Command(engine, "rm", "-f", openLDAPContainer).Run()
 			err = exec.Command(engine, "run", "-d",
-				"--name", "hal-openldap",
-				"--network", "hal-net",
+				"--name", openLDAPContainer,
+				"--network", global.HalNetName,
 				"-p", "1389:389",
 				"--platform", "linux/amd64",
 				"-e", "LDAP_ORGANISATION=HAL",
@@ -188,13 +188,13 @@ var vaultLdapCmd = &cobra.Command{
 			}
 
 			fmt.Println("🚀 Booting phpLDAPadmin UI...")
-			_ = exec.Command(engine, "rm", "-f", "hal-phpldapadmin").Run()
+			_ = exec.Command(engine, "rm", "-f", phpLDAPAdminContainer).Run()
 			_ = exec.Command(engine, "run", "-d",
-				"--name", "hal-phpldapadmin",
-				"--network", "hal-net",
+				"--name", phpLDAPAdminContainer,
+				"--network", global.HalNetName,
 				"-p", "8082:443",
 				"--platform", "linux/amd64",
-				"-e", "PHPLDAPADMIN_LDAP_HOSTS=hal-openldap",
+				"-e", "PHPLDAPADMIN_LDAP_HOSTS="+openLDAPContainer,
 				"-e", "PHPLDAPADMIN_HTTPS=true",
 				fmt.Sprintf("osixia/phpldapadmin:%s", phpLDAPAdminImageTag),
 			).Run()
@@ -384,12 +384,12 @@ member: cn=bob,ou=users,dc=hal,dc=local
 	_ = os.WriteFile(tmpFile, []byte(ldifClean), 0644)
 	defer os.Remove(tmpFile)
 
-	_ = exec.Command(engine, "cp", tmpFile, "hal-openldap:/tmp/seed.ldif").Run()
+	_ = exec.Command(engine, "cp", tmpFile, openLDAPContainer+":/tmp/seed.ldif").Run()
 
 	fmt.Print("⚙️  Waiting for OpenLDAP to accept connections")
 
 	for i := 0; i < 10; i++ {
-		out, err := exec.Command(engine, "exec", "hal-openldap", "ldapadd", "-c", "-x", "-D", "cn=admin,dc=hal,dc=local", "-w", "admin", "-H", "ldap://localhost", "-f", "/tmp/seed.ldif").CombinedOutput()
+		out, err := exec.Command(engine, "exec", openLDAPContainer, "ldapadd", "-c", "-x", "-D", "cn=admin,dc=hal,dc=local", "-w", "admin", "-H", "ldap://localhost", "-f", "/tmp/seed.ldif").CombinedOutput()
 		if err == nil {
 			fmt.Println("\n✅ LDAP Directory seeded successfully.")
 			return
@@ -412,8 +412,8 @@ func init() {
 	_ = vaultLdapCmd.Flags().MarkHidden("enable")
 	_ = vaultLdapCmd.Flags().MarkHidden("disable")
 	_ = vaultLdapCmd.Flags().MarkHidden("update")
-	vaultLdapCmd.Flags().StringVar(&ldapServerImageTag, "openldap-version", "1.5.0", "OpenLDAP image tag for the LDAP demo")
-	vaultLdapCmd.Flags().StringVar(&phpLDAPAdminImageTag, "phpldapadmin-version", "0.9.0", "phpLDAPadmin image tag for the LDAP demo UI")
+	vaultLdapCmd.Flags().StringVar(&ldapServerImageTag, "openldap-version", defaultOpenLDAPTag, "OpenLDAP image tag for the LDAP demo")
+	vaultLdapCmd.Flags().StringVar(&phpLDAPAdminImageTag, "phpldapadmin-version", defaultPHPLDAPAdminTag, "phpLDAPadmin image tag for the LDAP demo UI")
 
 	Cmd.AddCommand(vaultLdapCmd)
 }

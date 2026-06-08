@@ -29,7 +29,7 @@ var nomadObsCreateCmd = &cobra.Command{
 	Short: "Create Nomad observability artifacts",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		if !global.MultipassInstanceExists("hal-nomad") {
+		if !global.MultipassInstanceExists(nomadInstance) {
 			fmt.Println("❌ Nomad VM is not present.")
 			fmt.Println("   💡 Run 'hal nomad create' first.")
 			return
@@ -117,7 +117,7 @@ var nomadObsStatusCmd = &cobra.Command{
 }
 
 func resolveNomadObsTarget() (string, error) {
-	ipOut, err := exec.Command("multipass", "info", "hal-nomad", "--format", "csv").Output()
+	ipOut, err := exec.Command("multipass", "info", nomadInstance, "--format", "csv").Output()
 	if err != nil {
 		return "", err
 	}
@@ -125,7 +125,7 @@ func resolveNomadObsTarget() (string, error) {
 	if strings.TrimSpace(ip) == "" || ip == "127.0.0.1" {
 		return "", fmt.Errorf("hal-nomad IP not available")
 	}
-	return fmt.Sprintf("%s:4646", ip), nil
+	return fmt.Sprintf("%s:%d", ip, nomadHTTPPort), nil
 }
 
 func nomadObsTargetFileContains(path, wanted string) bool {

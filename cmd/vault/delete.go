@@ -12,19 +12,19 @@ import (
 // The "Known Universe" of Vault infrastructure.
 // As you build new Vault features that require Docker containers, just add them here!
 var vaultEcosystem = []string{
-	"hal-vault",
-	"hal-keycloak",
-	"hal-gitlab",
-	"hal-gitlab-runner",
-	"hal-openldap",
-	"hal-phpldapadmin",
-	"hal-mariadb",
+	vaultContainer,
+	keycloakContainer,
+	gitlabContainer,
+	gitlabRunnerContainer,
+	openLDAPContainer,
+	phpLDAPAdminContainer,
+	vaultMariaDBContainer,
 }
 
 var vaultVolumes = []string{
-	"hal-vault-logs",    // Spun up by Audit/Loki
-	"hal-vault-plugins", // Spun up for external plugins (OS secret engine)
-	"hal-vault-data",    // Vault file storage (/vault/file VOLUME directive)
+	vaultLogsVolume,    // Spun up by Audit/Loki
+	vaultPluginsVolume, // Spun up for external plugins (OS secret engine)
+	vaultDataVolume,    // Vault file storage (/vault/file VOLUME directive)
 }
 
 var vaultDestroyCmd = &cobra.Command{

@@ -11,10 +11,10 @@ import (
 )
 
 var obsEcosystem = []string{
-	"hal-grafana",
-	"hal-promtail",
-	"hal-loki",
-	"hal-prometheus",
+	obsGrafanaContainer,
+	obsPromtailContainer,
+	obsLokiContainer,
+	obsPrometheusContainer,
 }
 
 var destroyCmd = &cobra.Command{

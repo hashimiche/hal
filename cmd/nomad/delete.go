@@ -21,7 +21,7 @@ var destroyCmd = &cobra.Command{
 			return
 		}
 
-		_ = exec.Command("multipass", "delete", "hal-nomad").Run()
+		_ = exec.Command("multipass", "delete", nomadInstance).Run()
 		_ = exec.Command("multipass", "purge").Run()
 		if err := global.RemoveObsPromTargetFile("nomad"); err != nil {
 			fmt.Printf("⚠️  Could not remove Nomad observability target file: %v\n", err)

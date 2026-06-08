@@ -12,7 +12,7 @@ import (
 func GetHealthyClient() (*vault.Client, error) {
 	config := vault.DefaultConfig()
 	if os.Getenv("VAULT_ADDR") == "" {
-		config.Address = "http://127.0.0.1:8200"
+		config.Address = vaultLocalAPIURL
 	}
 
 	client, err := vault.NewClient(config)
@@ -21,7 +21,7 @@ func GetHealthyClient() (*vault.Client, error) {
 	}
 
 	if os.Getenv("VAULT_TOKEN") == "" {
-		client.SetToken("root")
+		client.SetToken(vaultRootToken)
 	}
 
 	// The LB-Style Pre-Flight Health Check

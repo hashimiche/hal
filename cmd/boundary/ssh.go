@@ -100,14 +100,14 @@ var sshCmd = &cobra.Command{
 				fmt.Println("[DRY RUN] Would configure Boundary API resources for SSH target")
 				return
 			}
-			_ = exec.Command("multipass", "delete", "hal-boundary-ssh").Run()
+			_ = exec.Command("multipass", "delete", boundarySSHInstance).Run()
 			_ = exec.Command("multipass", "purge").Run()
 
-			vmArgs := []string{"launch", sshUbuntuImage, "--name", "hal-boundary-ssh", "--cpus", sshVMCPUs, "--mem", sshVMMem}
+			vmArgs := []string{"launch", sshUbuntuImage, "--name", boundarySSHInstance, "--cpus", sshVMCPUs, "--mem", sshVMMem}
 			_, vmErr := exec.Command("multipass", vmArgs...).CombinedOutput()
 
 			if vmErr == nil {
-				ipOut, _ := exec.Command("multipass", "info", "hal-boundary-ssh", "--format", "csv").Output()
+				ipOut, _ := exec.Command("multipass", "info", boundarySSHInstance, "--format", "csv").Output()
 				ip := extractMultipassIP(string(ipOut))
 				fmt.Println("✅ SSH Target ready!")
 				fmt.Printf("   Host: %s (Port 22)\n", ip)
@@ -132,16 +132,16 @@ func init() {
 	_ = sshCmd.Flags().MarkHidden("enable")
 	_ = sshCmd.Flags().MarkHidden("disable")
 	_ = sshCmd.Flags().MarkHidden("update")
-	sshCmd.Flags().StringVar(&sshUbuntuImage, "ubuntu-image", "22.04", "Multipass image/channel used for the SSH target VM")
-	sshCmd.Flags().StringVar(&sshVMCPUs, "cpus", "1", "Number of CPUs for the SSH target VM")
-	sshCmd.Flags().StringVar(&sshVMMem, "mem", "512M", "Amount of RAM for the SSH target VM")
+	sshCmd.Flags().StringVar(&sshUbuntuImage, "ubuntu-image", defaultBoundarySSHUbuntuImage, "Multipass image/channel used for the SSH target VM")
+	sshCmd.Flags().StringVar(&sshVMCPUs, "cpus", defaultBoundarySSHCPUs, "Number of CPUs for the SSH target VM")
+	sshCmd.Flags().StringVar(&sshVMMem, "mem", defaultBoundarySSHMem, "Amount of RAM for the SSH target VM")
 
 	Cmd.AddCommand(sshCmd)
 }
 
 func newBoundaryAdminClient() (*BoundaryClient, error) {
 	client := &BoundaryClient{
-		Address: "http://127.0.0.1:9200",
+		Address: boundaryLocalAPIURL,
 		Client:  &http.Client{},
 	}
 
@@ -150,7 +150,7 @@ func newBoundaryAdminClient() (*BoundaryClient, error) {
 		return nil, fmt.Errorf("failed to get auth method: %v", err)
 	}
 
-	if err := client.Authenticate(authID, "admin", "password"); err != nil {
+	if err := client.Authenticate(authID, boundaryAdminUsername, boundaryAdminPassword); err != nil {
 		return nil, err
 	}
 
@@ -378,7 +378,7 @@ func bootstrapBoundarySSH(targetIP string) error {
 		global.RefreshHalHealth(eng)
 	}
 	fmt.Println("\n💡 Test your access:")
-	fmt.Println("   1. Log in to UI (http://boundary.localhost:9200)")
+	fmt.Println("   1. Log in to UI (" + boundaryUIURL + ")")
 	fmt.Println("   2. Change Scope to 'hal-academy-ssh'")
 	fmt.Println("   3. Auth Method: ssh-lab-auth")
 	fmt.Println("   4. Login as 'ssh-operator' or 'ssh-auditor' (Password: password)")

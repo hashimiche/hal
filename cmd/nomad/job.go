@@ -12,7 +12,7 @@ var nomadJobCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("⚙️ Submitting sample job to Nomad...")
 		// TODO: Use the Nomad Go API or CLI via multipass exec to submit a basic web server job
-		fmt.Println("✅ Job deployed! Check the UI at http://nomad.localhost:4646")
+		fmt.Printf("✅ Job deployed! Check the UI at http://%s:%d\n", nomadHostname, nomadHTTPPort)
 	},
 }
 

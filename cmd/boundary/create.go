@@ -40,7 +40,7 @@ var deployCmd = &cobra.Command{
 
 		if boundaryUpdate {
 			fmt.Println("♻️  Update requested. Reconciling existing Boundary Control Plane...")
-			_ = exec.Command(engine, "rm", "-f", "hal-boundary", "hal-boundary-backend").Run()
+			_ = exec.Command(engine, "rm", "-f", boundaryContainer, boundaryBackendContainer).Run()
 		}
 
 		fmt.Printf("🚀 Deploying Boundary %s (with Postgres %s) via %s...\n", boundaryVersion, pgVersion, engine)
@@ -50,11 +50,11 @@ var deployCmd = &cobra.Command{
 		fmt.Printf("⚙️  Provisioning Boundary Control Plane Database (%s:%s)...\n", pgImage, pgVersion)
 		backendArgs := []string{
 			"run", "-d",
-			"--name", "hal-boundary-backend",
-			"--network", "hal-net",
-			"-e", "POSTGRES_USER=boundary",
-			"-e", "POSTGRES_PASSWORD=boundary",
-			"-e", "POSTGRES_DB=boundary",
+			"--name", boundaryBackendContainer,
+			"--network", global.HalNetName,
+			"-e", "POSTGRES_USER=" + boundaryDBUser,
+			"-e", "POSTGRES_PASSWORD=" + boundaryDBPassword,
+			"-e", "POSTGRES_DB=" + boundaryDBName,
 			fmt.Sprintf("%s:%s", pgImage, pgVersion),
 		}
 
@@ -69,11 +69,11 @@ var deployCmd = &cobra.Command{
 		fmt.Println("⚙️  Booting Boundary Controller & Worker...")
 		boundaryArgs := []string{
 			"run", "-d",
-			"--name", "hal-boundary",
-			"--network", "hal-net",
-			"-p", "9200:9200",
-			"-p", "9201:9201",
-			"-p", "9202:9202",
+			"--name", boundaryContainer,
+			"--network", global.HalNetName,
+			"-p", fmt.Sprintf("%d:%d", boundaryAPIPort, boundaryAPIPort),
+			"-p", fmt.Sprintf("%d:%d", boundaryClusterPort, boundaryClusterPort),
+			"-p", fmt.Sprintf("%d:%d", boundaryProxyPort, boundaryProxyPort),
 		}
 
 		if boundaryJoinConsul {
@@ -84,9 +84,9 @@ var deployCmd = &cobra.Command{
 		boundaryArgs = append(boundaryArgs,
 			fmt.Sprintf("%s:%s", boundaryImage, boundaryVersion),
 			"boundary", "dev",
-			"-api-listen-address=0.0.0.0:9200",
-			"-proxy-listen-address=0.0.0.0:9202",
-			"-database-url=postgresql://boundary:boundary@hal-boundary-backend:5432/boundary?sslmode=disable",
+			fmt.Sprintf("-api-listen-address=0.0.0.0:%d", boundaryAPIPort),
+			fmt.Sprintf("-proxy-listen-address=0.0.0.0:%d", boundaryProxyPort),
+			fmt.Sprintf("-database-url=postgresql://%s:%s@%s:5432/%s?sslmode=disable", boundaryDBUser, boundaryDBPassword, boundaryBackendContainer, boundaryDBName),
 		)
 
 		out, err := exec.Command(engine, boundaryArgs...).CombinedOutput()
@@ -101,8 +101,8 @@ var deployCmd = &cobra.Command{
 
 		fmt.Println("⏳ Waiting for Boundary to initialize (this can take 10-15 seconds)...")
 
-		if err := waitForService("Boundary", "http://127.0.0.1:9200", 30); err != nil {
-			handleDockerFailure("hal-boundary", engine)
+		if err := waitForService("Boundary", boundaryLocalAPIURL, 30); err != nil {
+			handleDockerFailure(boundaryContainer, engine)
 			return
 		}
 
@@ -110,8 +110,8 @@ var deployCmd = &cobra.Command{
 		fmt.Println("✅ Boundary Controller & Worker are up!")
 		global.RefreshHalHealth(engine)
 		fmt.Println("---------------------------------------------------------")
-		fmt.Println("   🔗 UI Address: http://boundary.localhost:9200")
-		fmt.Println("   👤 Login:      admin / password")
+		fmt.Printf("   🔗 UI Address: %s\n", boundaryUIURL)
+		fmt.Printf("   👤 Login:      %s / %s\n", boundaryAdminUsername, boundaryAdminPassword)
 		if boundaryJoinConsul {
 			fmt.Println("   🟢 Tethered:   Global Consul Control Plane")
 		}
@@ -164,10 +164,10 @@ var updateCmd = &cobra.Command{
 }
 
 func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
-	cmd.Flags().StringVarP(&boundaryVersion, "boundary-tag", "v", "0.15.2", "Boundary container image tag")
-	cmd.Flags().StringVar(&boundaryImage, "boundary-image", "hashicorp/boundary", "Boundary container image name")
-	cmd.Flags().StringVar(&pgVersion, "boundary-pg-tag", "16-alpine", "PostgreSQL image tag for Boundary backend")
-	cmd.Flags().StringVar(&pgImage, "boundary-pg-image", "postgres", "PostgreSQL image name for Boundary backend")
+	cmd.Flags().StringVarP(&boundaryVersion, "boundary-tag", "v", defaultBoundaryTag, "Boundary container image tag")
+	cmd.Flags().StringVar(&boundaryImage, "boundary-image", defaultBoundaryImage, "Boundary container image name")
+	cmd.Flags().StringVar(&pgVersion, "boundary-pg-tag", defaultBoundaryPGTag, "PostgreSQL image tag for Boundary backend")
+	cmd.Flags().StringVar(&pgImage, "boundary-pg-image", defaultBoundaryPGImage, "PostgreSQL image name for Boundary backend")
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&boundaryUpdate, "update", "u", false, "Reconcile an existing Boundary deployment in place")
 	}

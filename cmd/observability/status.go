@@ -28,10 +28,10 @@ var statusCmd = &cobra.Command{
 			Name      string
 			Container string
 		}{
-			{"Prometheus", "hal-prometheus"},
-			{"Loki", "hal-loki"},
-			{"Promtail", "hal-promtail"},
-			{"Grafana", "hal-grafana"},
+			{"Prometheus", obsPrometheusContainer},
+			{"Loki", obsLokiContainer},
+			{"Promtail", obsPromtailContainer},
+			{"Grafana", obsGrafanaContainer},
 		}
 
 		allRunning := true
@@ -60,9 +60,9 @@ var statusCmd = &cobra.Command{
 			fmt.Println("   hal obs create")
 		} else if allRunning {
 			fmt.Println("   All systems green. Stack is capturing telemetry.")
-			fmt.Println("   🔗 Grafana UI: http://grafana.localhost:3000")
-			fmt.Println("   🔗 Prometheus: http://prometheus.localhost:9090")
-			fmt.Println("   🔗 Loki API:   http://loki.localhost:3100/ready")
+			fmt.Printf("   🔗 Grafana UI: %s\n", obsGrafanaURL)
+			fmt.Printf("   🔗 Prometheus: %s\n", obsPrometheusURL)
+			fmt.Printf("   🔗 Loki API:   %s\n", obsLokiReadyURL)
 		} else {
 			fmt.Println("   Environment is partially degraded. To safely reset, run:")
 			fmt.Println("   hal obs create --update")

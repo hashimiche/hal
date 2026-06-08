@@ -51,10 +51,10 @@ var vaultOSCmd = &cobra.Command{
 		if !osEnable && !osDisable && !osUpdate {
 			fmt.Println("🔍 Checking Vault OS Secret Engine Status...")
 
-			vmExists := exec.Command("multipass", "info", "hal-vault-os").Run() == nil
+			vmExists := exec.Command("multipass", "info", vaultOSInstance).Run() == nil
 			vmIP := ""
 			if vmExists {
-				ipOut, _ := exec.Command("multipass", "info", "hal-vault-os", "--format", "csv").Output()
+				ipOut, _ := exec.Command("multipass", "info", vaultOSInstance, "--format", "csv").Output()
 				vmIP = extractMultipassIP(string(ipOut))
 			}
 
@@ -117,7 +117,7 @@ var vaultOSCmd = &cobra.Command{
 				}
 
 				fmt.Println("⚙️  Removing Multipass VM...")
-				_ = exec.Command("multipass", "delete", "hal-vault-os").Run()
+				_ = exec.Command("multipass", "delete", vaultOSInstance).Run()
 				_ = exec.Command("multipass", "purge").Run()
 
 				if osDisable {
@@ -166,7 +166,7 @@ var vaultOSCmd = &cobra.Command{
 
 			// 1. Launch the VM
 			fmt.Println("📦 Provisioning Ubuntu VM (this takes a moment)...")
-			launchArgs := []string{"launch", osUbuntuImage, "--name", "hal-vault-os", "--cpus", osVMCPUs, "--memory", osVMMem}
+			launchArgs := []string{"launch", osUbuntuImage, "--name", vaultOSInstance, "--cpus", osVMCPUs, "--memory", osVMMem}
 			out, err := exec.Command("multipass", launchArgs...).CombinedOutput()
 			if err != nil {
 				if strings.Contains(string(out), "already exists") {
@@ -182,7 +182,7 @@ var vaultOSCmd = &cobra.Command{
 			var vmIP string
 			for i := 0; i < 30; i++ {
 				time.Sleep(2 * time.Second)
-				ipOut, err := exec.Command("multipass", "info", "hal-vault-os", "--format", "csv").Output()
+				ipOut, err := exec.Command("multipass", "info", vaultOSInstance, "--format", "csv").Output()
 				if err != nil {
 					continue
 				}
@@ -224,7 +224,7 @@ var vaultOSCmd = &cobra.Command{
 				echo 'PasswordAuthentication yes' | sudo tee /etc/ssh/sshd_config.d/60-cloudimg-settings.conf > /dev/null
 				sudo systemctl restart ssh
 			`
-			execArgs := []string{"exec", "hal-vault-os", "--", "bash", "-c", setupScript}
+			execArgs := []string{"exec", vaultOSInstance, "--", "bash", "-c", setupScript}
 			if out, err := exec.Command("multipass", execArgs...).CombinedOutput(); err != nil {
 				fmt.Printf("❌ Failed to configure VM: %v\nOutput: %s\n", err, string(out))
 				return
@@ -250,10 +250,10 @@ var vaultOSCmd = &cobra.Command{
 			fmt.Println("⚙️  Registering OS secret engine plugin...")
 			osPluginVersion := "0.1.0+ent"
 			registerCmd := fmt.Sprintf(
-				"VAULT_ADDR='http://127.0.0.1:8200' VAULT_TOKEN='root' vault plugin register -download -version='%s' secret vault-plugin-secrets-os",
-				osPluginVersion,
+				"VAULT_ADDR='%s' VAULT_TOKEN='%s' vault plugin register -download -version='%s' secret vault-plugin-secrets-os",
+				vaultLocalAPIURL, vaultRootToken, osPluginVersion,
 			)
-			if out, err := exec.Command(engine, "exec", "hal-vault", "sh", "-c", registerCmd).CombinedOutput(); err != nil {
+			if out, err := exec.Command(engine, "exec", vaultContainer, "sh", "-c", registerCmd).CombinedOutput(); err != nil {
 				fmt.Printf("❌ Failed to register OS plugin: %v\nOutput: %s\n", err, string(out))
 				fmt.Println("   💡 Check https://releases.hashicorp.com/vault-plugin-secrets-os for the latest version.")
 				return
@@ -386,9 +386,9 @@ func init() {
 	_ = vaultOSCmd.Flags().MarkHidden("disable")
 	_ = vaultOSCmd.Flags().MarkHidden("update")
 
-	vaultOSCmd.Flags().StringVar(&osUbuntuImage, "ubuntu-image", "22.04", "Ubuntu image for Multipass VM")
-	vaultOSCmd.Flags().StringVar(&osVMCPUs, "vm-cpus", "1", "Number of CPUs for the VM")
-	vaultOSCmd.Flags().StringVar(&osVMMem, "vm-mem", "1G", "Amount of RAM for the VM")
+	vaultOSCmd.Flags().StringVar(&osUbuntuImage, "ubuntu-image", defaultVaultOSUbuntuImage, "Ubuntu image for Multipass VM")
+	vaultOSCmd.Flags().StringVar(&osVMCPUs, "vm-cpus", defaultVaultOSVMCPUs, "Number of CPUs for the VM")
+	vaultOSCmd.Flags().StringVar(&osVMMem, "vm-mem", defaultVaultOSVMMem, "Amount of RAM for the VM")
 
 	Cmd.AddCommand(vaultOSCmd)
 }

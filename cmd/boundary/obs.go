@@ -13,7 +13,6 @@ import (
 )
 
 const boundaryObsProduct = "boundary"
-const boundaryObsTarget = "hal-boundary:9200"
 
 var boundaryObsCmd = &cobra.Command{
 	Use:   "obs",
@@ -34,7 +33,7 @@ var boundaryObsCreateCmd = &cobra.Command{
 			fmt.Printf("❌ Error: %v\n", err)
 			return
 		}
-		if !global.IsContainerRunning(engine, "hal-boundary") {
+		if !global.IsContainerRunning(engine, boundaryContainer) {
 			fmt.Println("❌ Boundary is not running.")
 			fmt.Println("   💡 Run 'hal boundary create' first.")
 			return

@@ -35,7 +35,7 @@ var deployCmd = &cobra.Command{
 			if global.Debug {
 				fmt.Println("[DEBUG] --update detected. Reconciling existing standalone Consul...")
 			}
-			_ = exec.Command(engine, "rm", "-f", "hal-consul").Run()
+			_ = exec.Command(engine, "rm", "-f", consulContainer).Run()
 		}
 
 		fmt.Printf(" Deploying standalone Consul %s via %s...\n", consulVersion, engine)
@@ -43,9 +43,9 @@ var deployCmd = &cobra.Command{
 		// Command: <engine> run -d --name hal-consul --network hal-net -p 8500:8500 hashicorp/consul:1.15.0 agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
 		consulArgs := []string{
 			"run", "-d",
-			"--name", "hal-consul",
-			"--network", "hal-net",
-			"-p", "8500:8500", // The magic UI/API port
+			"--name", consulContainer,
+			"--network", global.HalNetName,
+			"-p", fmt.Sprintf("%d:%d", consulHTTPPort, consulHTTPPort), // The magic UI/API port
 			fmt.Sprintf("%s:%s", consulImage, consulVersion),
 			"agent", "-server", "-ui", "-node=hal-server", "-bootstrap-expect=1", "-client=0.0.0.0",
 		}
@@ -67,7 +67,7 @@ var deployCmd = &cobra.Command{
 
 		fmt.Println("✅ Standalone Consul Server is up!")
 		global.RefreshHalHealth(engine)
-		fmt.Println("   🔗 UI Address: http://consul.localhost:8500")
+		fmt.Printf("   🔗 UI Address: %s\n", consulBaseURL)
 		fmt.Println("\n💡 Tip: Use this to test the KV store or learn the API.")
 		fmt.Println("   (For real workloads, use 'hal nomad create --with-consul' instead!)")
 	},
@@ -84,8 +84,8 @@ var updateCmd = &cobra.Command{
 }
 
 func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
-	cmd.Flags().StringVarP(&consulVersion, "consul-tag", "v", "1.15.0", "Consul container image tag")
-	cmd.Flags().StringVar(&consulImage, "consul-image", "hashicorp/consul", "Consul container image name")
+	cmd.Flags().StringVarP(&consulVersion, "consul-tag", "v", defaultConsulTag, "Consul container image tag")
+	cmd.Flags().StringVar(&consulImage, "consul-image", defaultConsulImage, "Consul container image name")
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&consulUpdate, "update", "u", false, "Reconcile an existing Consul deployment in place")
 	}

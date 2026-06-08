@@ -11,9 +11,9 @@ import (
 )
 
 var boundaryEcosystem = []string{
-	"hal-boundary",
-	"hal-boundary-backend",
-	"hal-boundary-target-mariadb",
+	boundaryContainer,
+	boundaryBackendContainer,
+	boundaryMariaDBContainer,
 }
 
 var destroyCmd = &cobra.Command{
@@ -43,7 +43,7 @@ var destroyCmd = &cobra.Command{
 		}
 
 		// Handle Multipass target cleanup gracefully
-		_ = exec.Command("multipass", "delete", "hal-boundary-ssh").Run()
+		_ = exec.Command("multipass", "delete", boundarySSHInstance).Run()
 		_ = exec.Command("multipass", "purge").Run()
 		fmt.Println("  ✅ Destroyed SSH VM (if it existed)")
 

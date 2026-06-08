@@ -51,11 +51,11 @@ var vaultDatabaseCmd = &cobra.Command{
 		}
 		backendLabel := "MariaDB"
 
-		containerName := "hal-vault-mariadb"
-		hostAlias := "mariadb.localhost"
+		containerName := vaultMariaDBContainer
+		hostAlias := vaultMariaDBHostAlias
 		containerPort := "3306"
 		pluginName := "mysql-database-plugin"
-		setupCmd := []string{"mariadb", "-u", "root", "-pvaultroot", "-e", `
+		setupCmd := []string{"mariadb", "-u", "root", "-p" + vaultMariaDBRootPassword, "-e", `
 				CREATE USER 'vaultadmin'@'%' IDENTIFIED BY 'temp-vault-pass';
 				GRANT ALL PRIVILEGES ON *.* TO 'vaultadmin'@'%' WITH GRANT OPTION;
 				FLUSH PRIVILEGES;
@@ -63,11 +63,11 @@ var vaultDatabaseCmd = &cobra.Command{
 		connectionURL := "{{username}}:{{password}}@tcp(hal-vault-mariadb:3306)/"
 		createStmt := "CREATE USER '{{name}}'@'%' IDENTIFIED BY '{{password}}'; GRANT ALL PRIVILEGES ON *.* TO '{{name}}'@'%';"
 		startArgs := []string{
-			"run", "-d", "--name", "hal-vault-mariadb",
-			"--network", "hal-net",
-			"--network-alias", "mariadb.localhost",
-			"-p", "3306:3306",
-			"-e", "MARIADB_ROOT_PASSWORD=vaultroot",
+			"run", "-d", "--name", vaultMariaDBContainer,
+			"--network", global.HalNetName,
+			"--network-alias", vaultMariaDBHostAlias,
+			"-p", fmt.Sprintf("%d:%d", vaultMariaDBPort, vaultMariaDBPort),
+			"-e", "MARIADB_ROOT_PASSWORD=" + vaultMariaDBRootPassword,
 			fmt.Sprintf("%s:%s", mariadbImage, mariadbVersion),
 		}
 
@@ -279,7 +279,7 @@ var vaultDatabaseCmd = &cobra.Command{
 
 func waitForMariaDB(engine, containerName string, maxRetries int) error {
 	for i := 0; i < maxRetries; i++ {
-		cmd := exec.Command(engine, "exec", containerName, "mariadb-admin", "ping", "-h", "127.0.0.1", "-u", "root", "-pvaultroot", "--silent")
+		cmd := exec.Command(engine, "exec", containerName, "mariadb-admin", "ping", "-h", "127.0.0.1", "-u", "root", "-p"+vaultMariaDBRootPassword, "--silent")
 		if err := cmd.Run(); err == nil {
 			return nil
 		}
@@ -300,8 +300,8 @@ func init() {
 
 	// Backend selection and version pinning
 	vaultDatabaseCmd.Flags().StringVarP(&databaseBackend, "backend", "b", "mariadb", "Database backend to use (mariadb; pgsql planned, postgres alias accepted)")
-	vaultDatabaseCmd.Flags().StringVar(&mariadbVersion, "vault-mariadb-tag", "11.4", "MariaDB container image tag")
-	vaultDatabaseCmd.Flags().StringVar(&mariadbImage, "vault-mariadb-image", "mariadb", "MariaDB container image name")
+	vaultDatabaseCmd.Flags().StringVar(&mariadbVersion, "vault-mariadb-tag", defaultVaultMariaDBTag, "MariaDB container image tag")
+	vaultDatabaseCmd.Flags().StringVar(&mariadbImage, "vault-mariadb-image", defaultVaultMariaDBImage, "MariaDB container image name")
 	vaultDatabaseCmd.Flags().StringVar(&dbUsernamePrefix, "username-prefix", "v", "Prefix for dynamically generated database usernames (e.g. 'myapp' → 'myapp-AbCdEfGhIj')")
 
 	Cmd.AddCommand(vaultDatabaseCmd)

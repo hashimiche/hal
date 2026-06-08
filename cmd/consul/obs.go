@@ -13,7 +13,6 @@ import (
 )
 
 const consulObsProduct = "consul"
-const consulObsTarget = "hal-consul:8500"
 
 var consulObsCmd = &cobra.Command{
 	Use:   "obs",
@@ -34,7 +33,7 @@ var consulObsCreateCmd = &cobra.Command{
 			fmt.Printf("❌ Error: %v\n", err)
 			return
 		}
-		if !global.IsContainerRunning(engine, "hal-consul") {
+		if !global.IsContainerRunning(engine, consulContainer) {
 			fmt.Println("❌ Consul is not running.")
 			fmt.Println("   💡 Run 'hal consul create' first.")
 			return

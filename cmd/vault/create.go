@@ -74,22 +74,22 @@ var deployCmd = &cobra.Command{
 			if global.Debug {
 				fmt.Println("[DEBUG] --update detected. Reconciling Vault by replacing runtime artifacts...")
 			}
-			_ = exec.Command(engine, "rm", "-f", "hal-vault").Run()
-			_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-logs").Run()
-			_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-plugins").Run()
-			_ = exec.Command(engine, "volume", "rm", "-f", "hal-vault-data").Run()
+			_ = exec.Command(engine, "rm", "-f", vaultContainer).Run()
+			_ = exec.Command(engine, "volume", "rm", "-f", vaultLogsVolume).Run()
+			_ = exec.Command(engine, "volume", "rm", "-f", vaultPluginsVolume).Run()
+			_ = exec.Command(engine, "volume", "rm", "-f", vaultDataVolume).Run()
 		}
 
 		// Determine the Image Repository and Version based on Edition
-		imageRepo := "hashicorp/vault"
+		imageRepo := defaultVaultImageCE
 		actualVersion := vaultVersion
 
 		if vaultEdition == "ent" || vaultEdition == "enterprise" {
-			imageRepo = "hashicorp/vault-enterprise"
+			imageRepo = defaultVaultImageEnt
 
 			// If the user didn't explicitly specify a tag, give them the Enterprise default
 			if !cmd.Flags().Changed("vault-tag") {
-				actualVersion = "2.0.1-ent"
+				actualVersion = defaultVaultEntTag
 			}
 		}
 		// --vault-image overrides the per-edition image name entirely
@@ -105,20 +105,20 @@ var deployCmd = &cobra.Command{
 		// Correction des permissions du volume d'audit pour l'utilisateur Vault (UID 100)
 		fmt.Println("⚙️  Preparing shared volume permissions...")
 		helperRef := vaultHelperImage + ":" + vaultHelperTag
-		_ = exec.Command(engine, "run", "--rm", "-v", "hal-vault-logs:/vault/logs", helperRef, "chown", "-R", "100:1000", "/vault/logs").Run()
-		_ = exec.Command(engine, "run", "--rm", "-v", "hal-vault-plugins:/vault/plugins", helperRef, "sh", "-c", "mkdir -p /vault/plugins && chown -R 100:1000 /vault/plugins").Run()
-		_ = exec.Command(engine, "run", "--rm", "-v", "hal-vault-data:/vault/file", helperRef, "chown", "-R", "100:1000", "/vault/file").Run()
+		_ = exec.Command(engine, "run", "--rm", "-v", vaultLogsVolume+":/vault/logs", helperRef, "chown", "-R", "100:1000", "/vault/logs").Run()
+		_ = exec.Command(engine, "run", "--rm", "-v", vaultPluginsVolume+":/vault/plugins", helperRef, "sh", "-c", "mkdir -p /vault/plugins && chown -R 100:1000 /vault/plugins").Run()
+		_ = exec.Command(engine, "run", "--rm", "-v", vaultDataVolume+":/vault/file", helperRef, "chown", "-R", "100:1000", "/vault/file").Run()
 
 		// 2. Build the Docker run arguments
 		vaultArgs := []string{
 			"run", "-d",
-			"--name", "hal-vault",
-			"--network", "hal-net",
+			"--name", vaultContainer,
+			"--network", global.HalNetName,
 			"--cap-add", "IPC_LOCK",
-			"-p", "8200:8200",
-			"-v", "hal-vault-logs:/vault/logs",
-			"-v", "hal-vault-plugins:/vault/plugins",
-			"-v", "hal-vault-data:/vault/file",
+			"-p", fmt.Sprintf("%d:%d", vaultHTTPPort, vaultHTTPPort),
+			"-v", vaultLogsVolume + ":/vault/logs",
+			"-v", vaultPluginsVolume + ":/vault/plugins",
+			"-v", vaultDataVolume + ":/vault/file",
 		}
 
 		// Vault 2.x tries to set SETFCAP capability which fails on Docker Desktop.
@@ -145,7 +145,7 @@ var deployCmd = &cobra.Command{
 		// Append the image and the Vault Dev mode commands
 		vaultArgs = append(vaultArgs,
 			fmt.Sprintf("%s:%s", imageRepo, actualVersion),
-			"server", "-dev", "-dev-listen-address=0.0.0.0:8200", "-dev-root-token-id=root", "-dev-plugin-dir=/vault/plugins",
+			"server", "-dev", fmt.Sprintf("-dev-listen-address=0.0.0.0:%d", vaultHTTPPort), "-dev-root-token-id="+vaultRootToken, "-dev-plugin-dir=/vault/plugins",
 		)
 
 		if global.DryRun {
@@ -166,24 +166,24 @@ var deployCmd = &cobra.Command{
 		// 3. THE HEALTH CHECK PHASE
 		fmt.Println("⏳ Waiting for Vault to initialize...")
 
-		if err := waitForService("Vault", "http://vault.localhost:8200/v1/sys/health", 30); err != nil {
-			handleDockerFailure("hal-vault", engine)
+		if err := waitForService("Vault", vaultHealthURL, 30); err != nil {
+			handleDockerFailure(vaultContainer, engine)
 			return
 		}
 
 		fmt.Println("✅ Vault is up and running in Dev mode!")
 		global.RefreshHalHealth(engine)
 		fmt.Printf("   🏗️  Edition: %s\n", strings.ToUpper(vaultEdition))
-		fmt.Println("   🔗 UI Address: http://vault.localhost:8200")
-		fmt.Println("   🔑 Root Token: root")
+		fmt.Printf("   🔗 UI Address: %s\n", vaultPublicURL)
+		fmt.Printf("   🔑 Root Token: %s\n", vaultRootToken)
 
 		if vaultJoinConsul {
 			fmt.Println("   🟢 Vault is successfully tethered to the global Consul Control Plane!")
 		}
 
 		fmt.Println("\n💡 Tip: Export your environment variables to use your local CLI:")
-		fmt.Println("   export VAULT_ADDR='http://vault.localhost:8200'")
-		fmt.Println("   export VAULT_TOKEN='root'")
+		fmt.Printf("   export VAULT_ADDR='%s'\n", vaultPublicURL)
+		fmt.Printf("   export VAULT_TOKEN='%s'\n", vaultRootToken)
 	},
 }
 
@@ -233,11 +233,11 @@ var updateCmd = &cobra.Command{
 }
 
 func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
-	cmd.Flags().StringVarP(&vaultVersion, "vault-tag", "v", "2.0.1", "Vault container image tag")
+	cmd.Flags().StringVarP(&vaultVersion, "vault-tag", "v", defaultVaultTag, "Vault container image tag")
 	cmd.Flags().StringVar(&vaultImage, "vault-image", "", "Vault container image name (overrides per-edition default: hashicorp/vault or hashicorp/vault-enterprise)")
-	cmd.Flags().StringVarP(&vaultEdition, "edition", "e", "ce", "Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise)")
-	cmd.Flags().StringVar(&vaultHelperImage, "vault-helper-image", "alpine", "Helper container image name for one-shot setup tasks during Vault deploy")
-	cmd.Flags().StringVar(&vaultHelperTag, "vault-helper-tag", "3.22", "Helper container image tag for one-shot setup tasks during Vault deploy")
+	cmd.Flags().StringVarP(&vaultEdition, "edition", "e", defaultVaultEdition, "Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise)")
+	cmd.Flags().StringVar(&vaultHelperImage, "vault-helper-image", defaultVaultHelperImage, "Helper container image name for one-shot setup tasks during Vault deploy")
+	cmd.Flags().StringVar(&vaultHelperTag, "vault-helper-tag", defaultVaultHelperTag, "Helper container image tag for one-shot setup tasks during Vault deploy")
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&vaultUpdate, "update", "u", false, "Reconcile an existing Vault deployment in place")
 	}
