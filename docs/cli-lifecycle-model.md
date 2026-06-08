@@ -116,6 +116,40 @@ Rules:
 - `<component-id>` maps to stable internal IDs (container/service/resource names used by HAL).
 - Invalid target fails fast and prints allowed target values.
 
+## Single Source of Truth for Shared Values
+
+HAL provisions multi-container product stacks, and the same identity, endpoint,
+credential, image, and path values are consumed by many sibling commands within
+a product package (create, delete, status, twin, agent, api/vcs workflow, saml,
+obs, foundation). Hardcoding those literals per file causes silent configuration
+drift: one command bootstraps `org=hal` while another looks for `org=hal-org`,
+and the stack appears healthy while downstream flows fail. This class of bug is
+expensive to diagnose because nothing errors at the duplication site.
+
+Rule for every product package under `cmd/<product>/`:
+
+1. Each product owns one `defaults.go` file that declares every value shared
+	across more than one file in that package, plus every identity / credential /
+	endpoint / URL flag default — even when currently referenced once — because
+	those are the values users and downstream automation depend on staying stable.
+2. Cobra flag defaults AND their `if !cmd.Flags().Changed(...)` fallback
+	overrides MUST reference the same constant. Never repeat the literal in both
+	the `StringVar(..., "<literal>", ...)` default and the fallback assignment.
+3. Cross-product values (e.g. the Docker network name) live in `internal/global`
+	(`global.HalNetName`, `global.HalNetStaticIP`) and are referenced, never
+	re-declared inside a product package.
+4. Genuinely feature-local values that are used in exactly one file and have no
+	identity/credential/endpoint meaning (e.g. a single workflow's demo project
+	name) may remain inline in that file.
+5. Twin / secondary-instance defaults that intentionally mirror the primary
+	(image, version, encryption password, admin identity) reference the primary
+	constants so an upgrade in one place propagates; only the values that are
+	deliberately different (twin org, twin container name) stay as local literals.
+
+`cmd/terraform/defaults.go` is the reference implementation. The same pattern is
+to be applied to the other product packages (`vault`, `consul`, `nomad`,
+`boundary`, ...) as they are revisited.
+
 ## Migration Policy
 
 - New UX/docs should prefer explicit `update` over `--force`.

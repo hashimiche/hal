@@ -97,7 +97,7 @@ var twinCmd = &cobra.Command{
 			return
 		}
 
-		if !global.IsContainerRunning(engine, "hal-tfe") {
+		if !global.IsContainerRunning(engine, tfeCoreContainer) {
 			fmt.Println("❌ Primary Terraform Enterprise instance is not running (hal-tfe).")
 			fmt.Println("   💡 Run 'hal tf create' first, then retry 'hal tf create --target twin'.")
 			return
@@ -170,7 +170,7 @@ var twinCmd = &cobra.Command{
 
 		global.EnsureNetwork(engine)
 		if tfeTwinProxyInternalIP == "" {
-			tfeTwinProxyInternalIP = global.HalNetStaticIP(engine, 249)
+			tfeTwinProxyInternalIP = global.HalNetStaticIP(engine, tfeTwinProxyHostNum)
 		}
 
 		fmt.Printf("⚙️  Ensuring shared PostgreSQL has twin database '%s'...\n", tfeTwinDatabaseName)
@@ -189,7 +189,7 @@ var twinCmd = &cobra.Command{
 		tfeArgs := []string{
 			"run", "-d",
 			"--name", layout.CoreContainer,
-			"--network", "hal-net",
+			"--network", global.HalNetName,
 			"--privileged",
 			"--add-host", fmt.Sprintf("%s:127.0.0.1", layout.CoreContainer),
 			"--add-host", fmt.Sprintf("%s:%s", tfeTwinHostname, tfeTwinProxyInternalIP),
@@ -315,7 +315,7 @@ http {
 			return
 		}
 
-		_ = exec.Command(engine, "run", "-d", "--name", layout.ProxyContainer, "--network", "hal-net", "--ip", tfeTwinProxyInternalIP,
+		_ = exec.Command(engine, "run", "-d", "--name", layout.ProxyContainer, "--network", global.HalNetName, "--ip", tfeTwinProxyInternalIP,
 			"--network-alias", tfeTwinHostname,
 			"-p", fmt.Sprintf("%d:%d", tfeTwinHTTPSPort, tfeTwinHTTPSPort),
 			"-v", fmt.Sprintf("%s:/etc/ssl/tfe:ro", layout.CertDir),
@@ -421,9 +421,9 @@ func showTFETwinStatus(engine string, layout tfeTwinLayout) {
 		Name      string
 		Container string
 	}{
-		{"Shared Database (Postgres)", "hal-tfe-db"},
-		{"Shared Cache (Redis)", "hal-tfe-redis"},
-		{"Shared Object Storage (MinIO)", "hal-tfe-minio"},
+		{"Shared Database (Postgres)", tfeDBContainer},
+		{"Shared Cache (Redis)", tfeRedisContainer},
+		{"Shared Object Storage (MinIO)", tfeMinioContainer},
 		{"Twin TFE Core", layout.CoreContainer},
 		{"Twin Ingress Proxy", layout.ProxyContainer},
 	}
@@ -496,7 +496,7 @@ func destroyTFETwin(engine string, layout tfeTwinLayout) {
 }
 
 func ensureSharedTFEEcosystemRunning(engine string) error {
-	required := []string{"hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio"}
+	required := []string{tfeDBContainer, tfeRedisContainer, tfeMinioContainer}
 	for _, container := range required {
 		if !global.IsContainerRunning(engine, container) {
 			return fmt.Errorf("required shared component '%s' is not running; run 'hal tf create' first", container)
@@ -512,7 +512,7 @@ func ensureTwinDatabaseExists(engine, dbName string) error {
 	}
 
 	checkSQL := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname='%s';", dbName)
-	out, err := exec.Command(engine, "exec", "hal-tfe-db", "psql", "-U", "tfe", "-d", "postgres", "-tAc", checkSQL).CombinedOutput()
+	out, err := exec.Command(engine, "exec", tfeDBContainer, "psql", "-U", tfeDBUser, "-d", "postgres", "-tAc", checkSQL).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("postgres check failed: %s", strings.TrimSpace(string(out)))
 	}
@@ -521,7 +521,7 @@ func ensureTwinDatabaseExists(engine, dbName string) error {
 	}
 
 	createSQL := fmt.Sprintf("CREATE DATABASE %s;", dbName)
-	createOut, createErr := exec.Command(engine, "exec", "hal-tfe-db", "psql", "-U", "tfe", "-d", "postgres", "-c", createSQL).CombinedOutput()
+	createOut, createErr := exec.Command(engine, "exec", tfeDBContainer, "psql", "-U", tfeDBUser, "-d", "postgres", "-c", createSQL).CombinedOutput()
 	if createErr != nil {
 		return fmt.Errorf("postgres database creation failed: %s", strings.TrimSpace(string(createOut)))
 	}
@@ -535,7 +535,7 @@ func ensureTwinBucketExists(engine, bucketName string) error {
 		return fmt.Errorf("invalid bucket name '%s'", bucketName)
 	}
 
-	out, err := exec.Command(engine, "exec", "hal-tfe-minio", "sh", "-c", fmt.Sprintf("mkdir -p /data/%s", trimmed)).CombinedOutput()
+	out, err := exec.Command(engine, "exec", tfeMinioContainer, "sh", "-c", fmt.Sprintf("mkdir -p /data/%s", trimmed)).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("minio bucket creation failed: %s", strings.TrimSpace(string(out)))
 	}
@@ -572,7 +572,7 @@ func ensureCertsForTwin(certDir string, dnsNames []string) error {
 		serialNumber = big.NewInt(time.Now().UnixNano())
 	}
 
-	commonName := "tfe-bis.localhost"
+	commonName := defaultTFETwinHostname
 	for _, name := range dnsNames {
 		if name != "" && name != "localhost" {
 			commonName = name
@@ -694,18 +694,18 @@ func runTFETwinLifecycle(enable, disable, update bool) {
 }
 
 func bindTwinFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&tfeTwinVersion, "twin-tag", "2.0.2", "TFE container image tag for the twin instance")
-	cmd.Flags().StringVar(&tfeTwinImage, "twin-image", "images.releases.hashicorp.com/hashicorp/terraform-enterprise", "TFE container image name for the twin instance")
-	cmd.Flags().StringVar(&tfeTwinPassword, "twin-password", "hal-secret-encryption-password", "Twin TFE encryption password")
+	cmd.Flags().StringVar(&tfeTwinVersion, "twin-tag", defaultTFETag, "TFE container image tag for the twin instance")
+	cmd.Flags().StringVar(&tfeTwinImage, "twin-image", defaultTFEImage, "TFE container image name for the twin instance")
+	cmd.Flags().StringVar(&tfeTwinPassword, "twin-password", defaultTFEEncryptionPassword, "Twin TFE encryption password")
 	cmd.Flags().StringVar(&tfeTwinOrg, "twin-tfe-org", "hal-bis", "Terraform Enterprise organization name to auto-bootstrap for the twin instance")
 	cmd.Flags().StringVar(&tfeTwinProject, "twin-tfe-project", "Dave-bis", "Terraform Enterprise project name to auto-bootstrap for the twin instance")
-	cmd.Flags().StringVar(&tfeTwinAdminUser, "twin-tfe-admin-username", "haladmin", "Initial twin TFE admin username used when bootstrapping via IACT")
-	cmd.Flags().StringVar(&tfeTwinAdminEmail, "twin-tfe-admin-email", "haladmin@localhost", "Initial twin TFE admin email used when bootstrapping via IACT")
-	cmd.Flags().StringVar(&tfeTwinAdminPass, "twin-tfe-admin-password", "hal9000FTW", "Initial twin TFE admin password used when bootstrapping via IACT")
-	cmd.Flags().StringVar(&tfeTwinProxyNginxTag, "twin-proxy-tag", "alpine", "Nginx image tag for the twin ingress proxy")
-	cmd.Flags().StringVar(&tfeTwinProxyImage, "twin-proxy-image", "nginx", "Nginx image name for the twin ingress proxy")
+	cmd.Flags().StringVar(&tfeTwinAdminUser, "twin-tfe-admin-username", defaultTFEAdminUsername, "Initial twin TFE admin username used when bootstrapping via IACT")
+	cmd.Flags().StringVar(&tfeTwinAdminEmail, "twin-tfe-admin-email", defaultTFEAdminEmail, "Initial twin TFE admin email used when bootstrapping via IACT")
+	cmd.Flags().StringVar(&tfeTwinAdminPass, "twin-tfe-admin-password", defaultTFEAdminPassword, "Initial twin TFE admin password used when bootstrapping via IACT")
+	cmd.Flags().StringVar(&tfeTwinProxyNginxTag, "twin-proxy-tag", defaultTFEProxyTag, "Nginx image tag for the twin ingress proxy")
+	cmd.Flags().StringVar(&tfeTwinProxyImage, "twin-proxy-image", defaultTFEProxyImage, "Nginx image name for the twin ingress proxy")
 	cmd.Flags().IntVar(&tfeTwinHTTPSPort, "twin-https-port", 9443, "Host HTTPS port exposed by the twin TFE ingress proxy")
-	cmd.Flags().StringVar(&tfeTwinHostname, "twin-hostname", "tfe-bis.localhost", "TLS hostname used by the twin TFE instance")
+	cmd.Flags().StringVar(&tfeTwinHostname, "twin-hostname", defaultTFETwinHostname, "TLS hostname used by the twin TFE instance")
 	cmd.Flags().StringVar(&tfeTwinContainerName, "twin-container-name", "hal-tfe-bis", "Container name used for the twin TFE core application")
 	cmd.Flags().StringVar(&tfeTwinProxyInternalIP, "twin-proxy-ip", "", "Static internal proxy IP on hal-net for twin hostname routing (default: auto-derived .249)")
 	cmd.Flags().StringVar(&tfeTwinDatabasePassword, "twin-db-password", "tfe_password", "PostgreSQL password used by the twin TFE backend")

@@ -57,7 +57,7 @@ func tfeSAMLBaseURLForTarget(target string) string {
 	if target == tfeTargetTwin {
 		return "https://tfe-bis.localhost:9443"
 	}
-	return "https://tfe.localhost:8443"
+	return tfePrimaryBaseURL
 }
 
 // tfeSAMLSPBaseURL returns the portless base URL that TFE uses in its own SAML
@@ -73,9 +73,9 @@ func tfeSAMLSPBaseURL(apiBaseURL, target string) string {
 		}
 	}
 	if target == tfeTargetTwin {
-		return "https://tfe-bis.localhost"
+		return "https://" + defaultTFETwinHostname
 	}
-	return "https://tfe.localhost"
+	return "https://" + tfePrimaryHostname
 }
 
 // tfeSAMLProxyContainerForTarget returns the proxy container name for SCIM
@@ -84,7 +84,7 @@ func tfeSAMLProxyContainerForTarget(target string) string {
 	if target == tfeTargetTwin {
 		return "hal-tfe-bis-proxy"
 	}
-	return "hal-tfe-proxy"
+	return tfeProxyContainer
 }
 
 // tfeSAMLProxyPortForTarget returns the HTTPS port that the proxy container
@@ -506,7 +506,7 @@ func runTFESAMLDisable(engine, target string) {
 
 // ─── Authentik provisioning ───────────────────────────────────────────────────
 
-const defaultSAMLOrgName = "hal-org"
+const defaultSAMLOrgName = defaultTFEOrg
 
 // provisionAuthentikForTFE creates demo users/groups and a SAML provider + application
 // in Authentik for the given TFE target. Returns the Authentik SAML provider PK.
@@ -694,7 +694,7 @@ func provisionTFESAMLTeams(baseURL, apiToken, orgName string) {
 // malformed (e.g. empty) cert that TFE later moved to old_idp_cert.
 // Best-effort: errors are silently ignored.
 func clearOldTFESAMLCert(engine string) {
-	_ = exec.Command(engine, "exec", "hal-tfe-db", "sh", "-c",
+	_ = exec.Command(engine, "exec", tfeDBContainer, "sh", "-c",
 		"psql -U tfe tfe -c 'UPDATE rails.admin_settings_saml SET old_idp_cert_encrypted = NULL WHERE old_idp_cert_encrypted IS NOT NULL;'").Run()
 }
 
@@ -722,7 +722,7 @@ func cleanTFESAML(baseURL, apiToken string) {
 func tfeCoreContainerForTargetNoErr(target string) string {
 	name, err := tfeCoreContainerForTarget(target)
 	if err != nil {
-		return "hal-tfe"
+		return tfeCoreContainer
 	}
 	return name
 }
@@ -735,15 +735,15 @@ func bootstrapTFETokenForSAML(engine, target string) (string, error) {
 	}
 	adminUser := tfeSAMLAdminUsername
 	if adminUser == "" {
-		adminUser = "haladmin"
+		adminUser = defaultTFEAdminUsername
 	}
 	adminEmail := tfeSAMLAdminEmail
 	if adminEmail == "" {
-		adminEmail = "haladmin@localhost"
+		adminEmail = defaultTFEAdminEmail
 	}
 	adminPass := tfeSAMLAdminPassword
 	if adminPass == "" {
-		adminPass = "hal9000FTW"
+		adminPass = defaultTFEAdminPassword
 	}
 	orgName := tfeSAMLOrgName
 	if orgName == "" {
@@ -819,9 +819,9 @@ func init() {
 	tfeSAMLCmd.Flags().StringVar(&tfeSAMLBaseURL, "tfe-url", "", "TFE base URL (default: https://tfe.localhost:8443 for primary)")
 	tfeSAMLCmd.Flags().StringVar(&tfeSAMLOrgName, "tfe-org", defaultSAMLOrgName, "TFE organization name")
 	tfeSAMLCmd.Flags().StringVar(&tfeSAMLAPIToken, "tfe-token", "", "TFE admin API token (auto-bootstrapped if omitted)")
-	tfeSAMLCmd.Flags().StringVar(&tfeSAMLAdminUsername, "tfe-admin-username", "haladmin", "TFE admin username")
-	tfeSAMLCmd.Flags().StringVar(&tfeSAMLAdminEmail, "tfe-admin-email", "haladmin@localhost", "TFE admin email")
-	tfeSAMLCmd.Flags().StringVar(&tfeSAMLAdminPassword, "tfe-admin-password", "hal9000FTW", "TFE admin password")
+	tfeSAMLCmd.Flags().StringVar(&tfeSAMLAdminUsername, "tfe-admin-username", defaultTFEAdminUsername, "TFE admin username")
+	tfeSAMLCmd.Flags().StringVar(&tfeSAMLAdminEmail, "tfe-admin-email", defaultTFEAdminEmail, "TFE admin email")
+	tfeSAMLCmd.Flags().StringVar(&tfeSAMLAdminPassword, "tfe-admin-password", defaultTFEAdminPassword, "TFE admin password")
 
 	bindTFETargetFlag(tfeSAMLCmd)
 	Cmd.AddCommand(tfeSAMLCmd)

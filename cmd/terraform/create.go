@@ -86,7 +86,7 @@ var deployCmd = &cobra.Command{
 		os.Setenv("TFE_LICENSE", license)
 
 		os.Setenv("TFE_ENCRYPTION_PASSWORD", tfePassword)
-		os.Setenv("TFE_DATABASE_PASSWORD", "tfe_password")
+		os.Setenv("TFE_DATABASE_PASSWORD", tfeDBPassword)
 
 		global.WarnIfEngineResourcesTight(engine, "terraform-deploy")
 		if !global.DryRun {
@@ -103,19 +103,19 @@ var deployCmd = &cobra.Command{
 		isPodman := strings.Contains(engine, "podman")
 
 		// Keep an unprivileged HTTPS listener for rootless Podman.
-		tfeHostname := "tfe.localhost"
-		healthURL := "https://tfe.localhost:8443/api/v1/health/readiness"
-		uiURL := "https://tfe.localhost:8443"
+		tfeHostname := tfePrimaryHostname
+		healthURL := tfePrimaryBaseURL + "/api/v1/health/readiness"
+		uiURL := tfePrimaryBaseURL
 
 		// 2. FORGE THE TLS CERTIFICATES
 		fmt.Println("🔐 Forging local TLS certificates for TFE...")
 		homeDir, _ := os.UserHomeDir()
-		certDir := filepath.Join(homeDir, ".hal", "tfe-certs")
+		certDir := filepath.Join(homeDir, halStateDirName, tfeCertsDirName)
 
 		if tfeUpdate {
 			fmt.Println("♻️  Update requested. Reconciling existing TFE resources...")
 			// 🎯 Included the proxy in the teardown list
-			_ = exec.Command(engine, "rm", "-f", "hal-tfe", "hal-tfe-proxy", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio").Run()
+			_ = exec.Command(engine, "rm", "-f", tfeCoreContainer, tfeProxyContainer, tfeDBContainer, tfeRedisContainer, tfeMinioContainer).Run()
 			_ = os.Remove(filepath.Join(certDir, "cert.pem"))
 			_ = os.Remove(filepath.Join(certDir, "key.pem"))
 		}
@@ -140,41 +140,41 @@ var deployCmd = &cobra.Command{
 		// 4. Ensure the global HAL network exists
 		global.EnsureNetwork(engine)
 		// Derive the proxy IP from the actual hal-net subnet so it works on any engine.
-		proxyInternalIP := global.HalNetStaticIP(engine, 250)
+		proxyInternalIP := global.HalNetStaticIP(engine, tfePrimaryProxyHostNum)
 
 		// 5. Deploy PostgreSQL
 		fmt.Printf("⚙️  Provisioning TFE PostgreSQL Database...\n")
-		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-db", "--network", "hal-net",
-			"-v", "hal-tfe-db-data:/var/lib/postgresql/data",
-			"-e", "POSTGRES_USER=tfe", "-e", "POSTGRES_PASSWORD=tfe_password", "-e", "POSTGRES_DB=tfe",
+		_ = exec.Command(engine, "run", "-d", "--name", tfeDBContainer, "--network", global.HalNetName,
+			"-v", tfeDBVolume+":/var/lib/postgresql/data",
+			"-e", "POSTGRES_USER="+tfeDBUser, "-e", "POSTGRES_PASSWORD="+tfeDBPassword, "-e", "POSTGRES_DB="+tfeDBName,
 			fmt.Sprintf("%s:%s", pgImage, pgVersion)).Run()
 
 		// 6. Deploy Redis
 		fmt.Printf("⚙️  Provisioning TFE Redis Cache...\n")
-		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-redis", "--network", "hal-net",
-			"-v", "hal-tfe-redis-data:/data",
+		_ = exec.Command(engine, "run", "-d", "--name", tfeRedisContainer, "--network", global.HalNetName,
+			"-v", tfeRedisVolume+":/data",
 			fmt.Sprintf("%s:%s", redisImage, redisVersion)).Run()
 
 		// 7. Deploy MinIO (S3 Mock)
 		fmt.Println("⚙️  Provisioning TFE Object Storage (MinIO)...")
-		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-minio", "--network", "hal-net",
+		_ = exec.Command(engine, "run", "-d", "--name", tfeMinioContainer, "--network", global.HalNetName,
 			"-p", fmt.Sprintf("%d:9000", minioAPIPort), "-p", fmt.Sprintf("%d:9001", minioConsolePort),
-			"-v", "hal-tfe-minio-data:/data",
-			"-e", "MINIO_ROOT_USER=minioadmin", "-e", "MINIO_ROOT_PASSWORD=minioadmin",
+			"-v", tfeMinioVolume+":/data",
+			"-e", "MINIO_ROOT_USER="+tfeMinioRootUser, "-e", "MINIO_ROOT_PASSWORD="+tfeMinioRootPass,
 			fmt.Sprintf("%s:%s", minioImage, minioVersion), "server", "/data", "--console-address", ":9001").Run()
 
 		time.Sleep(3 * time.Second)
-		_ = exec.Command(engine, "exec", "hal-tfe-minio", "sh", "-c", "mkdir -p /data/tfe-data").Run()
+		_ = exec.Command(engine, "exec", tfeMinioContainer, "sh", "-c", "mkdir -p /data/"+tfeS3Bucket).Run()
 
 		// 8. Deploy TFE Core (NO EXPOSED HOST PORTS!)
 		fmt.Println("⚙️  Booting TFE Core Application (This requires heavy compute)...")
 		tfeArgs := []string{
 			"run", "-d",
-			"--name", "hal-tfe",
-			"--network", "hal-net",
+			"--name", tfeCoreContainer,
+			"--network", global.HalNetName,
 			"--privileged",
-			"--add-host", "hal-tfe:127.0.0.1",
-			"--add-host", fmt.Sprintf("tfe.localhost:%s", proxyInternalIP),
+			"--add-host", tfeCoreContainer + ":127.0.0.1",
+			"--add-host", fmt.Sprintf("%s:%s", tfePrimaryHostname, proxyInternalIP),
 			"-v", "/var/run/docker.sock:/var/run/docker.sock",
 		}
 
@@ -188,39 +188,39 @@ var deployCmd = &cobra.Command{
 		tfeArgs = append(tfeArgs,
 			"-e", "TFE_OPERATIONAL_MODE=external",
 			"-e", fmt.Sprintf("TFE_HOSTNAME=%s", tfeHostname),
-			"-e", "TFE_VCS_HOSTNAME=tfe.localhost:8443",
+			"-e", fmt.Sprintf("TFE_VCS_HOSTNAME=%s:%d", tfePrimaryHostname, tfeHTTPSPort),
 			"-e", "VAULT_ADDR=http://127.0.0.1:8200",
 			"-e", "TFE_METRICS_ENABLE=true",
-			"-e", "TFE_METRICS_HTTP_PORT=9090",
-			"-e", "TFE_METRICS_HTTPS_PORT=9091",
-			"-e", "TFE_IA_HOSTNAME=hal-tfe",
+			"-e", fmt.Sprintf("TFE_METRICS_HTTP_PORT=%d", tfeMetricsHTTPPort),
+			"-e", fmt.Sprintf("TFE_METRICS_HTTPS_PORT=%d", tfeMetricsHTTPSPort),
+			"-e", fmt.Sprintf("TFE_IA_HOSTNAME=%s", tfeCoreContainer),
 			"-e", "TFE_VAULT_DISABLE_MLOCK=true",
 			"-e", "TFE_VAULT_ADDR=http://127.0.0.1:8200", // 🎯 Sorry Copilot!
 			"-e", "TFE_IA_INTERNAL_VAULT_ADDR=http://127.0.0.1:8200", // 🎯 Sorry Copilot!
-			"-e", "TFE_RUN_PIPELINE_DOCKER_NETWORK=hal-net",
-			"-e", "TFE_HTTP_PORT=8080",
-			"-e", "TFE_HTTPS_PORT=8443",
-			"-e", "TFE_ADMIN_HTTPS_PORT=8444",
+			"-e", "TFE_RUN_PIPELINE_DOCKER_NETWORK="+global.HalNetName,
+			"-e", fmt.Sprintf("TFE_HTTP_PORT=%d", tfeHTTPPort),
+			"-e", fmt.Sprintf("TFE_HTTPS_PORT=%d", tfeHTTPSPort),
+			"-e", fmt.Sprintf("TFE_ADMIN_HTTPS_PORT=%d", tfeAdminHTTPSPort),
 			"-e", "TFE_TLS_CERT_FILE=/etc/ssl/tfe/cert.pem",
 			"-e", "TFE_TLS_KEY_FILE=/etc/ssl/tfe/key.pem",
-			"-e", "TFE_DISK_CACHE_VOLUME_NAME=hal-tfe-cache",
+			"-e", "TFE_DISK_CACHE_VOLUME_NAME="+tfeCacheVolume,
 			"-e", "TFE_LICENSE",
 			"-e", "TFE_ENCRYPTION_PASSWORD",
-			"-e", "TFE_DATABASE_USER=tfe",
+			"-e", "TFE_DATABASE_USER="+tfeDBUser,
 			"-e", "TFE_DATABASE_PASSWORD",
-			"-e", "TFE_DATABASE_HOST=hal-tfe-db",
-			"-e", "TFE_DATABASE_NAME=tfe",
+			"-e", "TFE_DATABASE_HOST="+tfeDBContainer,
+			"-e", "TFE_DATABASE_NAME="+tfeDBName,
 			"-e", "TFE_DATABASE_PARAMETERS=sslmode=disable",
-			"-e", "TFE_REDIS_HOST=hal-tfe-redis",
+			"-e", "TFE_REDIS_HOST="+tfeRedisContainer,
 			"-e", "TFE_REDIS_USE_TLS=false",
 			"-e", "TFE_REDIS_USE_AUTH=false",
 			"-e", "TFE_OBJECT_STORAGE_TYPE=s3",
 			"-e", "TFE_OBJECT_STORAGE_S3_USE_INSTANCE_PROFILE=false",
-			"-e", "TFE_OBJECT_STORAGE_S3_ENDPOINT=http://hal-tfe-minio:9000",
-			"-e", "TFE_OBJECT_STORAGE_S3_BUCKET=tfe-data",
-			"-e", "TFE_OBJECT_STORAGE_S3_REGION=us-east-1",
-			"-e", "TFE_OBJECT_STORAGE_S3_ACCESS_KEY_ID=minioadmin",
-			"-e", "TFE_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY=minioadmin",
+			"-e", fmt.Sprintf("TFE_OBJECT_STORAGE_S3_ENDPOINT=http://%s:9000", tfeMinioContainer),
+			"-e", "TFE_OBJECT_STORAGE_S3_BUCKET="+tfeS3Bucket,
+			"-e", "TFE_OBJECT_STORAGE_S3_REGION="+tfeS3Region,
+			"-e", "TFE_OBJECT_STORAGE_S3_ACCESS_KEY_ID="+tfeMinioRootUser,
+			"-e", "TFE_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY="+tfeMinioRootPass,
 			"-e", "TFE_OBJECT_STORAGE_S3_FORCE_PATH_STYLE=true",
 			"-e", "TFE_CAPACITY_CONCURRENCY=5",
 			fmt.Sprintf("%s:%s", tfeImage, tfeVersion),
@@ -240,7 +240,7 @@ var deployCmd = &cobra.Command{
 			"exec",
 			"--user",
 			"0",
-			"hal-tfe",
+			tfeCoreContainer,
 			"sh",
 			"-lc",
 			"cp /etc/ssl/tfe/cert.pem /usr/local/share/ca-certificates/tfe-localhost.crt && update-ca-certificates 2>&1",
@@ -256,7 +256,7 @@ var deployCmd = &cobra.Command{
 			"exec",
 			"--user",
 			"0",
-			"hal-tfe",
+			tfeCoreContainer,
 			"sh",
 			"-lc",
 			"test -f /run/terraform-enterprise/task-worker/config.hcl && sed -i 's/readonly = \"true\"/readonly = \"false\"/' /run/terraform-enterprise/task-worker/config.hcl 2>&1 || true",
@@ -325,13 +325,13 @@ http {
 		}
 	}
 }`
-		proxyConfPath := filepath.Join(homeDir, ".hal", "tfe-proxy.conf")
+		proxyConfPath := filepath.Join(homeDir, halStateDirName, tfeProxyConfName)
 		_ = os.WriteFile(proxyConfPath, []byte(nginxConfig), 0644)
 
-		_ = exec.Command(engine, "run", "-d", "--name", "hal-tfe-proxy", "--network", "hal-net", "--ip", proxyInternalIP,
-			"--network-alias", "tfe.localhost",
-			"-p", "8443:8443", // 🎯 Only the proxy exposes port 8443 to the host OS
-			"-p", "8444:8444", // 🎯 Expose the TFE admin HTTPS port through the proxy
+		_ = exec.Command(engine, "run", "-d", "--name", tfeProxyContainer, "--network", global.HalNetName, "--ip", proxyInternalIP,
+			"--network-alias", tfePrimaryHostname,
+			"-p", fmt.Sprintf("%d:%d", tfeHTTPSPort, tfeHTTPSPort), // 🎯 Only the proxy exposes port 8443 to the host OS
+			"-p", fmt.Sprintf("%d:%d", tfeAdminHTTPSPort, tfeAdminHTTPSPort), // 🎯 Expose the TFE admin HTTPS port through the proxy
 			"-v", fmt.Sprintf("%s:/etc/ssl/tfe:ro", certDir),
 			"-v", fmt.Sprintf("%s:/etc/nginx/nginx.conf:ro", proxyConfPath),
 			fmt.Sprintf("%s:%s", tfeProxyImage, tfeProxyNginxTag)).Run()
@@ -341,7 +341,7 @@ http {
 
 		// This will naturally hit the Proxy, which routes to TFE
 		if err := waitForService("TFE", healthURL, 60); err != nil {
-			handleDockerFailure("hal-tfe", engine)
+			handleDockerFailure(tfeCoreContainer, engine)
 			return
 		}
 
@@ -367,7 +367,7 @@ http {
 		} else {
 			fmt.Println("✅ TFE foundation ready: admin token + org/project are configured.")
 			if token != "" {
-				fmt.Println("   📄 Token cache: ~/.hal/tfe-app-api-token")
+				fmt.Printf("   📄 Token cache: ~/%s/%s\n", halStateDirName, tfeAPITokenFileName)
 			}
 		}
 		fmt.Println("⚠️  Note:        Accept the browser warning for the self-signed certificate.")
@@ -414,7 +414,7 @@ func ensureCerts(certDir string) error {
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			Organization: []string{"HAL Primary TFE Local Dev Environment"},
-			CommonName:   "tfe.localhost",
+			CommonName:   tfePrimaryHostname,
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
@@ -422,7 +422,7 @@ func ensureCerts(certDir string) error {
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		IsCA:                  true,
-		DNSNames:              []string{"localhost", "hal-tfe", "tfe.localhost"},
+		DNSNames:              []string{"localhost", tfeCoreContainer, tfePrimaryHostname},
 		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
 	}
 
@@ -460,7 +460,7 @@ func shouldRotatePrimaryTFECert(certPath string) bool {
 
 	hasPrimaryDNS := false
 	for _, name := range cert.DNSNames {
-		if name == "tfe.localhost" {
+		if name == tfePrimaryHostname {
 			hasPrimaryDNS = true
 			break
 		}
@@ -516,24 +516,24 @@ var updateCmd = &cobra.Command{
 }
 
 func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
-	cmd.Flags().StringVarP(&tfeVersion, "tfe-tag", "v", "2.0.2", "TFE container image tag")
-	cmd.Flags().StringVar(&tfeImage, "tfe-image", "images.releases.hashicorp.com/hashicorp/terraform-enterprise", "TFE container image name")
-	cmd.Flags().StringVar(&pgVersion, "tfe-pg-tag", "16-alpine", "PostgreSQL image tag for TFE backend")
-	cmd.Flags().StringVar(&pgImage, "tfe-pg-image", "postgres", "PostgreSQL image name for TFE backend")
-	cmd.Flags().StringVar(&redisVersion, "tfe-redis-tag", "7-alpine", "Redis image tag for TFE background jobs")
-	cmd.Flags().StringVar(&redisImage, "tfe-redis-image", "redis", "Redis image name for TFE background jobs")
-	cmd.Flags().StringVar(&minioVersion, "tfe-minio-tag", "latest", "MinIO image tag for TFE object storage")
-	cmd.Flags().StringVar(&minioImage, "tfe-minio-image", "minio/minio", "MinIO image name for TFE object storage")
-	cmd.Flags().IntVar(&minioAPIPort, "minio-api-port", 19000, "Host port mapped to MinIO S3 API container port 9000")
-	cmd.Flags().IntVar(&minioConsolePort, "minio-console-port", 19001, "Host port mapped to MinIO console container port 9001")
-	cmd.Flags().StringVar(&tfeProxyNginxTag, "tfe-proxy-tag", "alpine", "Nginx image tag for the TFE ingress proxy")
-	cmd.Flags().StringVar(&tfeProxyImage, "tfe-proxy-image", "nginx", "Nginx image name for the TFE ingress proxy")
-	cmd.Flags().StringVarP(&tfePassword, "password", "p", "hal-secret-encryption-password", "TFE Encryption Password")
-	cmd.Flags().StringVar(&deployTFEOrg, "tfe-org", "hal-org", "Terraform Enterprise organization name to auto-bootstrap during deploy")
-	cmd.Flags().StringVar(&deployTFEProject, "tfe-project", "Dave", "Terraform Enterprise project name to auto-bootstrap during deploy")
-	cmd.Flags().StringVar(&deployTFEAdminUser, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
-	cmd.Flags().StringVar(&deployTFEAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
-	cmd.Flags().StringVar(&deployTFEAdminPass, "tfe-admin-password", "hal9000FTW", "Initial TFE admin password used when bootstrapping via IACT")
+	cmd.Flags().StringVarP(&tfeVersion, "tfe-tag", "v", defaultTFETag, "TFE container image tag")
+	cmd.Flags().StringVar(&tfeImage, "tfe-image", defaultTFEImage, "TFE container image name")
+	cmd.Flags().StringVar(&pgVersion, "tfe-pg-tag", defaultTFEPGTag, "PostgreSQL image tag for TFE backend")
+	cmd.Flags().StringVar(&pgImage, "tfe-pg-image", defaultTFEPGImage, "PostgreSQL image name for TFE backend")
+	cmd.Flags().StringVar(&redisVersion, "tfe-redis-tag", defaultTFERedisTag, "Redis image tag for TFE background jobs")
+	cmd.Flags().StringVar(&redisImage, "tfe-redis-image", defaultTFERedisImage, "Redis image name for TFE background jobs")
+	cmd.Flags().StringVar(&minioVersion, "tfe-minio-tag", defaultTFEMinioTag, "MinIO image tag for TFE object storage")
+	cmd.Flags().StringVar(&minioImage, "tfe-minio-image", defaultTFEMinioImage, "MinIO image name for TFE object storage")
+	cmd.Flags().IntVar(&minioAPIPort, "minio-api-port", defaultMinioAPIHostPort, "Host port mapped to MinIO S3 API container port 9000")
+	cmd.Flags().IntVar(&minioConsolePort, "minio-console-port", defaultMinioConsoleHostPort, "Host port mapped to MinIO console container port 9001")
+	cmd.Flags().StringVar(&tfeProxyNginxTag, "tfe-proxy-tag", defaultTFEProxyTag, "Nginx image tag for the TFE ingress proxy")
+	cmd.Flags().StringVar(&tfeProxyImage, "tfe-proxy-image", defaultTFEProxyImage, "Nginx image name for the TFE ingress proxy")
+	cmd.Flags().StringVarP(&tfePassword, "password", "p", defaultTFEEncryptionPassword, "TFE Encryption Password")
+	cmd.Flags().StringVar(&deployTFEOrg, "tfe-org", defaultTFEOrg, "Terraform Enterprise organization name to auto-bootstrap during deploy")
+	cmd.Flags().StringVar(&deployTFEProject, "tfe-project", defaultTFEProject, "Terraform Enterprise project name to auto-bootstrap during deploy")
+	cmd.Flags().StringVar(&deployTFEAdminUser, "tfe-admin-username", defaultTFEAdminUsername, "Initial TFE admin username used when bootstrapping via IACT")
+	cmd.Flags().StringVar(&deployTFEAdminEmail, "tfe-admin-email", defaultTFEAdminEmail, "Initial TFE admin email used when bootstrapping via IACT")
+	cmd.Flags().StringVar(&deployTFEAdminPass, "tfe-admin-password", defaultTFEAdminPassword, "Initial TFE admin password used when bootstrapping via IACT")
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&tfeUpdate, "update", "u", false, "Reconcile an existing Terraform Enterprise deployment in place")
 	}

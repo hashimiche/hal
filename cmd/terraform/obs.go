@@ -38,8 +38,8 @@ func syncTerraformObsTargets(engine string) error {
 func terraformObsTargets(engine string) []string {
 	targets := []string{}
 
-	if global.IsContainerRunning(engine, "hal-tfe") {
-		targets = append(targets, "hal-tfe:9090")
+	if global.IsContainerRunning(engine, tfeCoreContainer) {
+		targets = append(targets, fmt.Sprintf("%s:%d", tfeCoreContainer, tfeMetricsHTTPPort))
 	}
 
 	if layout, err := buildTFETwinLayout(); err == nil {
@@ -53,8 +53,8 @@ func terraformObsTargets(engine string) []string {
 
 func terraformObsTargetsForScope(engine, scope string) []string {
 	targets := []string{}
-	if (scope == tfeTargetPrimary || scope == tfeTargetBoth) && global.IsContainerRunning(engine, "hal-tfe") {
-		targets = append(targets, "hal-tfe:9090")
+	if (scope == tfeTargetPrimary || scope == tfeTargetBoth) && global.IsContainerRunning(engine, tfeCoreContainer) {
+		targets = append(targets, fmt.Sprintf("%s:%d", tfeCoreContainer, tfeMetricsHTTPPort))
 	}
 
 	if scope == tfeTargetTwin || scope == tfeTargetBoth {
@@ -69,7 +69,7 @@ func terraformObsTargetsForScope(engine, scope string) []string {
 }
 
 func ensureObsScopeRunning(engine, scope string) error {
-	primaryRunning := global.IsContainerRunning(engine, "hal-tfe")
+	primaryRunning := global.IsContainerRunning(engine, tfeCoreContainer)
 	twinRunning := false
 	if layout, err := buildTFETwinLayout(); err == nil {
 		twinRunning = global.IsContainerRunning(engine, strings.TrimSpace(layout.CoreContainer))

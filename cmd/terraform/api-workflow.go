@@ -454,7 +454,7 @@ func ensureTFECLIContainer(engine, certPath, localDir string) error {
 	runArgs := []string{
 		"run", "-d",
 		"--name", tfeAPIContainerName,
-		"--network", "hal-net",
+		"--network", global.HalNetName,
 		"--entrypoint", "sh",
 		"-v", fmt.Sprintf("%s:/hal/certs/tfe-localhost.crt:ro", certPath),
 	}
@@ -675,7 +675,7 @@ func disableTFECLI(engine string, nonInteractiveConfirm bool) error {
 		managedWorkspaces, _ := readTFECLIManagedList(engine, tfeCLIManagedWSFile)
 
 		if len(managedWorkspaces) > 0 {
-			if !global.IsContainerRunning(engine, "hal-tfe") {
+			if !global.IsContainerRunning(engine, tfeCoreContainer) {
 				fmt.Println("⚠️  Skipping TFE workspace cleanup because hal-tfe is not running.")
 			} else if authErr != nil {
 				fmt.Printf("⚠️  Skipping TFE workspace cleanup because helper auth could not be read: %v\n", authErr)
@@ -790,8 +790,8 @@ func deleteTFECLIManagedWorkspace(auth tfeCLIAuthConfig, workspaceName string) e
 	if baseURL == "" {
 		baseURL = "https://" + normalizeTFXHostname(auth.Hostname)
 	}
-	if strings.Contains(baseURL, "hal-tfe:") {
-		baseURL = "https://tfe.localhost:8443"
+	if strings.Contains(baseURL, tfeCoreContainer+":") {
+		baseURL = tfePrimaryBaseURL
 	}
 
 	deleteURL := fmt.Sprintf("%s/api/v2/organizations/%s/workspaces/%s", baseURL, auth.Organization, workspaceName)
@@ -1058,7 +1058,7 @@ func ensureDefaultScenarioWorkspaces(token string) error {
 		_ = removeLegacyTFEProject(baseURL, org, token, "HAL-CLI")
 	}
 
-	daveProjectID, err := ensureTFEOrgAndProject(baseURL, token, org, "Dave")
+	daveProjectID, err := ensureTFEOrgAndProject(baseURL, token, org, defaultTFEProject)
 	if err != nil {
 		return fmt.Errorf("failed to ensure TFE project Dave: %w", err)
 	}
@@ -1286,7 +1286,7 @@ func tfeCoreContainerForTarget(target string) (string, error) {
 		}
 		return layout.CoreContainer, nil
 	}
-	return "hal-tfe", nil
+	return tfeCoreContainer, nil
 }
 
 func configureTFEAPITargetDefaults(cmd *cobra.Command, target string) error {
@@ -1317,19 +1317,19 @@ func configureTFEAPITargetDefaults(cmd *cobra.Command, target string) error {
 	}
 
 	if !cmd.Flags().Changed("tfe-url") {
-		tfeCLIURL = "https://tfe.localhost:8443"
+		tfeCLIURL = tfePrimaryBaseURL
 	}
 	if !cmd.Flags().Changed("tfe-org") {
-		tfeCLIDefaultOrg = "hal"
+		tfeCLIDefaultOrg = defaultTFEOrg
 	}
 	if !cmd.Flags().Changed("tfe-admin-username") {
-		tfeCLIAdminUsername = "haladmin"
+		tfeCLIAdminUsername = defaultTFEAdminUsername
 	}
 	if !cmd.Flags().Changed("tfe-admin-email") {
-		tfeCLIAdminEmail = "haladmin@localhost"
+		tfeCLIAdminEmail = defaultTFEAdminEmail
 	}
 	if !cmd.Flags().Changed("tfe-admin-password") {
-		tfeCLIAdminPassword = "hal9000FTW"
+		tfeCLIAdminPassword = defaultTFEAdminPassword
 	}
 	return nil
 }
@@ -1398,11 +1398,11 @@ func init() {
 	apiCmd.Flags().BoolVar(&tfeCLIShowBannerOnly, "banner", false, "Print API helper welcome banner without opening a shell")
 	apiCmd.Flags().StringVar(&tfeCLILocalDirectory, "local-directory", "", "Optional host directory to mount into the helper at /workspaces")
 	apiCmd.Flags().StringVar(&tfeCLIBaseImage, "base-image", defaultTFECLIBase, "Base image used to build the helper image")
-	apiCmd.Flags().StringVar(&tfeCLIURL, "tfe-url", "https://tfe.localhost:8443", "Terraform Enterprise URL used for helper auth bootstrap")
+	apiCmd.Flags().StringVar(&tfeCLIURL, "tfe-url", tfePrimaryBaseURL, "Terraform Enterprise URL used for helper auth bootstrap")
 	apiCmd.Flags().StringVar(&tfeCLIDefaultOrg, "tfe-org", "hal", "Default Terraform Enterprise organization written to ~/.tfx.hcl")
-	apiCmd.Flags().StringVar(&tfeCLIAdminUsername, "tfe-admin-username", "haladmin", "Terraform Enterprise admin username used for helper token bootstrap")
-	apiCmd.Flags().StringVar(&tfeCLIAdminEmail, "tfe-admin-email", "haladmin@localhost", "Terraform Enterprise admin email used for helper token bootstrap")
-	apiCmd.Flags().StringVar(&tfeCLIAdminPassword, "tfe-admin-password", "hal9000FTW", "Terraform Enterprise admin password used for helper token bootstrap")
+	apiCmd.Flags().StringVar(&tfeCLIAdminUsername, "tfe-admin-username", defaultTFEAdminUsername, "Terraform Enterprise admin username used for helper token bootstrap")
+	apiCmd.Flags().StringVar(&tfeCLIAdminEmail, "tfe-admin-email", defaultTFEAdminEmail, "Terraform Enterprise admin email used for helper token bootstrap")
+	apiCmd.Flags().StringVar(&tfeCLIAdminPassword, "tfe-admin-password", defaultTFEAdminPassword, "Terraform Enterprise admin password used for helper token bootstrap")
 	apiCmd.Flags().StringVar(&tfeCLIProjectSeed, "tfe-project", "", "Optional Terraform Enterprise project to ensure during helper token bootstrap")
 	apiCmd.Flags().BoolVar(&tfeCLIAutoApprove, "auto-approve", false, "Skip interactive confirmation for destructive disable operations")
 	apiCmd.Flags().BoolVar(&tfeCLIVerbose, "verbose", false, "Show raw Docker build logs instead of HAL build animation")

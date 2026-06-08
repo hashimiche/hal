@@ -14,26 +14,26 @@ import (
 
 // Primary-only Terraform Enterprise containers and helpers.
 var tfePrimaryContainers = []string{
-	"hal-tfe",
-	"hal-tfe-proxy",
+	tfeCoreContainer,
+	tfeProxyContainer,
 	tfeAPIPrimaryContainer,
 	legacyTFECLIContainerName,
-	"hal-tfe-agent",
+	tfeAgentPrimaryContainer,
 }
 
 // Shared backend components used by primary and twin TFE instances.
 var tfeSharedBackendContainers = []string{
-	"hal-tfe-db",
-	"hal-tfe-redis",
-	"hal-tfe-minio",
+	tfeDBContainer,
+	tfeRedisContainer,
+	tfeMinioContainer,
 }
 
 // Named volumes created by the shared backend containers. Must be removed
 // explicitly — docker rm -f does not remove named volumes.
 var tfeSharedBackendVolumes = []string{
-	"hal-tfe-db-data",
-	"hal-tfe-redis-data",
-	"hal-tfe-minio-data",
+	tfeDBVolume,
+	tfeRedisVolume,
+	tfeMinioVolume,
 }
 
 var destroyCmd = &cobra.Command{
@@ -148,7 +148,7 @@ var destroyCmd = &cobra.Command{
 
 		// 3. Wipe the local Cert cache
 		homeDir, _ := os.UserHomeDir()
-		certDir := filepath.Join(homeDir, ".hal", "tfe-certs")
+		certDir := filepath.Join(homeDir, halStateDirName, tfeCertsDirName)
 		if _, err := os.Stat(certDir); err == nil {
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would execute: rm -rf %s\n", certDir)

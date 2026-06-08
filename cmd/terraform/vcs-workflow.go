@@ -834,7 +834,7 @@ func workspaceSharedConsumerForTarget(target string) string {
 }
 
 func isAnyTFERuntimeRunning(engine string) bool {
-	if global.IsContainerRunning(engine, "hal-tfe") {
+	if global.IsContainerRunning(engine, tfeCoreContainer) {
 		return true
 	}
 	layout, err := buildTFETwinLayout()
@@ -881,22 +881,22 @@ func configureWorkspaceTargetDefaults(cmd *cobra.Command, target string) error {
 	}
 
 	if !cmd.Flags().Changed("tfe-url") {
-		tfeBaseURL = "https://tfe.localhost:8443"
+		tfeBaseURL = tfePrimaryBaseURL
 	}
 	if !cmd.Flags().Changed("tfe-org") {
-		tfeOrgName = "hal"
+		tfeOrgName = defaultTFEOrg
 	}
 	if !cmd.Flags().Changed("tfe-project") {
-		tfeProjectName = "Dave"
+		tfeProjectName = defaultTFEProject
 	}
 	if !cmd.Flags().Changed("tfe-admin-username") {
-		tfeAdminUsername = "haladmin"
+		tfeAdminUsername = defaultTFEAdminUsername
 	}
 	if !cmd.Flags().Changed("tfe-admin-email") {
-		tfeAdminEmail = "haladmin@localhost"
+		tfeAdminEmail = defaultTFEAdminEmail
 	}
 	if !cmd.Flags().Changed("tfe-admin-password") {
-		tfeAdminPassword = "hal9000FTW"
+		tfeAdminPassword = defaultTFEAdminPassword
 	}
 	if !cmd.Flags().Changed("tfe-workspace") {
 		tfeWorkspaceName = "tfe-agent-demo"
@@ -923,17 +923,17 @@ func init() {
 	workspaceCmd.Flags().StringVar(&workspaceGitLabPassword, "gitlab-root-password", "hal9000FTW", "Root password used to bootstrap GitLab when HAL starts it")
 	workspaceCmd.Flags().StringVar(&workspaceProjectName, "project-name", "tfe-agent-demo", "GitLab project name for the Terraform workspace demo")
 	workspaceCmd.Flags().StringVar(&workspaceProjectPath, "project-path", "tfe-agent-demo", "GitLab project path for the Terraform workspace demo")
-	workspaceCmd.Flags().StringVar(&tfeOrgName, "tfe-org", "hal", "Terraform Enterprise organization name to bootstrap")
-	workspaceCmd.Flags().StringVar(&tfeProjectName, "tfe-project", "Dave", "Terraform Enterprise project name to bootstrap")
+	workspaceCmd.Flags().StringVar(&tfeOrgName, "tfe-org", defaultTFEOrg, "Terraform Enterprise organization name to bootstrap")
+	workspaceCmd.Flags().StringVar(&tfeProjectName, "tfe-project", defaultTFEProject, "Terraform Enterprise project name to bootstrap")
 	workspaceCmd.Flags().StringVar(&tfeWorkspaceName, "tfe-workspace", "tfe-agent-demo", "Terraform Enterprise workspace name to bootstrap")
 	workspaceCmd.Flags().StringVar(&tfeAPIToken, "tfe-api-token", "", "Terraform Enterprise app API token (or set TFE_API_TOKEN)")
 	workspaceCmd.Flags().StringVar(&tfeVCSOAuthTokenID, "tfe-vcs-oauth-token-id", "", "Terraform Enterprise VCS OAuth token id for linking the workspace to GitLab (or set TFE_GITLAB_OAUTH_TOKEN_ID)")
 	workspaceCmd.Flags().StringVar(&tfeVCSOAuthTokenID, "gitlab-token-id", "", "Alias of --tfe-vcs-oauth-token-id")
-	workspaceCmd.Flags().StringVar(&tfeBaseURL, "tfe-url", "https://tfe.localhost:8443", "Terraform Enterprise base URL")
+	workspaceCmd.Flags().StringVar(&tfeBaseURL, "tfe-url", tfePrimaryBaseURL, "Terraform Enterprise base URL")
 	workspaceCmd.Flags().StringVar(&tfeVCSBranch, "tfe-vcs-branch", "main", "Git branch to trigger VCS runs from (set non-main for tag-focused workflows)")
-	workspaceCmd.Flags().StringVar(&tfeAdminUsername, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
-	workspaceCmd.Flags().StringVar(&tfeAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
-	workspaceCmd.Flags().StringVar(&tfeAdminPassword, "tfe-admin-password", "hal9000FTW", "Initial TFE admin password used when bootstrapping via IACT")
+	workspaceCmd.Flags().StringVar(&tfeAdminUsername, "tfe-admin-username", defaultTFEAdminUsername, "Initial TFE admin username used when bootstrapping via IACT")
+	workspaceCmd.Flags().StringVar(&tfeAdminEmail, "tfe-admin-email", defaultTFEAdminEmail, "Initial TFE admin email used when bootstrapping via IACT")
+	workspaceCmd.Flags().StringVar(&tfeAdminPassword, "tfe-admin-password", defaultTFEAdminPassword, "Initial TFE admin password used when bootstrapping via IACT")
 	workspaceCmd.Flags().StringVar(&tfeTagsRegex, "tfe-tags-regex", "", "Optional regex for VCS tag-triggered runs (leave empty to disable)")
 
 	bindTFETargetFlag(workspaceCmd)
@@ -980,11 +980,11 @@ func buildTFEVCSRepoConfig(repoIdentifier string) map[string]interface{} {
 }
 
 func ensureGitLabCanReachTFEWebhook(engine string) error {
-	if !global.IsContainerRunning(engine, "hal-gitlab") || !global.IsContainerRunning(engine, "hal-tfe-proxy") {
+	if !global.IsContainerRunning(engine, "hal-gitlab") || !global.IsContainerRunning(engine, tfeProxyContainer) {
 		return nil
 	}
 
-	proxyIPOut, err := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "hal-tfe-proxy").Output()
+	proxyIPOut, err := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", tfeProxyContainer).Output()
 	if err != nil {
 		return fmt.Errorf("failed to discover hal-tfe-proxy IP: %w", err)
 	}

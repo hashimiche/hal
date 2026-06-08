@@ -23,7 +23,6 @@ const (
 	defaultTFETwinAgentPool    = "hal-agent-pool-bis"
 	defaultTFEAgentDisplayName = "hal-tfc-agent"
 	defaultTFETwinAgentName    = "hal-tfc-agent-bis"
-	tfeProxyInternalIP         = "10.89.3.54"
 )
 
 type tfeAgentState struct {
@@ -266,17 +265,22 @@ func enableTFEAgent(engine, target string) error {
 
 	addHostArg := ""
 	if parsed, parseErr := url.Parse(baseURL); parseErr == nil {
-		if strings.EqualFold(parsed.Hostname(), "tfe.localhost") {
-			addHostArg = "tfe.localhost:" + tfeProxyInternalIP
-		} else if strings.EqualFold(parsed.Hostname(), "tfe-bis.localhost") {
-			addHostArg = "tfe-bis.localhost:" + tfeTwinProxyInternalIP
+		if strings.EqualFold(parsed.Hostname(), tfePrimaryHostname) {
+			// Derive the proxy IP from the live hal-net subnet so it works on any host/engine.
+			addHostArg = tfePrimaryHostname + ":" + global.HalNetStaticIP(engine, tfePrimaryProxyHostNum)
+		} else if strings.EqualFold(parsed.Hostname(), defaultTFETwinHostname) {
+			twinIP := tfeTwinProxyInternalIP
+			if twinIP == "" {
+				twinIP = global.HalNetStaticIP(engine, tfeTwinProxyHostNum)
+			}
+			addHostArg = defaultTFETwinHostname + ":" + twinIP
 		}
 	}
 
 	runArgs := []string{
 		"run", "-d",
 		"--name", containerName,
-		"--network", "hal-net",
+		"--network", global.HalNetName,
 	}
 	if addHostArg != "" {
 		runArgs = append(runArgs, "--add-host", addHostArg)
@@ -529,19 +533,19 @@ func configureTFEAgentTargetDefaults(cmd *cobra.Command, target string) error {
 	}
 
 	if !cmd.Flags().Changed("tfe-url") {
-		tfeAgentBaseURL = "https://tfe.localhost:8443"
+		tfeAgentBaseURL = tfePrimaryBaseURL
 	}
 	if !cmd.Flags().Changed("tfe-org") {
-		tfeAgentOrg = "hal"
+		tfeAgentOrg = defaultTFEOrg
 	}
 	if !cmd.Flags().Changed("tfe-admin-username") {
-		tfeAgentAdminUsername = "haladmin"
+		tfeAgentAdminUsername = defaultTFEAdminUsername
 	}
 	if !cmd.Flags().Changed("tfe-admin-email") {
-		tfeAgentAdminEmail = "haladmin@localhost"
+		tfeAgentAdminEmail = defaultTFEAdminEmail
 	}
 	if !cmd.Flags().Changed("tfe-admin-password") {
-		tfeAgentAdminPassword = "hal9000FTW"
+		tfeAgentAdminPassword = defaultTFEAdminPassword
 	}
 	if !cmd.Flags().Changed("pool-name") {
 		tfeAgentPoolName = defaultTFEAgentPoolName
@@ -625,12 +629,12 @@ func init() {
 	agentCmd.Flags().StringVar(&tfeAgentImage, "image", defaultTFEAgentImage, "Docker image used for the custom TFE agent")
 	agentCmd.Flags().StringVar(&tfeAgentPoolName, "pool-name", defaultTFEAgentPoolName, "TFE agent pool name to create or reuse")
 	agentCmd.Flags().StringVar(&tfeAgentName, "agent-name", defaultTFEAgentDisplayName, "Display name advertised by the running agent")
-	agentCmd.Flags().StringVar(&tfeAgentOrg, "tfe-org", "hal", "Terraform Enterprise organization name")
-	agentCmd.Flags().StringVar(&tfeAgentBaseURL, "tfe-url", "https://tfe.localhost:8443", "Terraform Enterprise base URL")
+	agentCmd.Flags().StringVar(&tfeAgentOrg, "tfe-org", defaultTFEOrg, "Terraform Enterprise organization name")
+	agentCmd.Flags().StringVar(&tfeAgentBaseURL, "tfe-url", tfePrimaryBaseURL, "Terraform Enterprise base URL")
 	agentCmd.Flags().StringVar(&tfeAgentAPIToken, "tfe-api-token", "", "Terraform Enterprise app API token (or set TFE_API_TOKEN)")
-	agentCmd.Flags().StringVar(&tfeAgentAdminUsername, "tfe-admin-username", "haladmin", "Initial TFE admin username used when bootstrapping via IACT")
-	agentCmd.Flags().StringVar(&tfeAgentAdminEmail, "tfe-admin-email", "haladmin@localhost", "Initial TFE admin email used when bootstrapping via IACT")
-	agentCmd.Flags().StringVar(&tfeAgentAdminPassword, "tfe-admin-password", "hal9000FTW", "Initial TFE admin password used when bootstrapping via IACT")
+	agentCmd.Flags().StringVar(&tfeAgentAdminUsername, "tfe-admin-username", defaultTFEAdminUsername, "Initial TFE admin username used when bootstrapping via IACT")
+	agentCmd.Flags().StringVar(&tfeAgentAdminEmail, "tfe-admin-email", defaultTFEAdminEmail, "Initial TFE admin email used when bootstrapping via IACT")
+	agentCmd.Flags().StringVar(&tfeAgentAdminPassword, "tfe-admin-password", defaultTFEAdminPassword, "Initial TFE admin password used when bootstrapping via IACT")
 	bindTFETargetFlag(agentCmd)
 	bindTwinFlags(agentCmd)
 

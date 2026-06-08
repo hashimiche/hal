@@ -60,10 +60,10 @@ func printTFETargetDetailedStatus(engine, target string) {
 		Name      string
 		Container string
 	}{
-		{"Database (Postgres)", "hal-tfe-db"},
-		{"Cache (Redis)", "hal-tfe-redis"},
-		{"Object Storage (MinIO)", "hal-tfe-minio"},
-		{"TFE Core (Application)", "hal-tfe"},
+		{"Database (Postgres)", tfeDBContainer},
+		{"Cache (Redis)", tfeRedisContainer},
+		{"Object Storage (MinIO)", tfeMinioContainer},
+		{"TFE Core (Application)", tfeCoreContainer},
 	}
 
 	allRunning := true
@@ -97,7 +97,7 @@ func printTFETargetDetailedStatus(engine, target string) {
 		fmt.Println("   hal terraform create")
 	} else if allRunning {
 		fmt.Println("   All systems green. TFE is operational.")
-		fmt.Println("   🔗 UI Address: https://tfe.localhost:8443")
+		fmt.Printf("   🔗 UI Address: %s\n", tfePrimaryBaseURL)
 		if workspaceReady {
 			fmt.Println("   Workspace automation is enabled and ready for VCS-triggered runs.")
 		} else {
@@ -123,9 +123,9 @@ func printTFETwinDetailedStatus(engine string) {
 		Name      string
 		Container string
 	}{
-		{"Shared Database (Postgres)", "hal-tfe-db"},
-		{"Shared Cache (Redis)", "hal-tfe-redis"},
-		{"Shared Object Storage (MinIO)", "hal-tfe-minio"},
+		{"Shared Database (Postgres)", tfeDBContainer},
+		{"Shared Cache (Redis)", tfeRedisContainer},
+		{"Shared Object Storage (MinIO)", tfeMinioContainer},
 		{"Twin TFE Core", layout.CoreContainer},
 		{"Twin Ingress Proxy", layout.ProxyContainer},
 	}
@@ -183,7 +183,7 @@ func printTFETargetStatus(engine, target string) {
 		return
 	}
 
-	endpoint := "https://tfe.localhost:8443"
+	endpoint := tfePrimaryBaseURL
 	productName := "TFE"
 	if target == tfeTargetTwin {
 		layout, layoutErr := buildTFETwinLayout()
