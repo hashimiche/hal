@@ -147,8 +147,11 @@ Rule for every product package under `cmd/<product>/`:
 	deliberately different (twin org, twin container name) stay as local literals.
 
 `cmd/terraform/defaults.go` is the reference implementation. The same pattern is
-to be applied to the other product packages (`vault`, `consul`, `nomad`,
-`boundary`, ...) as they are revisited.
+now applied across every product package — `terraform`, `vault`, `consul`,
+`nomad`, `observability`, `plus` and `boundary` each own a `defaults.go`. The
+Docker network name is never written as a `"hal-net"` literal in a product
+package; it always comes from `global.HalNetName`. When adding a new product
+package, create its `defaults.go` first and wire every shared value through it.
 
 ## Migration Policy
 
