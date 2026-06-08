@@ -132,6 +132,7 @@ var statusCmd = &cobra.Command{
 			fmt.Println("🏗️  Terraform Enterprise")
 			fmt.Println("   URL      : https://tfe.localhost")
 			fmt.Println("   Username : haladmin")
+			fmt.Println("   Password : hal9000FTW")
 			if token != "" {
 				fmt.Printf("   API token: %s\n", token)
 			} else {
