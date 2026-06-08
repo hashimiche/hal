@@ -36,7 +36,7 @@ var mariadbCmd = &cobra.Command{
 
 		// 1. STATUS CHECK
 		if !mariadbEnable && !mariadbDisable && !mariadbUpdate {
-			out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-boundary-target-mariadb").Output()
+			out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", boundaryMariaDBContainer).Output()
 			status := strings.TrimSpace(string(out))
 			if err != nil {
 				fmt.Println("❌ MariaDB Target: Not deployed. Run: hal boundary mariadb enable")
@@ -56,7 +56,7 @@ var mariadbCmd = &cobra.Command{
 				if err := cleanupBoundaryMariaDB(); err != nil {
 					fmt.Printf("⚠️  Boundary cleanup warning: %v\n", err)
 				}
-				if err := exec.Command(engine, "rm", "-f", "hal-boundary-target-mariadb").Run(); err != nil {
+				if err := exec.Command(engine, "rm", "-f", boundaryMariaDBContainer).Run(); err != nil {
 					fmt.Printf("⚠️  Container cleanup warning: %v\n", err)
 				}
 			}
@@ -67,10 +67,10 @@ var mariadbCmd = &cobra.Command{
 
 		// 3. DEPLOY
 		if mariadbEnable || mariadbUpdate {
-			dbContainerName := "hal-boundary-target-mariadb"
+			dbContainerName := boundaryMariaDBContainer
 			if global.DryRun {
 				if mariadbWithVault {
-					dbContainerName = "hal-vault-mariadb"
+					dbContainerName = vaultMariaDBContainer
 					fmt.Println("[DRY RUN] Would attach Boundary target to existing hal-vault-mariadb")
 				} else {
 					fmt.Printf("[DRY RUN] Would create/start MariaDB container hal-boundary-target-mariadb (mariadb:%s) on hal-net\n", targetMariadbVer)
@@ -83,7 +83,7 @@ var mariadbCmd = &cobra.Command{
 			}
 
 			// Boundary Guardrail
-			out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-boundary").Output()
+			out, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", boundaryContainer).Output()
 			if err != nil || strings.TrimSpace(string(out)) != "running" {
 				fmt.Println("❌ Error: Boundary controller is not running! Run: hal boundary create")
 				return
@@ -96,12 +96,12 @@ var mariadbCmd = &cobra.Command{
 					fmt.Println("❌ Error: Vault is not running! Run: hal vault create && hal vault database enable")
 					return
 				}
-				dbContainerName = "hal-vault-mariadb"
+				dbContainerName = vaultMariaDBContainer
 				fmt.Printf("🔗 Attaching Boundary to existing %s...\n", dbContainerName)
 			} else {
 				fmt.Println("🚀 Deploying standalone MariaDB...")
 				global.EnsureNetwork(engine)
-				out, err = exec.Command(engine, "run", "-d", "--name", dbContainerName, "--network", "hal-net", "-p", "3306:3306", "-e", "MARIADB_ROOT_PASSWORD=password", "-e", "MARIADB_DATABASE=targetdb", "-e", "MARIADB_USER=admin", "-e", "MARIADB_PASSWORD=password", fmt.Sprintf("%s:%s", targetMariadbImage, targetMariadbVer)).CombinedOutput()
+				out, err = exec.Command(engine, "run", "-d", "--name", dbContainerName, "--network", global.HalNetName, "-p", fmt.Sprintf("%d:%d", boundaryMariaDBPort, boundaryMariaDBPort), "-e", "MARIADB_ROOT_PASSWORD=password", "-e", "MARIADB_DATABASE=targetdb", "-e", "MARIADB_USER=admin", "-e", "MARIADB_PASSWORD=password", fmt.Sprintf("%s:%s", targetMariadbImage, targetMariadbVer)).CombinedOutput()
 				if err != nil {
 					fmt.Printf("❌ Failed to start MariaDB container: %v\n%s\n", err, strings.TrimSpace(string(out)))
 					return
@@ -133,8 +133,8 @@ func init() {
 	_ = mariadbCmd.Flags().MarkHidden("disable")
 	_ = mariadbCmd.Flags().MarkHidden("update")
 	mariadbCmd.Flags().BoolVar(&mariadbWithVault, "with-vault", false, "Link with Vault Dynamic Creds")
-	mariadbCmd.Flags().StringVar(&targetMariadbVer, "boundary-mariadb-tag", "11.4", "MariaDB container image tag")
-	mariadbCmd.Flags().StringVar(&targetMariadbImage, "boundary-mariadb-image", "mariadb", "MariaDB container image name")
+	mariadbCmd.Flags().StringVar(&targetMariadbVer, "boundary-mariadb-tag", defaultBoundaryMariaDBTag, "MariaDB container image tag")
+	mariadbCmd.Flags().StringVar(&targetMariadbImage, "boundary-mariadb-image", defaultBoundaryMariaDBImage, "MariaDB container image name")
 	Cmd.AddCommand(mariadbCmd)
 }
 
@@ -173,7 +173,7 @@ func bootstrapBoundaryMariaDB(targetHost string) error {
 		return fmt.Errorf("failed to add host to host set: %v", err)
 	}
 
-	targetID, err := client.CreateOrGetResource("targets", map[string]interface{}{"name": "mariadb-secure-access", "type": "tcp", "default_port": 3306, "scope_id": projID}, "name", map[string]string{"scope_id": projID})
+	targetID, err := client.CreateOrGetResource("targets", map[string]interface{}{"name": "mariadb-secure-access", "type": "tcp", "default_port": boundaryMariaDBPort, "scope_id": projID}, "name", map[string]string{"scope_id": projID})
 	if err != nil {
 		return fmt.Errorf("failed to create target: %v", err)
 	}

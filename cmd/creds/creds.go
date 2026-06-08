@@ -112,13 +112,13 @@ var statusCmd = &cobra.Command{
 			fmt.Println("   Username : admin")
 			fmt.Println("   Password : password")
 			fmt.Println()
-			if global.CheckContainer(engine, "hal-ssh-target") {
+			if global.MultipassInstanceExists("hal-boundary-ssh") {
 				fmt.Println("   SSH lab users (Boundary auth method: ssh-lab-auth)")
 				fmt.Println("     ssh-operator / password")
 				fmt.Println("     ssh-auditor  / password")
 				fmt.Println()
 			}
-			if global.CheckContainer(engine, "hal-mariadb-target") {
+			if global.CheckContainer(engine, "hal-boundary-target-mariadb") {
 				fmt.Println("   MariaDB target")
 				fmt.Println("     host: localhost:3306  user: admin  password: password")
 				fmt.Println()
@@ -132,6 +132,7 @@ var statusCmd = &cobra.Command{
 			fmt.Println("🏗️  Terraform Enterprise")
 			fmt.Println("   URL      : https://tfe.localhost")
 			fmt.Println("   Username : haladmin")
+			fmt.Println("   Password : hal9000FTW")
 			if token != "" {
 				fmt.Printf("   API token: %s\n", token)
 			} else {
@@ -274,13 +275,13 @@ func CollectActiveCredentials() (ActiveCredentials, error) {
 			URL:     "http://boundary.localhost:9200",
 			Entries: []CredentialEntry{{Name: "Admin", Username: "admin", Secret: "password"}},
 		}
-		if global.CheckContainer(engine, "hal-ssh-target") {
+		if global.MultipassInstanceExists("hal-boundary-ssh") {
 			boundary.Entries = append(boundary.Entries,
 				CredentialEntry{Name: "ssh-operator", Username: "ssh-operator", Secret: "password", Note: "Boundary auth method: ssh-lab-auth"},
 				CredentialEntry{Name: "ssh-auditor", Username: "ssh-auditor", Secret: "password", Note: "Boundary auth method: ssh-lab-auth"},
 			)
 		}
-		if global.CheckContainer(engine, "hal-mariadb-target") {
+		if global.CheckContainer(engine, "hal-boundary-target-mariadb") {
 			boundary.Entries = append(boundary.Entries,
 				CredentialEntry{Name: "MariaDB target", Username: "admin", Secret: "password", Note: "host: localhost:3306"},
 			)

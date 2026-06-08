@@ -60,10 +60,10 @@ var createCmd = &cobra.Command{
 				fmt.Printf("[DRY RUN] Would set OLLAMA_CONTEXT_WINDOW=%d\n", runtimeConfig.ContextWindow)
 			}
 			fmt.Printf("[DRY RUN] Would set OLLAMA_KEEP_ALIVE=%s\n", runtimeConfig.KeepAlive)
-			fmt.Println("[DRY RUN] Would set HAL_MCP_HTTP_URL=http://hal-mcp:8080/mcp")
+			fmt.Printf("[DRY RUN] Would set HAL_MCP_HTTP_URL=%s\n", plusMCPEnvURL)
 			if qdrantEnabled {
 				fmt.Println("[DRY RUN] Would set HAL_RAG_BACKEND=qdrant")
-				fmt.Println("[DRY RUN] Would set HAL_QDRANT_URL=http://hal-qdrant:6333")
+				fmt.Printf("[DRY RUN] Would set HAL_QDRANT_URL=%s\n", plusQdrantEnvURL)
 				fmt.Printf("[DRY RUN] Would set HAL_DOC_SEARCH_EMBED_MODEL=%s\n", embedModel)
 			}
 			return
@@ -119,7 +119,7 @@ var createCmd = &cobra.Command{
 			}
 		}
 
-		if err := ensureRunningContainer(engine, halMCPContainerName, []string{"--network", "hal-net", mcpImage}); err != nil {
+		if err := ensureRunningContainer(engine, halMCPContainerName, []string{"--network", global.HalNetName, mcpImage}); err != nil {
 			fmt.Printf("❌ %v\n", err)
 			return
 		}
@@ -137,22 +137,22 @@ var createCmd = &cobra.Command{
 					return
 				}
 			}
-			if err := ensureRunningContainer(engine, halQdrantContainerName, []string{"--network", "hal-net", qdrantImage}); err != nil {
+			if err := ensureRunningContainer(engine, halQdrantContainerName, []string{"--network", global.HalNetName, qdrantImage}); err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return
 			}
 		}
 
 		plusArgs := []string{
-			"--network", "hal-net",
-			"-p", fmt.Sprintf("%d:9000", plusPort),
+			"--network", global.HalNetName,
+			"-p", fmt.Sprintf("%d:%d", plusPort, plusAPIPort),
 			"-e", "API_HOST=0.0.0.0",
-			"-e", "API_PORT=9000",
+			"-e", fmt.Sprintf("API_PORT=%d", plusAPIPort),
 			"-e", fmt.Sprintf("OLLAMA_BASE_URL=%s", containerOllamaURL),
 			"-e", fmt.Sprintf("OLLAMA_MODEL=%s", runtimeConfig.RuntimeModel),
 			"-e", fmt.Sprintf("OLLAMA_MODEL_LABEL=%s", runtimeConfig.RequestedModel),
 			"-e", fmt.Sprintf("OLLAMA_KEEP_ALIVE=%s", runtimeConfig.KeepAlive),
-			"-e", "HAL_MCP_HTTP_URL=http://hal-mcp:8080/mcp",
+			"-e", fmt.Sprintf("HAL_MCP_HTTP_URL=%s", plusMCPEnvURL),
 			"-e", "HAL_PLUS_CONTAINER_MODE=true",
 			plusImage,
 		}
@@ -162,7 +162,7 @@ var createCmd = &cobra.Command{
 		if qdrantEnabled {
 			qdrantEnv := []string{
 				"-e", "HAL_RAG_BACKEND=qdrant",
-				"-e", "HAL_QDRANT_URL=http://hal-qdrant:6333",
+				"-e", fmt.Sprintf("HAL_QDRANT_URL=%s", plusQdrantEnvURL),
 				"-e", fmt.Sprintf("HAL_DOC_SEARCH_EMBED_MODEL=%s", embedModel),
 			}
 			plusArgs = append(plusArgs[:len(plusArgs)-1], append(qdrantEnv, plusArgs[len(plusArgs)-1])...)
@@ -188,7 +188,7 @@ var createCmd = &cobra.Command{
 			fmt.Printf("🧩 Model preset: %s\n", runtimeConfig.RequestedModel)
 		}
 		fmt.Printf("🧠 Ollama host:  %s\n", ollamaHostURL)
-		fmt.Printf("🌐 UI URL:       http://hal.localhost:%d\n", plusPort)
+		fmt.Printf("🌐 UI URL:       http://%s:%d\n", plusUIHostname, plusPort)
 		fmt.Println("💡 Run 'hal plus status' to verify container and endpoint health.")
 	},
 }

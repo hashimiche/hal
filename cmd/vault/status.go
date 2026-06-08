@@ -31,7 +31,7 @@ var vaultStatusCmd = &cobra.Command{
 		fmt.Println("  [ Container Infrastructure ]")
 
 		// 🎯 FIX: Use Output() instead of CombinedOutput() so we don't capture stderr garbage
-		vaultCheck, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-vault").Output()
+		vaultCheck, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", vaultContainer).Output()
 		vaultStatus := strings.TrimSpace(string(vaultCheck))
 
 		// 🎯 FIX: If err != nil, the container just doesn't exist
@@ -46,7 +46,7 @@ var vaultStatusCmd = &cobra.Command{
 			fmt.Println("\n  📜 Fetching recent crash logs...")
 
 			// We DO want stderr here so we can see why it crashed!
-			logsOut, _ := exec.Command(engine, "logs", "--tail", "10", "hal-vault").CombinedOutput()
+			logsOut, _ := exec.Command(engine, "logs", "--tail", "10", vaultContainer).CombinedOutput()
 			logStr := strings.TrimSpace(string(logsOut))
 
 			if logStr != "" {
@@ -68,16 +68,16 @@ var vaultStatusCmd = &cobra.Command{
 			Container string
 			Command   string
 		}{
-			{"OIDC (Keycloak)", "hal-keycloak", "oidc"},
-			{"JWT (GitLab)", "hal-gitlab", "jwt"},
-			{"LDAP (OpenLDAP)", "hal-openldap", "ldap"},
-			{"DBs (MariaDB/PgSQL)", "hal-vault-mariadb", "database"},
+			{"OIDC (Keycloak)", keycloakContainer, "oidc"},
+			{"JWT (GitLab)", gitlabContainer, "jwt"},
+			{"LDAP (OpenLDAP)", openLDAPContainer, "ldap"},
+			{"DBs (MariaDB/PgSQL)", vaultMariaDBContainer, "database"},
 			{"K8s (KinD)", "kind-control-plane", "k8s"},
 		}
 
 		for _, f := range features {
 			if f.Command == "database" {
-				mariaOut, mariaErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-vault-mariadb").Output()
+				mariaOut, mariaErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", vaultMariaDBContainer).Output()
 				postgresOut, postgresErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-vault-postgres").Output()
 				mariaStatus := strings.TrimSpace(string(mariaOut))
 				postgresStatus := strings.TrimSpace(string(postgresOut))
@@ -125,7 +125,7 @@ var vaultStatusCmd = &cobra.Command{
 		// ==========================================
 		fmt.Println("\n  [ Vault API Health ]")
 		client := http.Client{Timeout: 2 * time.Second}
-		resp, err := client.Get("http://127.0.0.1:8200/v1/sys/health")
+		resp, err := client.Get(vaultLocalAPIURL + "/v1/sys/health")
 
 		if err != nil {
 			fmt.Println("  🟡 API is unreachable (Vault might still be booting up).")

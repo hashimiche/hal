@@ -285,7 +285,7 @@ var vaultK8sCmd = &cobra.Command{
 				if isPodman {
 					env = append(env, "KIND_EXPERIMENTAL_PROVIDER=podman")
 				}
-				env = append(env, "KIND_EXPERIMENTAL_DOCKER_NETWORK=hal-net")
+				env = append(env, "KIND_EXPERIMENTAL_DOCKER_NETWORK="+global.HalNetName)
 				startCmd.Env = env
 				startCmd.Stdout = os.Stdout
 				startCmd.Stderr = os.Stderr
@@ -404,10 +404,10 @@ path "sys/license/status" { capabilities = ["read"] }
 			fmt.Println("⚙️  Applying Kubernetes Manifests...")
 			_ = exec.Command("kubectl", "create", "sa", "app1-sa", "-n", "app1").Run()
 
-			ipOut, _ := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "hal-vault").Output()
+			ipOut, _ := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", vaultContainer).Output()
 			vaultIP := strings.TrimSpace(string(ipOut))
 			if vaultIP == "" {
-				vaultIP = "hal-vault"
+				vaultIP = vaultContainer
 			}
 
 			modeTitle := "VSO ROLLING UPDATE DEMO"

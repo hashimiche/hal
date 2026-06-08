@@ -185,10 +185,10 @@ func tfeCoreContainerForBaseURL(baseURL string) (string, error) {
 
 	hostname := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
 	if hostname == "" {
-		return "hal-tfe", nil
+		return tfeCoreContainer, nil
 	}
 
-	if hostname == "tfe-bis.localhost" {
+	if hostname == defaultTFETwinHostname {
 		layout, layoutErr := buildTFETwinLayout()
 		if layoutErr != nil {
 			return "", layoutErr
@@ -196,7 +196,7 @@ func tfeCoreContainerForBaseURL(baseURL string) (string, error) {
 		return layout.CoreContainer, nil
 	}
 
-	return "hal-tfe", nil
+	return tfeCoreContainer, nil
 }
 
 func extractAtlasUserToken(raw string) string {

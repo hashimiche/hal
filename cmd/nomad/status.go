@@ -18,7 +18,7 @@ var nomadStatusCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Println("  [ Multipass Infrastructure ]")
 
-		out, err := exec.Command("multipass", "info", "hal-nomad", "--format", "csv").Output()
+		out, err := exec.Command("multipass", "info", nomadInstance, "--format", "csv").Output()
 		if err != nil {
 			fmt.Println("  ⚪ Nomad VM : Down (hal nomad create to start)")
 			return
@@ -41,14 +41,14 @@ var nomadStatusCmd = &cobra.Command{
 		fmt.Println("\n  [ Nomad API Health ]")
 
 		client := http.Client{Timeout: 2 * time.Second}
-		resp, err := client.Get(fmt.Sprintf("http://%s:4646/v1/status/leader", ip))
+		resp, err := client.Get(fmt.Sprintf("http://%s:%d/v1/status/leader", ip, nomadHTTPPort))
 
 		if err != nil {
 			fmt.Println("  🟡 Nomad API: Unreachable (Agent crashed or booting)")
 		} else {
 			defer resp.Body.Close()
 			if resp.StatusCode == 200 {
-				fmt.Printf("  🟢 Nomad API: Ready (http://%s:4646)\n", ip)
+				fmt.Printf("  🟢 Nomad API: Ready (http://%s:%d)\n", ip, nomadHTTPPort)
 			} else {
 				fmt.Printf("  🟡 Nomad API: Error (HTTP %d)\n", resp.StatusCode)
 			}

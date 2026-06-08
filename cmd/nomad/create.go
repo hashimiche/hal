@@ -48,7 +48,7 @@ var deployCmd = &cobra.Command{
 				fmt.Println("[DEBUG] --update detected. Purging existing VM 'hal-nomad' for reconciliation...")
 			}
 			if !global.DryRun {
-				_ = exec.Command("multipass", "delete", "hal-nomad").Run()
+				_ = exec.Command("multipass", "delete", nomadInstance).Run()
 				_ = exec.Command("multipass", "purge").Run()
 			}
 		}
@@ -67,7 +67,7 @@ var deployCmd = &cobra.Command{
 
 		// 1. Launch the VM
 		fmt.Println("📦 Provisioning Ubuntu VM (This takes a few seconds)...")
-		launchArgs := []string{"launch", nomadUbuntuImage, "--name", "hal-nomad", "--cpus", nomadCPUs, "--mem", nomadMem}
+		launchArgs := []string{"launch", nomadUbuntuImage, "--name", nomadInstance, "--cpus", nomadCPUs, "--mem", nomadMem}
 		out, err := exec.Command("multipass", launchArgs...).CombinedOutput()
 		if err != nil {
 			if strings.Contains(string(out), "already exists") {
@@ -119,25 +119,25 @@ var deployCmd = &cobra.Command{
 			sudo systemctl enable --now nomad;
 		`, nomadVersion, nomadVersion, joinConsulStr)
 
-		execArgs := []string{"exec", "hal-nomad", "--", "bash", "-c", installScript}
+		execArgs := []string{"exec", nomadInstance, "--", "bash", "-c", installScript}
 		if out, err := exec.Command("multipass", execArgs...).CombinedOutput(); err != nil {
 			fmt.Printf("❌ Failed to configure VM: %v\nOutput: %s\n", err, string(out))
 			return
 		}
 
 		// 3. Fetch the VM's IP Address
-		ipOut, _ := exec.Command("multipass", "info", "hal-nomad", "--format", "csv").Output()
+		ipOut, _ := exec.Command("multipass", "info", nomadInstance, "--format", "csv").Output()
 		ip := extractMultipassIP(string(ipOut))
 
 		// 4. THE HEALTH CHECK PHASE
 		fmt.Println("⏳ Waiting for Nomad to become healthy...")
-		if err := waitForService("Nomad", fmt.Sprintf("http://%s:4646/v1/status/leader", ip), 45); err != nil {
+		if err := waitForService("Nomad", fmt.Sprintf("http://%s:%d/v1/status/leader", ip, nomadHTTPPort), 45); err != nil {
 			handleServiceFailure("nomad")
 			return
 		}
 
 		fmt.Println("\n✅ Environment is fully verified and ready!")
-		fmt.Printf("   🔗 Nomad UI:  http://%s:4646\n", ip)
+		fmt.Printf("   🔗 Nomad UI:  http://%s:%d\n", ip, nomadHTTPPort)
 
 		if nomadJoinConsul {
 			fmt.Println("   🟢 Nomad is successfully tethered to the global Consul Control Plane!")
@@ -167,7 +167,7 @@ func handleServiceFailure(service string) {
 	fmt.Printf("❌ %s service failed to start or become healthy.\n", strings.Title(service))
 	fmt.Println("📜 Fetching recent systemd logs from the VM...")
 
-	out, _ := exec.Command("multipass", "exec", "hal-nomad", "--", "journalctl", "-u", service, "-n", "15", "--no-pager").CombinedOutput()
+	out, _ := exec.Command("multipass", "exec", nomadInstance, "--", "journalctl", "-u", service, "-n", "15", "--no-pager").CombinedOutput()
 	logStr := strings.TrimSpace(string(out))
 
 	if logStr != "" {
@@ -202,10 +202,10 @@ var updateCmd = &cobra.Command{
 }
 
 func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
-	cmd.Flags().StringVarP(&nomadVersion, "version", "v", "1.11.3", "Nomad version to install")
-	cmd.Flags().StringVar(&nomadUbuntuImage, "ubuntu-image", "22.04", "Multipass image/channel used for the Nomad VM")
-	cmd.Flags().StringVar(&nomadCPUs, "cpus", "2", "Number of CPUs for the VM")
-	cmd.Flags().StringVar(&nomadMem, "mem", "2G", "Amount of RAM for the VM")
+	cmd.Flags().StringVarP(&nomadVersion, "version", "v", defaultNomadVersion, "Nomad version to install")
+	cmd.Flags().StringVar(&nomadUbuntuImage, "ubuntu-image", defaultNomadUbuntuImage, "Multipass image/channel used for the Nomad VM")
+	cmd.Flags().StringVar(&nomadCPUs, "cpus", defaultNomadCPUs, "Number of CPUs for the VM")
+	cmd.Flags().StringVar(&nomadMem, "mem", defaultNomadMem, "Amount of RAM for the VM")
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&nomadUpdate, "update", "u", false, "Reconcile an existing Nomad deployment in place")
 	}

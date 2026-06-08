@@ -102,7 +102,7 @@ var vaultAuditCmd = &cobra.Command{
 				fmt.Println("🧹 Purging old audit logs from the shared volume...")
 				engine, _ := global.DetectEngine()
 				// We use 'exec' to reach inside the running container and delete the file
-				_ = exec.Command(engine, "exec", "hal-vault", "sh", "-c", "rm -f /vault/logs/audit.log").Run()
+				_ = exec.Command(engine, "exec", vaultContainer, "sh", "-c", "rm -f /vault/logs/audit.log").Run()
 			}
 
 			// If the user ONLY wanted to disable, exit here.
@@ -155,7 +155,7 @@ var vaultAuditCmd = &cobra.Command{
 
 			if lokiStack {
 				fmt.Println("\n💡 HAL Tip for Observability:")
-				fmt.Println("   Vault is now writing to the 'hal-vault-logs' Docker volume.")
+				fmt.Printf("   Vault is now writing to the '%s' Docker volume.\n", vaultLogsVolume)
 				fmt.Println("   Promtail reads this passively, meaning Vault will never block on network errors!")
 			} else if auditType == "file" {
 				fmt.Println("\n💡 HAL Tip: To view these logs live from the container, run:")

@@ -52,7 +52,7 @@ var vaultJwtCmd = &cobra.Command{
 			fmt.Println("🔍 Checking Vault JWT / GitLab Status...")
 
 			// Check Docker
-			gitlabExists := (exec.Command(engine, "inspect", "hal-gitlab").Run() == nil)
+			gitlabExists := (exec.Command(engine, "inspect", gitlabContainer).Run() == nil)
 			projectExists := false
 			runnerActive := false
 			if gitlabExists {
@@ -133,7 +133,7 @@ var vaultJwtCmd = &cobra.Command{
 					// We don't delete the root identity as it might be used by other things.
 				}
 
-				_ = exec.Command(engine, "rm", "-f", "hal-gitlab", "hal-gitlab-runner").Run()
+				_ = exec.Command(engine, "rm", "-f", gitlabContainer, gitlabRunnerContainer).Run()
 				_ = global.ClearSharedService("gitlab")
 				fmt.Println("✅ GitLab containers removed and Vault API cleaned up.")
 				global.RefreshHalHealth(engine)
@@ -455,9 +455,9 @@ func ensureJWTGitLabRunner(engine, token, projectID string) error {
 		return nil
 	}
 
-	if global.IsContainerRunning(engine, "hal-gitlab-runner") {
+	if global.IsContainerRunning(engine, gitlabRunnerContainer) {
 		fmt.Println("   ♻️  Reconfiguring HAL runner to use internal GitLab network URL...")
-		_ = exec.Command(engine, "rm", "-f", "hal-gitlab-runner").Run()
+		_ = exec.Command(engine, "rm", "-f", gitlabRunnerContainer).Run()
 		_ = os.RemoveAll(runnerConfigDir)
 	}
 
@@ -470,7 +470,7 @@ func ensureJWTGitLabRunner(engine, token, projectID string) error {
 		return fmt.Errorf("failed to prepare runner config directory: %w", err)
 	}
 
-	if !global.IsContainerRunning(engine, "hal-gitlab-runner") {
+	if !global.IsContainerRunning(engine, gitlabRunnerContainer) {
 		gitlabIP, ipErr := gitlabContainerIP(engine)
 		if ipErr != nil {
 			return ipErr
@@ -478,8 +478,8 @@ func ensureJWTGitLabRunner(engine, token, projectID string) error {
 
 		runnerArgs := []string{
 			"run", "-d",
-			"--name", "hal-gitlab-runner",
-			"--network", "hal-net",
+			"--name", gitlabRunnerContainer,
+			"--network", global.HalNetName,
 			"--add-host", fmt.Sprintf("gitlab.localhost:%s", gitlabIP),
 			"-v", fmt.Sprintf("%s:/etc/gitlab-runner", runnerConfigDir),
 			gitlabRunnerImage + ":" + gitlabRunnerTag,
@@ -495,7 +495,7 @@ func ensureJWTGitLabRunner(engine, token, projectID string) error {
 	}
 
 	registerArgs := []string{
-		"exec", "hal-gitlab-runner",
+		"exec", gitlabRunnerContainer,
 		"gitlab-runner", "register", "--non-interactive",
 		"--url", "http://hal-gitlab:8080",
 		"--clone-url", "http://hal-gitlab:8080",
@@ -529,7 +529,7 @@ func ensureJWTToolingInRunner(engine string) error {
 		"exec",
 		"-u",
 		"0",
-		"hal-gitlab-runner",
+		gitlabRunnerContainer,
 		"sh",
 		"-lc",
 		"apk add --no-cache jq curl bash >/dev/null",
@@ -546,10 +546,10 @@ func ensureJWTToolingInRunner(engine string) error {
 }
 
 func runnerHasJWTTooling(engine string) bool {
-	if !global.IsContainerRunning(engine, "hal-gitlab-runner") {
+	if !global.IsContainerRunning(engine, gitlabRunnerContainer) {
 		return false
 	}
-	out, err := exec.Command(engine, "exec", "hal-gitlab-runner", "sh", "-lc", "command -v jq >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v bash >/dev/null 2>&1").CombinedOutput()
+	out, err := exec.Command(engine, "exec", gitlabRunnerContainer, "sh", "-lc", "command -v jq >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v bash >/dev/null 2>&1").CombinedOutput()
 	if err != nil {
 		_ = out
 		return false
@@ -558,7 +558,7 @@ func runnerHasJWTTooling(engine string) bool {
 }
 
 func gitlabContainerIP(engine string) (string, error) {
-	out, err := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "hal-gitlab").Output()
+	out, err := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", gitlabContainer).Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to inspect hal-gitlab container IP: %w", err)
 	}
@@ -594,10 +594,10 @@ func createJWTRunnerAuthToken(token string) (string, error) {
 }
 
 func runnerConfigUsesInternalGitLab(engine string) bool {
-	if !global.IsContainerRunning(engine, "hal-gitlab-runner") {
+	if !global.IsContainerRunning(engine, gitlabRunnerContainer) {
 		return false
 	}
-	out, err := exec.Command(engine, "exec", "hal-gitlab-runner", "sh", "-lc", "cat /etc/gitlab-runner/config.toml").CombinedOutput()
+	out, err := exec.Command(engine, "exec", gitlabRunnerContainer, "sh", "-lc", "cat /etc/gitlab-runner/config.toml").CombinedOutput()
 	if err != nil {
 		return false
 	}

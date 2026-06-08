@@ -30,8 +30,8 @@ var statusCmd = &cobra.Command{
 			Name      string
 			Container string
 		}{
-			{"Backend DB", "hal-boundary-backend"},
-			{"Controller/Worker", "hal-boundary"},
+			{"Backend DB", boundaryBackendContainer},
+			{"Controller/Worker", boundaryContainer},
 		}
 
 		allCoresRunning := true
@@ -54,14 +54,14 @@ var statusCmd = &cobra.Command{
 		fmt.Println("\n  [ Target Ecosystem ]")
 
 		// DB Target
-		dbOut, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-boundary-target-mariadb").Output()
+		dbOut, err := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", boundaryMariaDBContainer).Output()
 		if err == nil && strings.TrimSpace(string(dbOut)) == "running" {
 			fmt.Println("  🟢 MariaDB Target   : Up (hal boundary mariadb disable)")
 		} else {
 			fmt.Println("  ⚪ MariaDB Target   : Down (hal boundary mariadb enable)")
 		}
 
-		vmOut, vmErr := exec.Command("multipass", "info", "hal-boundary-ssh", "--format", "csv").Output()
+		vmOut, vmErr := exec.Command("multipass", "info", boundarySSHInstance, "--format", "csv").Output()
 		if vmErr == nil && strings.Contains(string(vmOut), "Running") {
 			ip := extractMultipassIP(string(vmOut))
 			fmt.Printf("  🟢 Ubuntu SSH Target: Up (IP: %s) (hal boundary ssh disable)\n", ip)

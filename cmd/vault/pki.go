@@ -257,7 +257,7 @@ var vaultPKICmd = &cobra.Command{
 					fmt.Println("  ✅ pki-acme-demo namespace removed.")
 				}
 				// Remove the CoreDNS sidecar used for ACME challenge DNS resolution.
-				_ = exec.Command(engine, "rm", "-f", "hal-acme-dns").Run()
+				_ = exec.Command(engine, "rm", "-f", acmeDNSContainer).Run()
 
 				// Conditionally delete KinD cluster
 				vsoOut, _ := exec.Command("helm", "list", "-n", "vso", "-q").Output()
@@ -1155,16 +1155,16 @@ func tunePKIACMEHeaders(client *vault.Client, mount string) error {
 // Returns the DNS container IP (to be set as Vault ACME dns_resolver).
 func ensureACMEDNS(engine, kindIP string) (string, error) {
 	// Return early if already running with the correct mapping.
-	runningOut, _ := exec.Command(engine, "inspect", "-f", "{{.State.Running}}", "hal-acme-dns").Output()
+	runningOut, _ := exec.Command(engine, "inspect", "-f", "{{.State.Running}}", acmeDNSContainer).Output()
 	if strings.TrimSpace(string(runningOut)) == "true" {
 		ipOut, _ := exec.Command(engine, "inspect",
-			"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "hal-acme-dns").Output()
+			"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", acmeDNSContainer).Output()
 		if ip := strings.TrimSpace(string(ipOut)); ip != "" {
 			return ip, nil
 		}
 	}
 	// Remove any stopped/stale container.
-	_ = exec.Command(engine, "rm", "-f", "hal-acme-dns").Run()
+	_ = exec.Command(engine, "rm", "-f", acmeDNSContainer).Run()
 
 	// Write a minimal Corefile to a temp directory.
 	tmpDir, err := os.MkdirTemp("", "hal-acme-dns-*")
@@ -1186,8 +1186,8 @@ func ensureACMEDNS(engine, kindIP string) (string, error) {
 	}
 
 	startOut, startErr := exec.Command(engine, "run", "-d",
-		"--name", "hal-acme-dns",
-		"--network", "hal-net",
+		"--name", acmeDNSContainer,
+		"--network", global.HalNetName,
 		"-v", tmpDir+"/Corefile:/Corefile:ro",
 		"coredns/coredns:latest", "-conf", "/Corefile",
 	).CombinedOutput()
@@ -1199,7 +1199,7 @@ func ensureACMEDNS(engine, kindIP string) (string, error) {
 	time.Sleep(2 * time.Second)
 
 	ipOut, _ := exec.Command(engine, "inspect",
-		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "hal-acme-dns").Output()
+		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", acmeDNSContainer).Output()
 	dnsIP := strings.TrimSpace(string(ipOut))
 	if dnsIP == "" {
 		return "", fmt.Errorf("hal-acme-dns started but could not determine its IP")
