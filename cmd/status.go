@@ -47,6 +47,7 @@ var statusCmd = &cobra.Command{
 		}
 
 		services := []svcStatus{
+			{name: "AAP", container: "hal-aap", running: checkContainer(engine, "hal-aap"), endpoint: "https://aap.localhost"},
 			{name: "Consul", container: "hal-consul", running: checkContainer(engine, "hal-consul"), endpoint: "http://consul.localhost:8500"},
 			{name: "Vault", container: "hal-vault", running: checkContainer(engine, "hal-vault"), endpoint: "http://vault.localhost:8200"},
 			{name: "Nomad", container: "hal-nomad", running: checkMultipass("hal-nomad"), endpoint: "Multipass VM"},
@@ -172,6 +173,8 @@ func printProductFeatureStatus(engine, productName string, running bool) {
 	case "Nomad":
 		fmt.Printf("   ↳ %-8s %s\n", "job", colorizeFeatureState(boolState(checkMultipass("hal-nomad"))))
 	case "Consul":
+		fmt.Printf("   ↳ %-8s %s\n", "core", colorizeFeatureState(boolState(running)))
+	case "AAP":
 		fmt.Printf("   ↳ %-8s %s\n", "core", colorizeFeatureState(boolState(running)))
 	case "Observability":
 		printObsFeatureStatus(engine)

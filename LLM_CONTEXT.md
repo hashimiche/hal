@@ -66,6 +66,10 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 
 ## Product Notes
 
+- AAP product lifecycle is managed via `hal aap create|update|status|delete`.
+    - Default image is `ubi9-aap` and runs as container `hal-aap` on `hal-net`.
+    - HTTPS is published locally on host port `443` by default (`https://aap.localhost`).
+    - Use `--host-port` on `hal aap create` if port 443 is already in use.
 - Boundary target setup has version-sensitive API behavior around auth methods, grant strings, target host-source actions, and brokered credential source attachment.
 - HAL MCP command namespace (`hal mcp`) supports two transports:
     - **stdio** (default, local/dev): `hal mcp serve` — spawned directly by HAL Plus; protocol `2024-11-05`.

@@ -227,6 +227,19 @@ hal consul obs delete
 
 ---
 
+### AAP (`hal aap`)
+
+```bash
+hal aap create                      
+hal aap create --host-port 8443     
+hal aap create --aap-image ubi9-aap --aap-tag latest
+hal aap update
+hal aap status
+hal aap delete
+```
+
+---
+
 ### Nomad (`hal nomad`)
 
 ```bash

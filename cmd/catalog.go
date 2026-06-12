@@ -23,6 +23,7 @@ var catalogCmd = &cobra.Command{
 
 		fmt.Println()
 		fmt.Println("🏗️  INFRASTRUCTURE & ORCHESTRATION")
+		fmt.Println("   - aap       Local AAP container runtime (HTTPS on port 443)")
 		fmt.Println("   - nomad     Ubuntu VM cluster via Multipass + job workloads (--join-consul)")
 		fmt.Println("               obs: Prometheus targets + Grafana dashboards")
 		fmt.Println("   - consul    Standalone Control Plane")

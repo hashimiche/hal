@@ -20,6 +20,7 @@ When command behavior changes, keep this file and `.github/copilot-instructions.
 
 | Product namespace | Subcommands | Lifecycle expression today |
 |---|---|---|
+| `hal aap` | `create`, `update`, `delete`, `status` | Product lifecycle is command-based (`create`/`update`/`delete`/`status`). |
 | `hal boundary` | `create`, `delete`, `status`, `obs`, `mariadb`, `ssh` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature lifecycle is action-based (`status|enable|disable|update`) with hidden compatibility flags. Observability artifacts are managed explicitly via `hal boundary obs <create|update|delete|status>`. |
 | `hal consul` | `create`, `delete`, `status`, `obs` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Observability artifacts are managed explicitly via `hal consul obs <create|update|delete|status>`. |
 | `hal nomad` | `create`, `delete`, `status`, `obs`, `job` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature command `job` remains action-based. Observability artifacts are managed explicitly via `hal nomad obs <create|update|delete|status>`. |
@@ -40,6 +41,7 @@ Intent:
 
 | Product | Target lifecycle verbs | Notes |
 |---|---|---|
+| `hal aap` | `create`, `update`, `delete`, `status` | Local container lifecycle only. |
 | `hal vault` | `create`, `update`, `delete`, `status` | Replace product `deploy/destroy` with `create/delete`; add explicit `update`. |
 | `hal mcp` | `create`, `update`, `delete`, `status` | Consolidate `up/down` into `create/delete`; add explicit `update` if needed for reconfiguration. |
 | `hal tfe` (or `hal terraform` if alias retained) | `create`, `update`, `delete`, `status` | Align Terraform Enterprise product lifecycle. |
