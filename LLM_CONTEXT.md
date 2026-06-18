@@ -112,7 +112,7 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - The `hal-health` container reuses `hashimiche/hal-mcp:latest` (same image as `hal-mcp`) with `--entrypoint /usr/local/bin/hal` and `health _serve` as args.
     - It reads a frozen `HAL_HEALTH_DATA` JSON env var at startup and serves it at `http://hal-health:9001/api/status` on `hal-net`.
     - The snapshot is built on the **host** (which has engine socket access) by `global.RefreshHalHealth(engine)`, injected as an env var, then the container is recreated. The container itself never touches the engine.
-- `global.RefreshHalHealth(engine)` is called after every product lifecycle event that changes ecosystem state: all product `create`/`delete` commands, and all vault/boundary extension enable/disable commands (`vault k8s`, `vault oidc`, `vault jwt`, `vault ldap`, `vault database`, `boundary mariadb`, `boundary ssh`).
+- `global.RefreshHalHealth(engine)` is called after every product lifecycle event that changes ecosystem state: all product `create`/`delete` commands, and all vault/boundary extension enable/disable commands (`vault k8s`, `vault oidc`, `vault jwt`, `vault aap`, `vault ldap`, `vault database`, `boundary mariadb`, `boundary ssh`).
     - `RefreshHalHealth` is a no-op if `hal-net` does not exist or the `hashimiche/hal-mcp:latest` image is not present — safe to call unconditionally.
     - HAL Plus fetches `http://hal-health:9001/api/status` as its primary product state source (via `fetchHalStatusProducts()` in `server/index.mjs`), with `fallbackProductsFromEndpoints()` as a fallback for local dev without containers.
     - The snapshot shape: `{ timestamp, engine, products: [{ product, state, health, reason, endpoint, containers, features: [{ feature, state, health, reason }] }] }`.
@@ -184,6 +184,10 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - **Disable flow SCIM cleanup**: `runTFESAMLDisable` calls `disableTFESCIMOnTFE` (in `saml_scim.go`) which deletes all SCIM tokens then `DELETE /api/v2/admin/scim-settings`. Without this, a subsequent `enable --scim` would fail with 422 because SCIM settings from the old run would remain stale.
     - **`update` pattern**: calls `cleanTFESAML` + `clearOldTFESAMLCert`, deletes Authentik application + SAML/SCIM providers, then falls through to the enable path.
     - **Implementation files**: `cmd/terraform/saml.go`, `cmd/terraform/saml_scim.go`, `internal/integrations/authentik.go` (SAML/proxy methods appended).
+- `hal vault aap` manages local AAP-specific Vault integration flows.
+    - **Command**: `hal vault aap oidc enable|disable|update|status`.
+    - **Vault objects**: `auth/jwt-aap/config`, policies `aap-development-policy` and `aap-production-policy`, roles `aap-development-role` and `aap-production-role` at `auth/jwt-aap/role/...`.
+    - **Seeded data**: `secret/data/development` and `secret/data/production`.
 - Shared runtime helpers live under `internal/global`, especially engine detection and network management.
 - Engine resource advisory helpers live under `internal/global`; reuse them instead of open-coding engine-specific capacity checks in individual commands.
 - Vault k8s demo (`hal vault k8s`) now supports two explicit demo modes behind the same nginx endpoint (`http://web.localhost:8088`):

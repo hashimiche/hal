@@ -26,7 +26,7 @@ When command behavior changes, keep this file and `.github/copilot-instructions.
 | `hal nomad` | `create`, `delete`, `status`, `obs`, `job` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature command `job` remains action-based. Observability artifacts are managed explicitly via `hal nomad obs <create|update|delete|status>`. |
 | `hal obs` | `create`, `delete`, `status` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. |
 | `hal terraform` (alias `hal tf`) | `create`, `delete`, `status`, `obs`, `agent`, `api-workflow` (alias `api`), `workspace` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Twin lifecycle is target-based via `--target primary|twin|both` on `create`/`update`/`delete`/`status`. Terraform observability artifacts are managed under `hal terraform obs <create|update|delete|status>`. |
-| `hal vault` | `create`, `delete`, `status`, `obs`, `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature lifecycle is action-based (`status|enable|disable|update`) with hidden compatibility flags. Observability artifacts are managed explicitly via `hal vault obs <create|update|delete|status>`. |
+| `hal vault` | `create`, `delete`, `status`, `obs`, `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc`, `aap` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature lifecycle is action-based (`status|enable|disable|update`) with hidden compatibility flags. Observability artifacts are managed explicitly via `hal vault obs <create|update|delete|status>`. |
 | `hal mcp` | `create`, `update`, `delete`, `status`, `policy` | Product lifecycle is command-based (`create`/`update`/`delete`). `policy` is read-only today. |
 
 ## Target Command Model
@@ -58,6 +58,7 @@ Intent:
 | `hal vault ldap` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault oidc` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault jwt` | `enable`, `update`, `disable`, `status` | Same as above. |
+| `hal vault aap oidc` | `enable`, `update`, `disable`, `status` | Configure Vault JWT auth for local AAP OIDC integration. |
 | `hal vault database` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault audit` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal boundary mariadb` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |

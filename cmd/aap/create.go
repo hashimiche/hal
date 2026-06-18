@@ -73,8 +73,9 @@ var aapCreateCmd = &cobra.Command{
 		}
 
 		aapURL := aapBaseURL()
+		healthURL := aapHealthURL()
 		fmt.Println("⏳ Waiting for AAP to initialize (this can take a few minutes)...")
-		if err := waitForAAPService(aapURL+"/api/controller/v2/ping/", 600); err != nil {
+		if err := waitForAAPService(healthURL+"/api/controller/v2/ping/", 600); err != nil {
 			handleAAPFailure(engine)
 			return
 		}
@@ -85,7 +86,7 @@ var aapCreateCmd = &cobra.Command{
 		fmt.Println("   ⚠️  Note:        Accept the browser warning for the self-signed certificate.")
 		fmt.Println("")
 		fmt.Println("   👤 Admin User:   admin")
-		fmt.Println("   🔑 Admin Pass:   Hashi123!")
+		fmt.Println("   🔑 Admin Pass:   admin")
 	},
 }
 
@@ -117,11 +118,19 @@ func aapBaseURL() string {
 	return fmt.Sprintf("https://aap.localhost:%d", aapHostPort)
 }
 
+func aapHealthURL() string {
+	if aapHostPort == 443 {
+		return "https://127.0.0.1"
+	}
+	return fmt.Sprintf("https://127.0.0.1:%d", aapHostPort)
+}
+
 func waitForAAPService(url string, maxRetries int) error {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	transport.Proxy = nil
 	client := http.Client{
-		Timeout:   3 * time.Second,
+		Timeout:   10 * time.Second,
 		Transport: transport,
 	}
 
@@ -142,6 +151,7 @@ func waitForAAPService(url string, maxRetries int) error {
 func handleAAPFailure(engine string) {
 	fmt.Println("❌ AAP failed to become healthy in time.")
 	fmt.Println("❌ Note that AAP consumes significant resources; ensure your system meets the requirements and check the logs below for troubleshooting.")
+	fmt.Println("⚠️ Warning: AAP is *not* intended to run on Mac. There is a chance that it will not start correctly due to a variety of factors. delete/create again if necessary.")
 	fmt.Println("📜 Fetching recent container logs...")
 	out, _ := exec.Command(engine, "logs", "--tail", "80", aapContainerName).CombinedOutput()
 	fmt.Println(strings.TrimSpace(string(out)))

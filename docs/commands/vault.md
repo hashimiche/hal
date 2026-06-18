@@ -47,6 +47,11 @@
   - Configure dynamic DB credentials scenario (defaults to `mariadb`; `postgres` planned)
   - Spec: [vault-database.md](vault-database.md)
 
+- `hal vault aap`
+  - Manage Vault integration flows for local AAP
+  - Subcommands: `oidc`
+  - Spec: [vault-aap.md](vault-aap.md)
+
 - `hal vault os`
   - Deploy Ubuntu VM and configure OS secret engine for Linux user password management
   - Spec: [vault-os.md](vault-os.md)
