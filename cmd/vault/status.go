@@ -72,6 +72,7 @@ var vaultStatusCmd = &cobra.Command{
 			{"JWT (GitLab)", gitlabContainer, "jwt"},
 			{"LDAP (OpenLDAP)", openLDAPContainer, "ldap"},
 			{"DBs (MariaDB/PgSQL)", vaultMariaDBContainer, "database"},
+			{"Oracle Free", vaultOracleContainer, "oracle"},
 			{"K8s (KinD)", "kind-control-plane", "k8s"},
 		}
 

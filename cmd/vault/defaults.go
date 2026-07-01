@@ -56,4 +56,30 @@ const (
 	defaultVaultOSUbuntuImage = "22.04"
 	defaultVaultOSVMCPUs      = "1"
 	defaultVaultOSVMMem       = "1G"
+
+	// --- Oracle Database ---
+	vaultOracleContainer = "hal-vault-oracle-db"
+	vaultOracleHostAlias = "oracle.localhost"
+	vaultOraclePort      = 1521
+	vaultOracleSysPass   = "OracleXE1!"
+	vaultOracleVaultPass = "vaultpasswd"
+	vaultOraclePDB       = "FREEPDB1"
+
+	// Custom vault+oracle runtime image built locally by hal vault oracle enable.
+	// Debian-slim base with vault binary + Oracle Instant Client (needs glibc).
+	// The official hashicorp/vault image is Alpine-based (musl libc) and cannot
+	// run the oracle plugin, which requires glibc via Oracle Instant Client.
+	vaultOracleRuntimeImage = "hal-vault-oracle-runtime"
+	vaultOracleRuntimeTag   = "latest"
+
+	// gvenzl/oracle-free: Oracle Database 23ai Free, public (no Oracle account
+	// needed), multi-arch (amd64 + arm64 from v23.5+).
+	defaultOracleFreeImage  = "gvenzl/oracle-free"
+	defaultOracleFreeTag    = "slim"
+	defaultOraclePluginVer  = "0.14.1+ent"
+	defaultInstantClientVer = "19.26.0.0.0"
+	defaultInstantClientDir = "instantclient_19_26"
+
+	defaultInstantClientVerARM64 = "23.26.2.0.0"
+	defaultInstantClientDirARM64 = "instantclient_23_26"
 )

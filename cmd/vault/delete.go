@@ -19,6 +19,7 @@ var vaultEcosystem = []string{
 	openLDAPContainer,
 	phpLDAPAdminContainer,
 	vaultMariaDBContainer,
+	vaultOracleContainer,
 }
 
 var vaultVolumes = []string{

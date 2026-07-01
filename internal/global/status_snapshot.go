@@ -56,6 +56,7 @@ func BuildStatusSnapshot(engine string) ([]byte, error) {
 				"jwt":      BoolState(CheckContainer(engine, "hal-gitlab")),
 				"ldap":     BoolState(CheckContainer(engine, "hal-openldap")),
 				"database": BoolState(CheckContainer(engine, "hal-vault-mariadb")),
+				"oracle":   BoolState(CheckContainer(engine, "hal-vault-oracle-db")),
 				"oidc":     BoolState(CheckContainer(engine, "hal-keycloak")),
 			},
 			"http://vault.localhost:8200"),
