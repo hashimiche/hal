@@ -137,8 +137,10 @@ hal vault oidc disable
 # JWT auth method (deploys GitLab CE as the OIDC provider)
 hal vault jwt enable --vault-gitlab-tag 18.10.1-ce.0
 
-# Database secrets engine (MariaDB backend — only supported backend today)
+# Database secrets engine
 hal vault database enable --backend mariadb --vault-mariadb-tag 11.4
+hal vault database enable --backend oracle \
+  --oracle-plugin-path /path/to/vault-plugin-database-oracle   # Enterprise only — see docs/vault-oracle-plugin-build.md
 
 # LDAP auth with pinned image versions
 hal vault ldap enable --openldap-version 1.5.0 --phpldapadmin-version 0.9.0
@@ -480,8 +482,9 @@ go test ./...             # run the full test suite
 Before changing command behavior or UX patterns, read these files in order:
 
 1. `docs/cli-lifecycle-model.md` — authoritative lifecycle verb model
-2. `.github/copilot-instructions.md` — concise policy and architecture notes
-3. `LLM_CONTEXT.md` — LLM-oriented command guidance
+2. `docs/vault-oracle-plugin-build.md` — building the Oracle database plugin from source (arm64/amd64)
+3. `.github/copilot-instructions.md` — concise policy and architecture notes
+4. `LLM_CONTEXT.md` — LLM-oriented command guidance
 
 Keep all three in sync when adding or renaming commands.
 

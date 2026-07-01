@@ -71,7 +71,7 @@ var vaultStatusCmd = &cobra.Command{
 			{"OIDC (Keycloak)", keycloakContainer, "oidc"},
 			{"JWT (GitLab)", gitlabContainer, "jwt"},
 			{"LDAP (OpenLDAP)", openLDAPContainer, "ldap"},
-			{"DBs (MariaDB/PgSQL)", vaultMariaDBContainer, "database"},
+			{"Database", vaultMariaDBContainer, "database"},
 			{"K8s (KinD)", "kind-control-plane", "k8s"},
 		}
 
@@ -79,25 +79,41 @@ var vaultStatusCmd = &cobra.Command{
 			if f.Command == "database" {
 				mariaOut, mariaErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", vaultMariaDBContainer).Output()
 				postgresOut, postgresErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-vault-postgres").Output()
+				oracleOut, oracleErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", vaultOracleContainer).Output()
 				mariaStatus := strings.TrimSpace(string(mariaOut))
 				postgresStatus := strings.TrimSpace(string(postgresOut))
+				oracleStatus := strings.TrimSpace(string(oracleOut))
 
 				dbStatus := ""
-				if mariaErr != nil && postgresErr != nil {
+				activeBackend := ""
+				if mariaErr != nil && postgresErr != nil && oracleErr != nil {
 					dbStatus = "down"
-				} else if mariaStatus == "running" || postgresStatus == "running" {
+				} else if mariaStatus == "running" {
 					dbStatus = "running"
+					activeBackend = "mariadb"
+				} else if postgresStatus == "running" {
+					dbStatus = "running"
+					activeBackend = "postgres"
+				} else if oracleStatus == "running" {
+					dbStatus = "running"
+					activeBackend = "oracle"
 				} else if mariaStatus != "" {
 					dbStatus = mariaStatus
-				} else {
+				} else if postgresStatus != "" {
 					dbStatus = postgresStatus
+				} else {
+					dbStatus = oracleStatus
 				}
 
 				switch dbStatus {
 				case "down":
 					fmt.Printf("  ⚪ %-18s : Down (hal vault database enable --backend mariadb)\n", f.Name)
 				case "running":
-					fmt.Printf("  🟢 %-18s : Up   (hal vault database disable)\n", f.Name)
+					disableHint := "hal vault database disable"
+					if activeBackend == "oracle" {
+						disableHint = "hal vault database disable --backend oracle"
+					}
+					fmt.Printf("  🟢 %-18s : Up   (%s) (%s)\n", f.Name, activeBackend, disableHint)
 				default:
 					fmt.Printf("  🟡 %-18s : %-4s (hal vault database update)\n", f.Name, strings.ToUpper(dbStatus))
 				}
