@@ -137,8 +137,10 @@ hal vault oidc disable
 # JWT auth method (deploys GitLab CE as the OIDC provider)
 hal vault jwt enable --vault-gitlab-tag 18.10.1-ce.0
 
-# Database secrets engine (MariaDB backend — only supported backend today)
+# Database secrets engine
 hal vault database enable --backend mariadb --vault-mariadb-tag 11.4
+hal vault database enable --backend oracle \
+  --oracle-plugin-path /path/to/vault-plugin-database-oracle   # Enterprise only — see docs/vault-oracle-plugin-build.md
 
 # LDAP auth with pinned image versions
 hal vault ldap enable --openldap-version 1.5.0 --phpldapadmin-version 0.9.0
