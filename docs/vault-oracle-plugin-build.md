@@ -8,7 +8,12 @@ This document covers building the plugin for both architectures.
 
 ## amd64 (Intel/AMD Linux)
 
-No build needed. `hal vault oracle enable` downloads the prebuilt binary from `releases.hashicorp.com` automatically. Just provide `--oracle-plugin-version` if you want a version other than the default.
+HashiCorp publishes a prebuilt binary at `releases.hashicorp.com`. Download it and pass the path:
+
+```bash
+hal vault database enable --backend oracle \
+  --oracle-plugin-path /path/to/vault-plugin-database-oracle
+```
 
 ---
 
@@ -97,20 +102,19 @@ The binary will be at `/tmp/oracle-plugin-build/vault-plugin-database-oracle`.
 ### Use with hal
 
 ```bash
-hal vault oracle enable \
-  --oracle-plugin-path /tmp/oracle-plugin-build/vault-plugin-database-oracle \
-  --oracle-plugin-version 0.14.1+ent
+hal vault database enable --backend oracle \
+  --oracle-plugin-path /tmp/oracle-plugin-build/vault-plugin-database-oracle
 ```
-
-> **Version string**: Pass `--oracle-plugin-version` matching the upstream release you cloned. Check the latest tag at https://github.com/hashicorp/vault-plugin-database-oracle/releases. The version is registered with Vault but does not need to exactly match the binary filename — it is the string Vault stores in its plugin catalog.
 
 ---
 
-## What `hal vault oracle enable` does with the binary
+## What `hal vault database enable --backend oracle` does with the binary
 
-1. Copies it into the Vault container's plugin volume (`/vault/plugins/`)
-2. Registers it with Vault: `vault plugin register -version=v<version> database vault-plugin-database-oracle`
-3. The Vault runtime image (`hal-vault-oracle-runtime`) is a debian-slim image with Oracle Instant Client 19.26 baked in so the plugin subprocess can resolve `libclntsh.so.19.1`
+1. Builds `hal-vault-oracle-runtime` — a debian-slim image with the Vault binary + Oracle Instant Client (the official Alpine image lacks glibc)
+2. Restarts Vault on the runtime image (preserves license, volumes, ports)
+3. Copies the plugin binary into `/vault/plugins/`
+4. Registers it with Vault via the API using sha256 only (Enterprise requirement — no `version` field)
+5. Starts Oracle Database Free, configures the database secrets engine, and generates test credentials
 
 ---
 

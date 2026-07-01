@@ -482,8 +482,9 @@ go test ./...             # run the full test suite
 Before changing command behavior or UX patterns, read these files in order:
 
 1. `docs/cli-lifecycle-model.md` — authoritative lifecycle verb model
-2. `.github/copilot-instructions.md` — concise policy and architecture notes
-3. `LLM_CONTEXT.md` — LLM-oriented command guidance
+2. `docs/vault-oracle-plugin-build.md` — building the Oracle database plugin from source (arm64/amd64)
+3. `.github/copilot-instructions.md` — concise policy and architecture notes
+4. `LLM_CONTEXT.md` — LLM-oriented command guidance
 
 Keep all three in sync when adding or renaming commands.
 
