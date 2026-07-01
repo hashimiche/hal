@@ -47,6 +47,15 @@ var vaultDatabaseCmd = &cobra.Command{
 			return
 		}
 
+		// ==========================================
+		// 1. SMART STATUS MODE (Default behavior)
+		// ==========================================
+		if !databaseEnable && !databaseDisable && !databaseUpdate {
+			client, vaultErr := GetHealthyClient()
+			showDatabaseStatus(engine, client, vaultErr)
+			return
+		}
+
 		backend := strings.ToLower(strings.TrimSpace(databaseBackend))
 
 		var (
@@ -122,18 +131,6 @@ var vaultDatabaseCmd = &cobra.Command{
 		}
 
 		client, vaultErr := GetHealthyClient()
-
-		// ==========================================
-		// 1. SMART STATUS MODE (Default behavior)
-		// ==========================================
-		if !databaseEnable && !databaseDisable && !databaseUpdate {
-			if backend == "oracle" {
-				showOracleStatus(engine, client, vaultErr)
-			} else {
-				showMariaDBStatus(engine, client, vaultErr, containerName, hostAlias, containerPort, backend)
-			}
-			return
-		}
 
 		// ==========================================
 		// Oracle: Enterprise gate
@@ -424,104 +421,100 @@ EOF`, vaultOracleSysPass, vaultOraclePDB, strings.TrimSpace(grantSQL))
 // Status helpers
 // -----------------------------------------------------------------------------
 
-func showMariaDBStatus(engine string, client *vault.Client, vaultErr error,
-	containerName, hostAlias, containerPort, backend string) {
-
-	fmt.Println("🔍 Checking Vault Database Engine Status...")
-
-	dbExists := exec.Command(engine, "inspect", containerName).Run() == nil
+func showDatabaseStatus(engine string, client *vault.Client, vaultErr error) {
+	fmt.Println("🔍 Vault Database Secrets Engine Status")
+	fmt.Println("---------------------------------------")
 
 	dbMounted := false
 	if vaultErr == nil {
 		mounts, _ := client.Sys().ListMounts()
 		_, dbMounted = mounts["database/"]
-	}
-
-	if dbExists {
-		fmt.Printf("  ✅ Backend       : %s active (%s:%s)\n", backend, hostAlias, containerPort)
-	} else {
-		fmt.Printf("  ❌ Backend       : %s not running\n", backend)
 	}
 
 	if dbMounted {
-		fmt.Println("  ✅ Vault Secrets : Configured (database/)")
+		fmt.Println("  ✅ Vault Engine   : database/ mounted")
 	} else {
-		fmt.Println("  ❌ Vault Secrets : Not configured")
+		fmt.Println("  ❌ Vault Engine   : database/ not mounted")
 	}
 
-	fmt.Println("\n💡 Next Step:")
-	if !dbExists && !dbMounted {
-		fmt.Println("   To deploy MariaDB and wire up Vault, run:")
-		fmt.Println("   hal vault database enable")
-	} else if dbExists && dbMounted {
-		fmt.Println("   Demo is ready! Request a dynamic credential:")
-		fmt.Println("   vault read database/creds/dba-role")
-		fmt.Println("\n   To completely remove this database environment, run:")
-		fmt.Println("   hal vault database disable")
-	} else {
-		fmt.Println("   Environment is partially degraded. To safely reset, run:")
-		fmt.Println("   hal vault database update")
+	// --- MariaDB ---
+	mariaRunning := exec.Command(engine, "inspect", vaultMariaDBContainer).Run() == nil
+	mariaConfigured := false
+	if dbMounted && vaultErr == nil {
+		resp, err := client.Logical().Read("database/config/" + vaultMariaDBContainer)
+		mariaConfigured = err == nil && resp != nil
 	}
-}
 
-func showOracleStatus(engine string, client *vault.Client, vaultErr error) {
-	fmt.Println("🔍 Checking Vault Oracle Database Engine Status...")
+	fmt.Println()
+	fmt.Println("  [ MariaDB ]")
+	if mariaRunning {
+		fmt.Printf("    ✅ Container    : %s running (%s:%d)\n", vaultMariaDBContainer, vaultMariaDBHostAlias, vaultMariaDBPort)
+	} else {
+		fmt.Printf("    ⚪ Container    : not running\n")
+	}
+	if mariaConfigured {
+		fmt.Println("    ✅ Vault Config : database/ → mariadb")
+	} else {
+		fmt.Println("    ⚪ Vault Config : not configured")
+	}
 
+	// --- Oracle ---
 	oracleRunning := exec.Command(engine, "inspect", vaultOracleContainer).Run() == nil
-
-	dbMounted := false
 	oracleConfigured := false
-	if vaultErr == nil {
-		mounts, _ := client.Sys().ListMounts()
-		_, dbMounted = mounts["database/"]
-		if dbMounted {
-			resp, err := client.Logical().Read("database/config/" + vaultOracleContainer)
-			oracleConfigured = err == nil && resp != nil
-		}
+	if dbMounted && vaultErr == nil {
+		resp, err := client.Logical().Read("database/config/" + vaultOracleContainer)
+		oracleConfigured = err == nil && resp != nil
 	}
 
 	runtimeBuilt := exec.Command(engine, "image", "inspect",
 		vaultOracleRuntimeImage+":"+vaultOracleRuntimeTag).Run() == nil
-
 	pluginPresent := exec.Command(engine, "exec", vaultContainer,
 		"test", "-f", "/vault/plugins/vault-plugin-database-oracle").Run() == nil
 
+	fmt.Println()
+	fmt.Println("  [ Oracle (Enterprise) ]")
 	if runtimeBuilt {
-		fmt.Printf("  ✅ Runtime Image  : %s:%s built\n", vaultOracleRuntimeImage, vaultOracleRuntimeTag)
+		fmt.Printf("    ✅ Runtime Image: %s:%s built\n", vaultOracleRuntimeImage, vaultOracleRuntimeTag)
 	} else {
-		fmt.Printf("  ⚪ Runtime Image  : Not built (built on first enable)\n")
+		fmt.Println("    ⚪ Runtime Image: not built (built on first enable)")
 	}
-
 	if pluginPresent {
-		fmt.Println("  ✅ Plugin Binary  : Present in /vault/plugins/")
+		fmt.Println("    ✅ Plugin Binary: present in /vault/plugins/")
 	} else {
-		fmt.Println("  ⚪ Plugin Binary  : Not present")
+		fmt.Println("    ⚪ Plugin Binary: not present")
 	}
-
 	if oracleRunning {
-		fmt.Printf("  ✅ Oracle Free    : Active (%s:%d/%s)\n", vaultOracleHostAlias, vaultOraclePort, vaultOraclePDB)
+		fmt.Printf("    ✅ Container    : %s running (%s:%d/%s)\n", vaultOracleContainer, vaultOracleHostAlias, vaultOraclePort, vaultOraclePDB)
 	} else {
-		fmt.Println("  ❌ Oracle Free    : Not running")
+		fmt.Println("    ⚪ Container    : not running")
+	}
+	if oracleConfigured {
+		fmt.Println("    ✅ Vault Config : database/ → oracle")
+	} else {
+		fmt.Println("    ⚪ Vault Config : not configured")
 	}
 
-	if dbMounted && oracleConfigured {
-		fmt.Println("  ✅ Vault Secrets  : Configured (database/ → oracle)")
-	} else if dbMounted {
-		fmt.Println("  ⚠️  Vault Secrets  : database/ mounted but oracle not configured")
+	// --- Next steps ---
+	fmt.Println()
+	fmt.Println("💡 Next Steps:")
+	if mariaRunning && mariaConfigured {
+		fmt.Println("   vault read database/creds/dba-role")
+		fmt.Println("   hal vault database disable                              (tear down mariadb)")
+	} else if !mariaRunning {
+		fmt.Println("   hal vault database enable                               (deploy mariadb)")
 	} else {
-		fmt.Println("  ❌ Vault Secrets  : Not configured")
+		fmt.Println("   hal vault database update                               (reset mariadb)")
 	}
 
-	fmt.Println("\n💡 Next Step:")
-	if !oracleRunning && !dbMounted {
-		fmt.Println("   hal vault database enable --backend oracle --oracle-plugin-path /path/to/vault-plugin-database-oracle")
-		fmt.Println("\n   ⚠️  Requires: Vault Enterprise + VAULT_LICENSE set")
-		fmt.Println("   ℹ️  Build the plugin binary first — see docs/vault-oracle-plugin-build.md")
-	} else if oracleRunning && oracleConfigured {
+	if oracleRunning && oracleConfigured {
 		fmt.Println("   vault read database/creds/oracle-dba-role")
-		fmt.Println("\n   hal vault database disable --backend oracle   (to tear down)")
+		fmt.Println("   hal vault database disable --backend oracle             (tear down oracle)")
+	} else if !oracleRunning {
+		fmt.Println("   hal vault database enable --backend oracle \\")
+		fmt.Println("     --oracle-plugin-path /path/to/vault-plugin-database-oracle")
 	} else {
-		fmt.Println("   hal vault database update --backend oracle --oracle-plugin-path /path/to/vault-plugin-database-oracle")
+		fmt.Println("   hal vault database update --backend oracle \\")
+		fmt.Println("     --oracle-plugin-path /path/to/vault-plugin-database-oracle")
 	}
 }
 

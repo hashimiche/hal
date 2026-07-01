@@ -143,11 +143,17 @@ func printVaultFeatureStatus(engine string) {
 		{name: "k8s", status: boolState(checkContainer(engine, "kind-control-plane"))},
 		{name: "jwt", status: boolState(checkContainer(engine, "hal-gitlab"))},
 		{name: "ldap", status: boolState(checkContainer(engine, "hal-openldap"))},
-		{name: "database", status: boolState(checkContainer(engine, "hal-vault-mariadb") || checkContainer(engine, "hal-vault-postgres") || checkContainer(engine, "hal-vault-oracle-db"))},
+		{name: "database", status: ""},
 		{name: "oidc", status: boolState(checkContainer(engine, "hal-keycloak"))},
 	}
 
 	for _, f := range featureStates {
+		if f.name == "database" {
+			fmt.Println("   ↳ database")
+			fmt.Printf("      ↳ %-8s %s\n", "mariadb", colorizeFeatureState(boolState(checkContainer(engine, "hal-vault-mariadb") || checkContainer(engine, "hal-vault-postgres"))))
+			fmt.Printf("      ↳ %-8s %s\n", "oracle", colorizeFeatureState(boolState(checkContainer(engine, "hal-vault-oracle-db"))))
+			continue
+		}
 		fmt.Printf("   ↳ %-8s %s\n", f.name, colorizeFeatureState(f.status))
 	}
 }
