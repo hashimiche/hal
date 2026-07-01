@@ -1,8 +1,11 @@
 package vault
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -20,6 +23,11 @@ var (
 	mariadbVersion   string
 	mariadbImage     string
 	dbUsernamePrefix string
+
+	oracleFreeImage     string
+	oracleFreeTag       string
+	oraclePluginVersion string
+	oraclePluginPath    string
 )
 
 var vaultDatabaseCmd = &cobra.Command{
@@ -40,35 +48,77 @@ var vaultDatabaseCmd = &cobra.Command{
 		}
 
 		backend := strings.ToLower(strings.TrimSpace(databaseBackend))
-		if backend != "mariadb" {
-			if backend == "postgres" || backend == "pgsql" {
-				fmt.Println("❌ Backend pgsql is not implemented yet in HAL. Use --backend mariadb for now.")
-				fmt.Println("💡 Next Step: hal vault database enable")
-				return
-			}
-			fmt.Printf("❌ Unsupported backend %q. Valid value today: mariadb (pgsql planned).\n", databaseBackend)
-			return
-		}
-		backendLabel := "MariaDB"
 
-		containerName := vaultMariaDBContainer
-		hostAlias := vaultMariaDBHostAlias
-		containerPort := "3306"
-		pluginName := "mysql-database-plugin"
-		setupCmd := []string{"mariadb", "-u", "root", "-p" + vaultMariaDBRootPassword, "-e", `
+		var (
+			containerName string
+			hostAlias     string
+			containerPort string
+			pluginName    string
+			connectionURL string
+			createStmt    string
+			revokeStmt    string
+			roleName      string
+			backendLabel  string
+			startArgs     []string
+			setupCmd      []string
+		)
+
+		switch backend {
+		case "mariadb":
+			backendLabel = "MariaDB"
+			containerName = vaultMariaDBContainer
+			hostAlias = vaultMariaDBHostAlias
+			containerPort = "3306"
+			pluginName = "mysql-database-plugin"
+			connectionURL = "{{username}}:{{password}}@tcp(hal-vault-mariadb:3306)/"
+			createStmt = "CREATE USER '{{name}}'@'%' IDENTIFIED BY '{{password}}'; GRANT ALL PRIVILEGES ON *.* TO '{{name}}'@'%';"
+			revokeStmt = "DROP USER IF EXISTS '{{name}}'@'%';"
+			roleName = "dba-role"
+			setupCmd = []string{"mariadb", "-u", "root", "-p" + vaultMariaDBRootPassword, "-e", `
 				CREATE USER 'vaultadmin'@'%' IDENTIFIED BY 'temp-vault-pass';
 				GRANT ALL PRIVILEGES ON *.* TO 'vaultadmin'@'%' WITH GRANT OPTION;
 				FLUSH PRIVILEGES;
 			`}
-		connectionURL := "{{username}}:{{password}}@tcp(hal-vault-mariadb:3306)/"
-		createStmt := "CREATE USER '{{name}}'@'%' IDENTIFIED BY '{{password}}'; GRANT ALL PRIVILEGES ON *.* TO '{{name}}'@'%';"
-		startArgs := []string{
-			"run", "-d", "--name", vaultMariaDBContainer,
-			"--network", global.HalNetName,
-			"--network-alias", vaultMariaDBHostAlias,
-			"-p", fmt.Sprintf("%d:%d", vaultMariaDBPort, vaultMariaDBPort),
-			"-e", "MARIADB_ROOT_PASSWORD=" + vaultMariaDBRootPassword,
-			fmt.Sprintf("%s:%s", mariadbImage, mariadbVersion),
+			startArgs = []string{
+				"run", "-d", "--name", vaultMariaDBContainer,
+				"--network", global.HalNetName,
+				"--network-alias", vaultMariaDBHostAlias,
+				"-p", fmt.Sprintf("%d:%d", vaultMariaDBPort, vaultMariaDBPort),
+				"-e", "MARIADB_ROOT_PASSWORD=" + vaultMariaDBRootPassword,
+				fmt.Sprintf("%s:%s", mariadbImage, mariadbVersion),
+			}
+
+		case "oracle":
+			backendLabel = "Oracle Free"
+			containerName = vaultOracleContainer
+			hostAlias = vaultOracleHostAlias
+			containerPort = fmt.Sprintf("%d", vaultOraclePort)
+			pluginName = "vault-plugin-database-oracle"
+			connectionURL = fmt.Sprintf("{{username}}/{{password}}@%s:%d/%s",
+				vaultOracleContainer, vaultOraclePort, vaultOraclePDB)
+			createStmt = `CREATE USER {{username}} IDENTIFIED BY "{{password}}"; GRANT CONNECT TO {{username}}; GRANT CREATE SESSION TO {{username}};`
+			revokeStmt = `DROP USER {{username}} CASCADE;`
+			roleName = "oracle-dba-role"
+			startArgs = []string{
+				"run", "-d",
+				"--name", vaultOracleContainer,
+				"--network", global.HalNetName,
+				"--network-alias", vaultOracleHostAlias,
+				"-p", fmt.Sprintf("%d:%d", vaultOraclePort, vaultOraclePort),
+				"-e", "ORACLE_PASSWORD=" + vaultOracleSysPass,
+				"-e", "APP_USER=vault",
+				"-e", "APP_USER_PASSWORD=" + vaultOracleVaultPass,
+				fmt.Sprintf("%s:%s", oracleFreeImage, oracleFreeTag),
+			}
+
+		case "postgres", "pgsql":
+			fmt.Println("❌ Backend pgsql is not implemented yet in HAL. Use --backend mariadb for now.")
+			fmt.Println("💡 Next Step: hal vault database enable")
+			return
+
+		default:
+			fmt.Printf("❌ Unsupported backend %q. Valid backends: mariadb, oracle (pgsql planned).\n", databaseBackend)
+			return
 		}
 
 		client, vaultErr := GetHealthyClient()
@@ -77,45 +127,49 @@ var vaultDatabaseCmd = &cobra.Command{
 		// 1. SMART STATUS MODE (Default behavior)
 		// ==========================================
 		if !databaseEnable && !databaseDisable && !databaseUpdate {
-			fmt.Println("🔍 Checking Vault Database Engine Status...")
-
-			dbExists := exec.Command(engine, "inspect", containerName).Run() == nil
-
-			// Check Vault API (if Vault is alive)
-			dbMounted := false
-			if vaultErr == nil {
-				mounts, _ := client.Sys().ListMounts()
-				_, dbMounted = mounts["database/"]
-			}
-
-			// Output Status
-			if dbExists {
-				fmt.Printf("  ✅ Backend       : %s active (%s:%s)\n", backend, hostAlias, containerPort)
+			if backend == "oracle" {
+				showOracleStatus(engine, client, vaultErr)
 			} else {
-				fmt.Printf("  ❌ Backend       : %s not running\n", backend)
-			}
-
-			if dbMounted {
-				fmt.Printf("  ✅ Vault Secrets : Configured (database/)\n")
-			} else {
-				fmt.Printf("  ❌ Vault Secrets : Not configured\n")
-			}
-
-			// Smart Assistant Logic
-			fmt.Println("\n💡 Next Step:")
-			if !dbExists && !dbMounted {
-				fmt.Println("   To deploy MariaDB and wire up Vault, run:")
-				fmt.Println("   hal vault database enable")
-			} else if dbExists && dbMounted {
-				fmt.Println("   Demo is ready! Request a dynamic credential:")
-				fmt.Println("   vault read database/creds/dba-role")
-				fmt.Println("\n   To completely remove this database environment, run:")
-				fmt.Println("   hal vault database disable")
-			} else {
-				fmt.Println("   Environment is partially degraded. To safely reset, run:")
-				fmt.Println("   hal vault database update")
+				showMariaDBStatus(engine, client, vaultErr, containerName, hostAlias, containerPort, backend)
 			}
 			return
+		}
+
+		// ==========================================
+		// Oracle: Enterprise gate
+		// ==========================================
+		if backend == "oracle" && (databaseEnable || databaseUpdate) {
+			if vaultErr == nil {
+				health, hErr := client.Sys().Health()
+				if hErr == nil && !strings.Contains(health.Version, "ent") {
+					fmt.Println("❌ Error: The Oracle database plugin requires Vault Enterprise.")
+					fmt.Println("   💡 Your current Vault is Community Edition.")
+					fmt.Println("\n   hal vault delete")
+					fmt.Println("   export VAULT_LICENSE='your_license_string'")
+					fmt.Println("   hal vault create --edition ent")
+					return
+				}
+			} else {
+				fmt.Printf("❌ Cannot reach Vault: %v\n", vaultErr)
+				fmt.Println("   💡 Run 'hal vault create --edition ent' first.")
+				return
+			}
+		}
+
+		// ==========================================
+		// Oracle: Plugin binary gate
+		// ==========================================
+		if backend == "oracle" && (databaseEnable || databaseUpdate) {
+			if oraclePluginPath == "" {
+				fmt.Println("❌ --oracle-plugin-path is required.")
+				fmt.Println("   Provide the path to the vault-plugin-database-oracle binary.")
+				fmt.Println("   See docs/vault-oracle-plugin-build.md for build instructions.")
+				return
+			}
+			if _, err := os.Stat(oraclePluginPath); err != nil {
+				fmt.Printf("❌ Plugin binary not found at: %s\n", oraclePluginPath)
+				return
+			}
 		}
 
 		// ==========================================
@@ -127,25 +181,35 @@ var vaultDatabaseCmd = &cobra.Command{
 				fmt.Println("[DRY RUN] Would call API to force-revoke leases and unmount 'database/'")
 			} else {
 				if databaseDisable {
-					fmt.Printf("🛑 Tearing down %s environment...\n", backend)
+					fmt.Printf("🛑 Tearing down %s environment...\n", backendLabel)
 				} else {
-					fmt.Println("♻️  Update requested. Destroying database environment for reset...")
+					fmt.Printf("♻️  Update requested. Destroying %s environment for reset...\n", backendLabel)
 				}
 
 				if vaultErr == nil && client != nil {
-					// 🎯 THE BULLETPROOF FIX: Force-revoke any dangling database leases first.
 					fmt.Println("⚙️  Connecting to Vault API for cleanup (Revoking leases)...")
 					_ = client.Sys().RevokeForce("database/")
+
+					if backend == "oracle" {
+						_, _ = client.Logical().Delete("database/config/" + containerName)
+						_, _ = client.Logical().Delete("database/roles/" + roleName)
+					}
+
 					_ = client.Sys().Unmount("database")
+
+					if backend == "oracle" {
+						_, _ = client.Logical().Delete("sys/plugins/catalog/database/vault-plugin-database-oracle")
+					}
 				} else {
 					fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
 				}
 
-				fmt.Printf("⚙️  Removing %s container...\n", backend)
+				fmt.Printf("⚙️  Removing %s container...\n", backendLabel)
 				_ = exec.Command(engine, "rm", "-f", containerName).Run()
 
 				if databaseDisable {
 					fmt.Printf("✅ %s environment destroyed successfully!\n", backendLabel)
+					global.RefreshHalHealth(engine)
 				}
 			}
 
@@ -164,37 +228,97 @@ var vaultDatabaseCmd = &cobra.Command{
 			}
 
 			if global.DryRun {
-				fmt.Printf("[DRY RUN] Would execute Docker run command for %s.\n", backend)
-				fmt.Println("[DRY RUN] Would provision 'vaultadmin' least-privilege account via SQL.")
-				fmt.Println("[DRY RUN] Would configure Vault Database secrets engine and rotate root.")
+				fmt.Printf("[DRY RUN] Would execute Docker run command for %s.\n", backendLabel)
+				if backend == "oracle" {
+					fmt.Printf("[DRY RUN] Would build %s:%s runtime image\n", vaultOracleRuntimeImage, vaultOracleRuntimeTag)
+					fmt.Printf("[DRY RUN] Would copy plugin from %s into vault plugins volume\n", oraclePluginPath)
+				}
+				fmt.Println("[DRY RUN] Would configure Vault Database secrets engine.")
 				return
 			}
 
+			// ---- Oracle pre-steps: runtime image, plugin copy, vault restart ----
+			if backend == "oracle" {
+				var ok bool
+				client, ok = oraclePreEnable(engine, client)
+				if !ok {
+					return
+				}
+			}
+
+			// ---- Start database container ----
 			fmt.Printf("🚀 Booting %s database...\n", backendLabel)
 			_ = exec.Command(engine, "rm", "-f", containerName).Run()
 
-			if err := exec.Command(engine, startArgs...).Run(); err != nil {
-				fmt.Printf("❌ Failed to start %s: %v\n", backend, err)
+			if out, err := exec.Command(engine, startArgs...).CombinedOutput(); err != nil {
+				fmt.Printf("❌ Failed to start %s: %v\n%s\n", backendLabel, err, string(out))
 				return
 			}
 
-			fmt.Printf("⏳ Waiting for %s to initialize...\n", backend)
-			waitErr := waitForMariaDB(engine, containerName, 30)
-			if waitErr != nil {
-				fmt.Printf("\n❌ %s failed to initialize within the time limit.\n", backendLabel)
-				return
+			// ---- Wait for database to initialize ----
+			fmt.Printf("⏳ Waiting for %s to initialize...\n", backendLabel)
+			if backend == "oracle" {
+				fmt.Println("   (Oracle takes 60-120s)")
+				if err := waitForOracle(engine, containerName, 120); err != nil {
+					fmt.Printf("\n❌ %s failed to initialize within the time limit.\n", backendLabel)
+					fmt.Printf("   💡 Check logs: %s logs %s\n", engine, containerName)
+					return
+				}
+			} else {
+				if err := waitForMariaDB(engine, containerName, 30); err != nil {
+					fmt.Printf("\n❌ %s failed to initialize within the time limit.\n", backendLabel)
+					return
+				}
 			}
 			fmt.Printf("\n✅ %s is online and accepting connections!\n", backendLabel)
 
-			fmt.Println("⚙️  Provisioning least-privileged 'vaultadmin' broker account...")
-			execArgs := append([]string{"exec", containerName}, setupCmd...)
-			err = exec.Command(engine, execArgs...).Run()
-			if err != nil {
-				fmt.Printf("❌ Failed to provision vaultadmin account: %v\n", err)
-				return
+			// ---- Setup broker account ----
+			if backend == "oracle" {
+				fmt.Println("⚙️  Granting Vault user privileges on Oracle Free...")
+				grantSQL := strings.ReplaceAll(`
+ALTER SESSION SET CONTAINER=FREEPDB1;
+GRANT SELECT_CATALOG_ROLE TO vault;
+GRANT CREATE USER, DROP USER, ALTER USER TO vault;
+GRANT ALTER SYSTEM TO vault;
+GRANT CREATE SESSION, CONNECT TO vault WITH ADMIN OPTION;
+`, "\r", "")
+
+				grantCmd := fmt.Sprintf(`sqlplus -S sys/%s@localhost/%s as sysdba <<'EOF'
+%s
+EOF`, vaultOracleSysPass, vaultOraclePDB, strings.TrimSpace(grantSQL))
+
+				if out, err := exec.Command(engine, "exec", containerName,
+					"sh", "-c", grantCmd).CombinedOutput(); err != nil {
+					fmt.Printf("⚠️  Grant step returned errors (may be partial — continuing): %v\n%s\n", err, string(out))
+				} else {
+					fmt.Println("  ✅ Vault user privileges granted.")
+				}
+			} else {
+				fmt.Println("⚙️  Provisioning least-privileged 'vaultadmin' broker account...")
+				execArgs := append([]string{"exec", containerName}, setupCmd...)
+				err = exec.Command(engine, execArgs...).Run()
+				if err != nil {
+					fmt.Printf("❌ Failed to provision vaultadmin account: %v\n", err)
+					return
+				}
 			}
 
-			// 1. Enable Database Secrets Engine
+			// ---- Oracle: register plugin ----
+			if backend == "oracle" {
+				fmt.Println("⚙️  Registering oracle plugin with Vault...")
+				pluginSHA := sha256HexFile(oraclePluginPath)
+				_, err = client.Logical().Write("sys/plugins/catalog/database/vault-plugin-database-oracle", map[string]interface{}{
+					"sha256":  pluginSHA,
+					"command": "vault-plugin-database-oracle",
+				})
+				if err != nil {
+					fmt.Printf("❌ Failed to register oracle plugin: %v\n", err)
+					return
+				}
+				fmt.Println("  ✅ Plugin registered.")
+			}
+
+			// ---- Enable database secrets engine ----
 			fmt.Println("⚙️  Configuring Vault Database Secrets Engine...")
 			_ = client.Sys().Unmount("database")
 
@@ -206,22 +330,30 @@ var vaultDatabaseCmd = &cobra.Command{
 				return
 			}
 
-			// 2. Configure Vault Connection
-			fmt.Printf("⚙️  Wiring Vault to %s via the 'vaultadmin' account...\n", backendLabel)
-			_, err = client.Logical().Write("database/config/"+containerName, map[string]interface{}{
-				"plugin_name":       pluginName,
-				"connection_url":    connectionURL,
-				"allowed_roles":     "dba-role",
-				"username":          "vaultadmin",
-				"password":          "temp-vault-pass",
-				"username_template": fmt.Sprintf("%s-{{random 10}}", dbUsernamePrefix),
-			})
+			// ---- Configure connection ----
+			fmt.Printf("⚙️  Wiring Vault to %s...\n", backendLabel)
+			configData := map[string]interface{}{
+				"plugin_name":    pluginName,
+				"connection_url": connectionURL,
+				"allowed_roles":  roleName,
+			}
+			if backend == "oracle" {
+				configData["username"] = "vault"
+				configData["password"] = vaultOracleVaultPass
+				configData["max_connection_lifetime"] = "60s"
+			} else {
+				configData["username"] = "vaultadmin"
+				configData["password"] = "temp-vault-pass"
+				configData["username_template"] = fmt.Sprintf("%s-{{random 10}}", dbUsernamePrefix)
+			}
+
+			_, err = client.Logical().Write("database/config/"+containerName, configData)
 			if err != nil {
 				fmt.Printf("❌ Failed to configure database connection: %v\n", err)
 				return
 			}
 
-			// 🎯 BEST PRACTICE 2: Rotate the Vault Admin Password
+			// ---- Rotate root password ----
 			fmt.Println("⚙️  Executing Password Rotation (Vault is taking exclusive ownership)...")
 			_, err = client.Logical().Write("database/rotate-root/"+containerName, map[string]interface{}{})
 			if err != nil {
@@ -229,25 +361,31 @@ var vaultDatabaseCmd = &cobra.Command{
 				return
 			}
 
-			// 3. Create the Role (Updated for DBA to match Boundary integration)
+			// ---- Create role ----
 			fmt.Println("⚙️  Injecting Dynamic SQL Creation Statements...")
-			_, err = client.Logical().Write("database/roles/dba-role", map[string]interface{}{
+			roleData := map[string]interface{}{
 				"db_name":               containerName,
 				"creation_statements":   createStmt,
-				"revocation_statements": "DROP USER IF EXISTS '{{name}}'@'%';",
+				"revocation_statements": revokeStmt,
 				"default_ttl":           "2m",
 				"max_ttl":               "2h",
-			})
+			}
+			if backend == "oracle" {
+				roleData["default_ttl"] = "1h"
+				roleData["max_ttl"] = "24h"
+			}
+
+			_, err = client.Logical().Write("database/roles/"+roleName, roleData)
 			if err != nil {
 				fmt.Printf("❌ Failed to create Vault role: %v\n", err)
 				return
 			}
 
-			// 4. Generate the Temporary Credentials
+			// ---- Generate test credentials ----
 			fmt.Println("⚙️  Requesting temporary JIT (Just-In-Time) credentials from Vault...")
 			time.Sleep(2 * time.Second)
 
-			secret, err := client.Logical().Read("database/creds/dba-role")
+			secret, err := client.Logical().Read("database/creds/" + roleName)
 			if err != nil || secret == nil {
 				fmt.Printf("❌ Failed to generate credentials: %v\n", err)
 				return
@@ -263,18 +401,214 @@ var vaultDatabaseCmd = &cobra.Command{
 			fmt.Println("👤 JIT Username:  " + username)
 			fmt.Println("🔑 JIT Password:  " + password)
 			fmt.Println("\n💡 THE SECURE WORKFLOW:")
-			fmt.Println("   1. A least-privileged 'vaultadmin' account was created.")
-			fmt.Println("   2. Vault immediately rotated the 'vaultadmin' password. Nobody knows it!")
-			fmt.Println("   3. Vault used that account to dynamically create the JIT user above.")
-			fmt.Println("   4. Try logging in: `mysql -h " + hostAlias + " -P " + containerPort + " -u " + username + " -p" + password + "`")
-			fmt.Println("   5. This user has DBA privileges and will self-destruct in 1 hour.")
+			if backend == "oracle" {
+				fmt.Printf("   1. gvenzl/oracle-free created the 'vault' broker account in %s.\n", vaultOraclePDB)
+				fmt.Println("   2. Vault immediately rotated the 'vault' password. Nobody knows it!")
+				fmt.Println("   3. Vault used that account to dynamically create the JIT user above.")
+				fmt.Println("   4. Try: vault read database/creds/" + roleName)
+				fmt.Println("\n⚠️  NOTE: Vault was restarted with the oracle runtime image.")
+				fmt.Println("   After 'hal vault delete/create', re-run 'hal vault database enable --backend oracle'.")
+			} else {
+				fmt.Println("   1. A least-privileged 'vaultadmin' account was created.")
+				fmt.Println("   2. Vault immediately rotated the 'vaultadmin' password. Nobody knows it!")
+				fmt.Println("   3. Vault used that account to dynamically create the JIT user above.")
+				fmt.Printf("   4. Try logging in: `mysql -h %s -P %s -u %s -p%s`\n", hostAlias, containerPort, username, password)
+				fmt.Println("   5. This user has DBA privileges and will self-destruct in 1 hour.")
+			}
 			fmt.Println("---------------------------------------------------------")
 		}
 	},
 }
 
 // -----------------------------------------------------------------------------
-// Helper Functions
+// Status helpers
+// -----------------------------------------------------------------------------
+
+func showMariaDBStatus(engine string, client *vault.Client, vaultErr error,
+	containerName, hostAlias, containerPort, backend string) {
+
+	fmt.Println("🔍 Checking Vault Database Engine Status...")
+
+	dbExists := exec.Command(engine, "inspect", containerName).Run() == nil
+
+	dbMounted := false
+	if vaultErr == nil {
+		mounts, _ := client.Sys().ListMounts()
+		_, dbMounted = mounts["database/"]
+	}
+
+	if dbExists {
+		fmt.Printf("  ✅ Backend       : %s active (%s:%s)\n", backend, hostAlias, containerPort)
+	} else {
+		fmt.Printf("  ❌ Backend       : %s not running\n", backend)
+	}
+
+	if dbMounted {
+		fmt.Println("  ✅ Vault Secrets : Configured (database/)")
+	} else {
+		fmt.Println("  ❌ Vault Secrets : Not configured")
+	}
+
+	fmt.Println("\n💡 Next Step:")
+	if !dbExists && !dbMounted {
+		fmt.Println("   To deploy MariaDB and wire up Vault, run:")
+		fmt.Println("   hal vault database enable")
+	} else if dbExists && dbMounted {
+		fmt.Println("   Demo is ready! Request a dynamic credential:")
+		fmt.Println("   vault read database/creds/dba-role")
+		fmt.Println("\n   To completely remove this database environment, run:")
+		fmt.Println("   hal vault database disable")
+	} else {
+		fmt.Println("   Environment is partially degraded. To safely reset, run:")
+		fmt.Println("   hal vault database update")
+	}
+}
+
+func showOracleStatus(engine string, client *vault.Client, vaultErr error) {
+	fmt.Println("🔍 Checking Vault Oracle Database Engine Status...")
+
+	oracleRunning := exec.Command(engine, "inspect", vaultOracleContainer).Run() == nil
+
+	dbMounted := false
+	oracleConfigured := false
+	if vaultErr == nil {
+		mounts, _ := client.Sys().ListMounts()
+		_, dbMounted = mounts["database/"]
+		if dbMounted {
+			resp, err := client.Logical().Read("database/config/" + vaultOracleContainer)
+			oracleConfigured = err == nil && resp != nil
+		}
+	}
+
+	runtimeBuilt := exec.Command(engine, "image", "inspect",
+		vaultOracleRuntimeImage+":"+vaultOracleRuntimeTag).Run() == nil
+
+	pluginPresent := exec.Command(engine, "exec", vaultContainer,
+		"test", "-f", "/vault/plugins/vault-plugin-database-oracle").Run() == nil
+
+	if runtimeBuilt {
+		fmt.Printf("  ✅ Runtime Image  : %s:%s built\n", vaultOracleRuntimeImage, vaultOracleRuntimeTag)
+	} else {
+		fmt.Printf("  ⚪ Runtime Image  : Not built (built on first enable)\n")
+	}
+
+	if pluginPresent {
+		fmt.Println("  ✅ Plugin Binary  : Present in /vault/plugins/")
+	} else {
+		fmt.Println("  ⚪ Plugin Binary  : Not present")
+	}
+
+	if oracleRunning {
+		fmt.Printf("  ✅ Oracle Free    : Active (%s:%d/%s)\n", vaultOracleHostAlias, vaultOraclePort, vaultOraclePDB)
+	} else {
+		fmt.Println("  ❌ Oracle Free    : Not running")
+	}
+
+	if dbMounted && oracleConfigured {
+		fmt.Println("  ✅ Vault Secrets  : Configured (database/ → oracle)")
+	} else if dbMounted {
+		fmt.Println("  ⚠️  Vault Secrets  : database/ mounted but oracle not configured")
+	} else {
+		fmt.Println("  ❌ Vault Secrets  : Not configured")
+	}
+
+	fmt.Println("\n💡 Next Step:")
+	if !oracleRunning && !dbMounted {
+		fmt.Println("   hal vault database enable --backend oracle --oracle-plugin-path /path/to/vault-plugin-database-oracle")
+		fmt.Println("\n   ⚠️  Requires: Vault Enterprise + VAULT_LICENSE set")
+		fmt.Println("   ℹ️  Build the plugin binary first — see docs/vault-oracle-plugin-build.md")
+	} else if oracleRunning && oracleConfigured {
+		fmt.Println("   vault read database/creds/oracle-dba-role")
+		fmt.Println("\n   hal vault database disable --backend oracle   (to tear down)")
+	} else {
+		fmt.Println("   hal vault database update --backend oracle --oracle-plugin-path /path/to/vault-plugin-database-oracle")
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Oracle pre-enable steps (runtime image, plugin copy, vault restart)
+// -----------------------------------------------------------------------------
+
+func oraclePreEnable(engine string, client *vault.Client) (*vault.Client, bool) {
+	runtimeRef := vaultOracleRuntimeImage + ":" + vaultOracleRuntimeTag
+	runtimeBuilt := exec.Command(engine, "image", "inspect", runtimeRef).Run() == nil
+	if databaseUpdate || !runtimeBuilt {
+		fmt.Printf("🔨 Building runtime image %s (debian + Vault binary + Oracle Instant Client)...\n", runtimeRef)
+		if err := buildOracleRuntimeImage(engine, runtimeRef); err != nil {
+			fmt.Printf("❌ Failed to build runtime image: %v\n", err)
+			return client, false
+		}
+		fmt.Printf("  ✅ Runtime image %s built.\n", runtimeRef)
+	} else {
+		fmt.Printf("⚡ Runtime image %s already present — skipping build.\n", runtimeRef)
+	}
+
+	fmt.Printf("⚙️  Installing oracle plugin binary from %s...\n", oraclePluginPath)
+	pluginData, err := os.ReadFile(oraclePluginPath)
+	if err != nil {
+		fmt.Printf("❌ Cannot read plugin binary: %v\n", err)
+		return client, false
+	}
+	tmpPlugin := "/tmp/vault-plugin-database-oracle"
+	if err := os.WriteFile(tmpPlugin, pluginData, 0755); err != nil {
+		fmt.Printf("❌ Cannot stage plugin binary: %v\n", err)
+		return client, false
+	}
+
+	cpOut, cpErr := exec.Command(engine, "cp", tmpPlugin,
+		vaultContainer+":/vault/plugins/vault-plugin-database-oracle").CombinedOutput()
+	if cpErr != nil {
+		fmt.Printf("❌ Failed to copy plugin into vault container: %v\n%s\n", cpErr, string(cpOut))
+		_ = os.Remove(tmpPlugin)
+		return client, false
+	}
+	_ = exec.Command(engine, "exec", vaultContainer,
+		"chmod", "+x", "/vault/plugins/vault-plugin-database-oracle").Run()
+	fmt.Println("  ✅ Plugin binary installed.")
+
+	currentImage, _ := exec.Command(engine, "inspect", vaultContainer,
+		"--format", "{{.Config.Image}}").Output()
+	if !strings.Contains(strings.TrimSpace(string(currentImage)), vaultOracleRuntimeImage) {
+		fmt.Println("♻️  Restarting Vault with oracle runtime image...")
+		if err := restartVaultWithOracleImage(engine, runtimeRef); err != nil {
+			fmt.Printf("❌ Failed to restart Vault: %v\n", err)
+			_ = os.Remove(tmpPlugin)
+			return client, false
+		}
+		fmt.Println("⏳ Waiting for Vault to re-initialize...")
+		if err := waitForService("Vault", vaultHealthURL, 30); err != nil {
+			fmt.Println("❌ Vault did not come back healthy after restart.")
+			_ = os.Remove(tmpPlugin)
+			return client, false
+		}
+		newClient, vaultErr := GetHealthyClient()
+		if vaultErr != nil {
+			fmt.Printf("❌ Vault unhealthy after restart: %v\n", vaultErr)
+			_ = os.Remove(tmpPlugin)
+			return client, false
+		}
+		client = newClient
+		fmt.Println("  ✅ Vault restarted with oracle runtime image.")
+
+		cpOut, cpErr = exec.Command(engine, "cp", tmpPlugin,
+			vaultContainer+":/vault/plugins/vault-plugin-database-oracle").CombinedOutput()
+		if cpErr != nil {
+			fmt.Printf("❌ Failed to re-copy plugin after restart: %v\n%s\n", cpErr, string(cpOut))
+			_ = os.Remove(tmpPlugin)
+			return client, false
+		}
+		_ = exec.Command(engine, "exec", vaultContainer,
+			"chmod", "+x", "/vault/plugins/vault-plugin-database-oracle").Run()
+	} else {
+		fmt.Println("⚡ Vault already running with oracle runtime image.")
+	}
+
+	_ = os.Remove(tmpPlugin)
+	return client, true
+}
+
+// -----------------------------------------------------------------------------
+// Helper functions
 // -----------------------------------------------------------------------------
 
 func waitForMariaDB(engine, containerName string, maxRetries int) error {
@@ -289,8 +623,164 @@ func waitForMariaDB(engine, containerName string, maxRetries int) error {
 	return fmt.Errorf("timeout")
 }
 
+func waitForOracle(engine, container string, maxRetries int) error {
+	for i := 0; i < maxRetries; i++ {
+		pingCmd := fmt.Sprintf(
+			`echo "SELECT 1 FROM DUAL;" | sqlplus -S sys/%s@localhost/%s as sysdba`,
+			vaultOracleSysPass, vaultOraclePDB,
+		)
+		out, err := exec.Command(engine, "exec", container, "sh", "-c", pingCmd).CombinedOutput()
+		if err == nil && strings.Contains(string(out), "1") && !strings.Contains(strings.ToUpper(string(out)), "ERROR") {
+			return nil
+		}
+		fmt.Print(".")
+		time.Sleep(5 * time.Second)
+	}
+	return fmt.Errorf("timeout waiting for Oracle Free to accept connections")
+}
+
+func buildOracleRuntimeImage(engine, imageRef string) error {
+	vaultSrcImage := defaultVaultImageEnt + ":" + defaultVaultEntTag
+
+	arch := runtime.GOARCH
+	var platform, icZipURL, icDir string
+
+	switch arch {
+	case "arm64":
+		platform = "linux/arm64"
+		icDir = defaultInstantClientDirARM64
+		icZipURL = fmt.Sprintf(
+			"https://download.oracle.com/otn_software/linux/instantclient/%s/instantclient-basic-linux.arm64-%s.zip",
+			strings.ReplaceAll(defaultInstantClientVerARM64, ".", ""),
+			defaultInstantClientVerARM64,
+		)
+	default:
+		platform = "linux/amd64"
+		icDir = defaultInstantClientDir
+		icParts := strings.Split(defaultInstantClientVer, ".")
+		var icDirNum string
+		for _, p := range icParts {
+			icDirNum += p
+		}
+		icZipURL = fmt.Sprintf(
+			"https://download.oracle.com/otn_software/linux/instantclient/%s/instantclient-basic-linux.x64-%sdbru.zip",
+			icDirNum, defaultInstantClientVer,
+		)
+	}
+
+	dockerfile := fmt.Sprintf(`FROM --platform=%s %s AS vault-src
+
+FROM --platform=%s debian:12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget unzip libaio1 libgcc-s1 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /opt/oracle && \
+    wget -q "%s" -O /tmp/ic.zip && \
+    unzip -q /tmp/ic.zip -d /opt/oracle && \
+    rm /tmp/ic.zip
+
+RUN echo "/opt/oracle/%s" > /etc/ld.so.conf.d/oracle-instantclient.conf && ldconfig
+
+COPY --from=vault-src /bin/vault /bin/vault
+
+RUN mkdir -p /vault/logs /vault/plugins /vault/file && \
+    useradd -r -u 100 -g 0 vault || true && \
+    chown -R 100:0 /vault
+
+ENV VAULT_PLUGIN_DIR=/vault/plugins
+ENV LD_LIBRARY_PATH=/opt/oracle/%s
+
+EXPOSE 8200
+
+ENTRYPOINT ["/bin/vault"]
+`, platform, vaultSrcImage, platform, icZipURL, icDir, icDir)
+
+	tmpDir, err := os.MkdirTemp("", "hal-oracle-build-*")
+	if err != nil {
+		return fmt.Errorf("temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := os.WriteFile(tmpDir+"/Dockerfile", []byte(dockerfile), 0644); err != nil {
+		return fmt.Errorf("write Dockerfile: %w", err)
+	}
+
+	buildCmd := exec.Command(engine, "build", "--platform", platform,
+		"-t", imageRef, "-f", tmpDir+"/Dockerfile", tmpDir)
+	buildCmd.Stdout = os.Stdout
+	buildCmd.Stderr = os.Stderr
+	return buildCmd.Run()
+}
+
+func restartVaultWithOracleImage(engine, runtimeRef string) error {
+	license := extractVaultLicense(engine)
+
+	_ = exec.Command(engine, "rm", "-f", vaultContainer).Run()
+
+	vaultArgs := []string{
+		"run", "-d",
+		"--name", vaultContainer,
+		"--network", global.HalNetName,
+		"--network-alias", "vault.localhost",
+		"--cap-add", "IPC_LOCK",
+		"-p", fmt.Sprintf("%d:%d", vaultHTTPPort, vaultHTTPPort),
+		"-v", vaultLogsVolume + ":/vault/logs",
+		"-v", vaultPluginsVolume + ":/vault/plugins",
+		"-v", vaultDataVolume + ":/vault/file",
+		"-e", "VAULT_PLUGIN_DIR=/vault/plugins",
+		"-e", "SKIP_SETCAP=true",
+	}
+
+	if license != "" {
+		vaultArgs = append(vaultArgs, "-e", "VAULT_LICENSE="+license)
+	}
+
+	vaultArgs = append(vaultArgs,
+		runtimeRef,
+		"server", "-dev",
+		fmt.Sprintf("-dev-listen-address=0.0.0.0:%d", vaultHTTPPort),
+		"-dev-root-token-id="+vaultRootToken,
+		"-dev-plugin-dir=/vault/plugins",
+	)
+
+	out, err := exec.Command(engine, vaultArgs...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func extractVaultLicense(engine string) string {
+	licenseOut, _ := exec.Command(engine, "inspect", vaultContainer,
+		"--format", `{{range .Config.Env}}{{println .}}{{end}}`).Output()
+	for _, line := range strings.Split(string(licenseOut), "\n") {
+		if strings.HasPrefix(line, "VAULT_LICENSE=") {
+			return strings.TrimPrefix(line, "VAULT_LICENSE=")
+		}
+	}
+	if l := os.Getenv("VAULT_LICENSE"); l != "" {
+		return l
+	}
+	if p := os.Getenv("VAULT_LICENSE_PATH"); p != "" {
+		if data, err := os.ReadFile(p); err == nil {
+			return strings.TrimSpace(string(data))
+		}
+	}
+	return ""
+}
+
+func sha256HexFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum)
+}
+
 func init() {
-	// Standard Lifecycle Flags
 	vaultDatabaseCmd.Flags().BoolVarP(&databaseEnable, "enable", "e", false, "Deploy selected database backend and configure Vault")
 	vaultDatabaseCmd.Flags().BoolVarP(&databaseDisable, "disable", "d", false, "Remove selected backend and clean up Vault database configuration")
 	vaultDatabaseCmd.Flags().BoolVarP(&databaseUpdate, "update", "u", false, "Reconcile selected backend and Vault database configuration")
@@ -298,11 +788,15 @@ func init() {
 	_ = vaultDatabaseCmd.Flags().MarkHidden("disable")
 	_ = vaultDatabaseCmd.Flags().MarkHidden("update")
 
-	// Backend selection and version pinning
-	vaultDatabaseCmd.Flags().StringVarP(&databaseBackend, "backend", "b", "mariadb", "Database backend to use (mariadb; pgsql planned, postgres alias accepted)")
+	vaultDatabaseCmd.Flags().StringVarP(&databaseBackend, "backend", "b", "mariadb", "Database backend to use (mariadb, oracle; pgsql planned)")
 	vaultDatabaseCmd.Flags().StringVar(&mariadbVersion, "vault-mariadb-tag", defaultVaultMariaDBTag, "MariaDB container image tag")
 	vaultDatabaseCmd.Flags().StringVar(&mariadbImage, "vault-mariadb-image", defaultVaultMariaDBImage, "MariaDB container image name")
 	vaultDatabaseCmd.Flags().StringVar(&dbUsernamePrefix, "username-prefix", "v", "Prefix for dynamically generated database usernames (e.g. 'myapp' → 'myapp-AbCdEfGhIj')")
+
+	vaultDatabaseCmd.Flags().StringVar(&oracleFreeImage, "oracle-image", defaultOracleFreeImage, "Oracle Database Free container image")
+	vaultDatabaseCmd.Flags().StringVar(&oracleFreeTag, "oracle-tag", defaultOracleFreeTag, "Oracle Database Free container image tag")
+	vaultDatabaseCmd.Flags().StringVar(&oraclePluginVersion, "oracle-plugin-version", defaultOraclePluginVer, "Version string to register with Vault (must match binary)")
+	vaultDatabaseCmd.Flags().StringVar(&oraclePluginPath, "oracle-plugin-path", "", "Path to vault-plugin-database-oracle binary (required for --backend oracle)")
 
 	Cmd.AddCommand(vaultDatabaseCmd)
 }

@@ -143,8 +143,7 @@ func printVaultFeatureStatus(engine string) {
 		{name: "k8s", status: boolState(checkContainer(engine, "kind-control-plane"))},
 		{name: "jwt", status: boolState(checkContainer(engine, "hal-gitlab"))},
 		{name: "ldap", status: boolState(checkContainer(engine, "hal-openldap"))},
-		{name: "database", status: boolState(checkContainer(engine, "hal-vault-mariadb") || checkContainer(engine, "hal-vault-postgres"))},
-		{name: "oracle", status: boolState(checkContainer(engine, "hal-vault-oracle-db"))},
+		{name: "database", status: boolState(checkContainer(engine, "hal-vault-mariadb") || checkContainer(engine, "hal-vault-postgres") || checkContainer(engine, "hal-vault-oracle-db"))},
 		{name: "oidc", status: boolState(checkContainer(engine, "hal-keycloak"))},
 	}
 
