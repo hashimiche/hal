@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"hal/internal/global"
+	"hal/internal/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -31,14 +32,18 @@ var deployCmd = &cobra.Command{
 		// 2. Ensure the global grid exists
 		global.EnsureNetwork(engine)
 
+		ui.LogoStart("consul")
+		defer ui.LogoStop()
+
 		if consulUpdate {
 			if global.Debug {
 				fmt.Println("[DEBUG] --update detected. Reconciling existing standalone Consul...")
 			}
+			ui.LogoStep("Reconciling existing Consul (update)")
 			_ = exec.Command(engine, "rm", "-f", consulContainer).Run()
 		}
 
-		fmt.Printf(" Deploying standalone Consul %s via %s...\n", consulVersion, engine)
+		ui.LogoStep("Deploying standalone Consul %s", consulVersion)
 
 		// Command: <engine> run -d --name hal-consul --network hal-net -p 8500:8500 hashicorp/consul:1.15.0 agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
 		consulArgs := []string{
@@ -51,12 +56,15 @@ var deployCmd = &cobra.Command{
 		}
 
 		if global.DryRun {
+			ui.LogoStop()
 			fmt.Printf("[DRY RUN] Would execute: %s %s\n", engine, strings.Join(consulArgs, " "))
 			return
 		}
 
+		ui.LogoStep("Starting Consul server")
 		out, err := exec.Command(engine, consulArgs...).CombinedOutput()
 		if err != nil {
+			ui.LogoStop()
 			if strings.Contains(string(out), "AlreadyExists") || strings.Contains(string(out), "already in use") {
 				fmt.Println("⚠️  Consul already exists. Use '--update' to reconcile it.")
 				return
@@ -65,11 +73,12 @@ var deployCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println("✅ Standalone Consul Server is up!")
+		ui.LogoStop()
 		global.RefreshHalHealth(engine)
-		fmt.Printf("   🔗 UI Address: %s\n", consulBaseURL)
-		fmt.Println("\n💡 Tip: Use this to test the KV store or learn the API.")
-		fmt.Println("   (For real workloads, use 'hal nomad create --with-consul' instead!)")
+		ui.Success("Standalone Consul server is up!")
+		ui.Section("Access")
+		ui.Field("UI", consulBaseURL)
+		ui.Hint("Test the KV store / API. For real workloads: hal nomad create --with-consul")
 	},
 }
 

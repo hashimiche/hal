@@ -16,6 +16,7 @@ import (
 	"hal/cmd/vault"
 
 	"hal/internal/global"
+	"hal/internal/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -45,6 +46,7 @@ func init() {
 	// Point the flags directly to the memory addresses of your global variables
 	rootCmd.PersistentFlags().BoolVarP(&global.Debug, "debug", "", false, "Enable debug output")
 	rootCmd.PersistentFlags().BoolVarP(&global.DryRun, "dry-run", "", false, "Simulate the execution without changing state")
+	rootCmd.PersistentFlags().BoolVarP(&ui.Verbose, "verbose", "", false, "Show every sub-step instead of a single collapsing progress line")
 	rootCmd.PersistentFlags().StringVar(&global.HalNetSubnet, "network-subnet", "", "Subnet for the hal-net Docker network on first creation (e.g. 10.89.3.0/24)")
 
 	rootCmd.AddCommand(vault.Cmd)

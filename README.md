@@ -488,8 +488,3 @@ Before changing command behavior or UX patterns, read these files in order:
 
 Keep all three in sync when adding or renaming commands.
 
----
-
-## License
-
-This tool was developed on HashiCorp/IBM equipment and is subject to HashiCorp/IBM's intellectual property policies. No independent open-source license has been applied. All rights reserved unless explicitly stated otherwise by HashiCorp/IBM.

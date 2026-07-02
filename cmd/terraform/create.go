@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -108,31 +109,44 @@ var deployCmd = &cobra.Command{
 		uiURL := tfePrimaryBaseURL
 
 		// 2. FORGE THE TLS CERTIFICATES
-		fmt.Println("🔐 Forging local TLS certificates for TFE...")
+		ui.LogoStart("terraform")
+		defer ui.LogoStop()
+		// Non-fatal warnings raised mid-deploy are collected and printed after the
+		// animation stops, so they are not eaten by the logo redraw.
+		var warnings []string
+		// step updates the activity caption and nudges the logo fill by a fixed
+		// number of columns, so each quick step maps to 1–2 columns. The long boot
+		// wait below uses ui.LogoCreep so it keeps inching instead of stalling.
+		step := func(cols int, format string, args ...any) {
+			ui.LogoStep(format, args...)
+			ui.LogoAdvance(cols)
+		}
+
+		step(1, "Forging local TLS certificates")
 		homeDir, _ := os.UserHomeDir()
 		certDir := filepath.Join(homeDir, halStateDirName, tfeCertsDirName)
 
 		if tfeUpdate {
-			fmt.Println("♻️  Update requested. Reconciling existing TFE resources...")
+			step(1, "Reconciling existing TFE resources (update)")
 			// 🎯 Included the proxy in the teardown list
 			_ = exec.Command(engine, "rm", "-f", tfeCoreContainer, tfeProxyContainer, tfeDBContainer, tfeRedisContainer, tfeMinioContainer).Run()
 			_ = os.Remove(filepath.Join(certDir, "cert.pem"))
 			_ = os.Remove(filepath.Join(certDir, "key.pem"))
 		}
 		if err := ensureCerts(certDir); err != nil {
-			fmt.Printf("❌ Failed to generate TLS certificates: %v\n", err)
+			ui.Fail("Failed to generate TLS certificates: %v", err)
 			return
 		}
 
-		fmt.Printf("🚀 Deploying Terraform Enterprise %s (PG: %s, Redis: %s) via %s...\n", tfeVersion, pgVersion, redisVersion, engine)
+		step(1, "Deploying Terraform Enterprise %s (PG %s, Redis %s)", tfeVersion, pgVersion, redisVersion)
 
 		// 3. SECURE REGISTRY AUTHENTICATION (only for the default HashiCorp registry)
 		if strings.Contains(tfeImage, "images.releases.hashicorp.com") {
-			fmt.Println("🔑 Authenticating with HashiCorp private image registry...")
+			step(1, "Authenticating with HashiCorp image registry")
 			loginCmd := exec.Command(engine, "login", "images.releases.hashicorp.com", "-u", "terraform", "--password-stdin")
 			loginCmd.Stdin = strings.NewReader(license)
 			if err := loginCmd.Run(); err != nil {
-				fmt.Println("❌ Error: Failed to authenticate with images.releases.hashicorp.com.")
+				ui.Fail("Failed to authenticate with images.releases.hashicorp.com")
 				return
 			}
 		}
@@ -143,20 +157,20 @@ var deployCmd = &cobra.Command{
 		proxyInternalIP := global.HalNetStaticIP(engine, tfePrimaryProxyHostNum)
 
 		// 5. Deploy PostgreSQL
-		fmt.Printf("⚙️  Provisioning TFE PostgreSQL Database...\n")
+		step(1, "Provisioning PostgreSQL database")
 		_ = exec.Command(engine, "run", "-d", "--name", tfeDBContainer, "--network", global.HalNetName,
 			"-v", tfeDBVolume+":/var/lib/postgresql/data",
 			"-e", "POSTGRES_USER="+tfeDBUser, "-e", "POSTGRES_PASSWORD="+tfeDBPassword, "-e", "POSTGRES_DB="+tfeDBName,
 			fmt.Sprintf("%s:%s", pgImage, pgVersion)).Run()
 
 		// 6. Deploy Redis
-		fmt.Printf("⚙️  Provisioning TFE Redis Cache...\n")
+		step(1, "Provisioning Redis cache")
 		_ = exec.Command(engine, "run", "-d", "--name", tfeRedisContainer, "--network", global.HalNetName,
 			"-v", tfeRedisVolume+":/data",
 			fmt.Sprintf("%s:%s", redisImage, redisVersion)).Run()
 
 		// 7. Deploy MinIO (S3 Mock)
-		fmt.Println("⚙️  Provisioning TFE Object Storage (MinIO)...")
+		step(1, "Provisioning object storage (MinIO)")
 		_ = exec.Command(engine, "run", "-d", "--name", tfeMinioContainer, "--network", global.HalNetName,
 			"-p", fmt.Sprintf("%d:9000", minioAPIPort), "-p", fmt.Sprintf("%d:9001", minioConsolePort),
 			"-v", tfeMinioVolume+":/data",
@@ -167,7 +181,7 @@ var deployCmd = &cobra.Command{
 		_ = exec.Command(engine, "exec", tfeMinioContainer, "sh", "-c", "mkdir -p /data/"+tfeS3Bucket).Run()
 
 		// 8. Deploy TFE Core (NO EXPOSED HOST PORTS!)
-		fmt.Println("⚙️  Booting TFE Core Application (This requires heavy compute)...")
+		step(2, "Booting TFE core application (heavy compute)")
 		tfeArgs := []string{
 			"run", "-d",
 			"--name", tfeCoreContainer,
@@ -228,7 +242,7 @@ var deployCmd = &cobra.Command{
 
 		out, err := exec.Command(engine, tfeArgs...).CombinedOutput()
 		if err != nil {
-			fmt.Printf("❌ Failed to start TFE: %s\n", string(out))
+			ui.Fail("Failed to start TFE: %s", string(out))
 			return
 		}
 
@@ -245,7 +259,7 @@ var deployCmd = &cobra.Command{
 			"-lc",
 			"cp /etc/ssl/tfe/cert.pem /usr/local/share/ca-certificates/tfe-localhost.crt && update-ca-certificates 2>&1",
 		).CombinedOutput(); trustErr != nil {
-			fmt.Printf("⚠️  Could not refresh TFE trust store automatically: %s\n", strings.TrimSpace(string(trustOut)))
+			warnings = append(warnings, fmt.Sprintf("⚠️  Could not refresh TFE trust store automatically: %s", strings.TrimSpace(string(trustOut))))
 		}
 
 		// TFE 1.2.0 on this local Podman flow generates an agent-run task-worker config that
@@ -261,11 +275,11 @@ var deployCmd = &cobra.Command{
 			"-lc",
 			"test -f /run/terraform-enterprise/task-worker/config.hcl && sed -i 's/readonly = \"true\"/readonly = \"false\"/' /run/terraform-enterprise/task-worker/config.hcl 2>&1 || true",
 		).CombinedOutput(); taskWorkerErr != nil {
-			fmt.Printf("⚠️  Could not patch TFE task-worker cache mount automatically: %s\n", strings.TrimSpace(string(taskWorkerOut)))
+			warnings = append(warnings, fmt.Sprintf("⚠️  Could not patch TFE task-worker cache mount automatically: %s", strings.TrimSpace(string(taskWorkerOut))))
 		}
 
 		// 8.5 Deploy the Magic Redirect Fixer (AFTER TFE BOOTS!)
-		fmt.Println("⚙️  Deploying TFE Ingress Proxy (The Redirect Fixer)...")
+		step(1, "Deploying ingress proxy (redirect fixer)")
 		nginxConfig := `events {}
 http {
 	server {
@@ -337,22 +351,20 @@ http {
 			fmt.Sprintf("%s:%s", tfeProxyImage, tfeProxyNginxTag)).Run()
 
 		// 9. THE HEALTH CHECK PHASE
-		fmt.Println("⏳ Waiting for TFE to initialize (WARNING: This can take 3-5 minutes!)...")
+		ui.LogoStep("Waiting for TFE to initialize (this can take a few minutes)")
+		// Long step: creep one column every few seconds so the logo keeps moving
+		// instead of stalling. Tuned so a typical ~1 min boot shows clear motion;
+		// slower boots fill toward the cap and then hold until readiness.
+		ui.LogoCreep(6 * time.Second)
 
 		// This will naturally hit the Proxy, which routes to TFE
 		if err := waitForService("TFE", healthURL, 60); err != nil {
+			ui.LogoStop()
 			handleDockerFailure(tfeCoreContainer, engine)
 			return
 		}
 
-		fmt.Printf("\n✅ Terraform Enterprise %s is UP!\n", tfeVersion)
-		global.RefreshHalHealth(engine)
-		fmt.Println("---------------------------------------------------------")
-		fmt.Printf("🔗 UI Address:   %s\n", uiURL)
-		fmt.Printf("🗂️  MinIO API:    http://127.0.0.1:%d\n", minioAPIPort)
-		fmt.Printf("🧭 MinIO Console: http://127.0.0.1:%d\n", minioConsolePort)
-		fmt.Printf("👤 Admin User:   %s\n", deployTFEAdminUser)
-		fmt.Printf("🔑 Admin Pass:   %s\n", deployTFEAdminPass)
+		step(1, "Bootstrapping TFE foundation (org, project, admin token)")
 		token, _, err := ensureTFEFoundation(engine, tfeFoundationConfig{
 			BaseURL:       uiURL,
 			OrgName:       deployTFEOrg,
@@ -361,19 +373,36 @@ http {
 			AdminEmail:    deployTFEAdminEmail,
 			AdminPassword: deployTFEAdminPass,
 		})
+
+		ui.LogoStop()
+		global.RefreshHalHealth(engine)
+		for _, w := range warnings {
+			fmt.Println(w)
+		}
+
+		ui.Success("Terraform Enterprise %s is UP!", tfeVersion)
+		ui.Section("Endpoints")
+		ui.Field("UI", uiURL)
+		ui.Field("MinIO API", fmt.Sprintf("http://127.0.0.1:%d", minioAPIPort))
+		ui.Field("MinIO UI", fmt.Sprintf("http://127.0.0.1:%d", minioConsolePort))
+		ui.Section("Admin")
+		ui.Field("User", deployTFEAdminUser)
+		ui.Field("Password", deployTFEAdminPass)
+
 		if err != nil {
-			fmt.Printf("⚠️  TFE foundation bootstrap incomplete: %v\n", err)
-			fmt.Println("   💡 HAL could not mint a usable API token automatically from this TFE instance.")
+			ui.Section("Foundation")
+			ui.Item("⚠️  Bootstrap incomplete: %v", err)
+			ui.Item("HAL could not mint a usable API token automatically from this TFE instance.")
 		} else {
-			fmt.Println("✅ TFE foundation ready: admin token + org/project are configured.")
+			ui.Section("Foundation")
+			ui.Item("✅ Admin token + org/project configured")
 			if token != "" {
-				fmt.Printf("   📄 Token cache: ~/%s/%s\n", halStateDirName, tfeAPITokenFileName)
+				ui.Item("Token cache: ~/%s/%s", halStateDirName, tfeAPITokenFileName)
 			}
 		}
-		fmt.Println("⚠️  Note:        Accept the browser warning for the self-signed certificate.")
-		fmt.Println("\n💡 Next Step:")
-		fmt.Println("   Run 'hal terraform vcs-workflow enable' to bootstrap org/project/workspace wiring.")
-		fmt.Println("---------------------------------------------------------")
+
+		ui.Item("⚠️  Accept the browser warning for the self-signed certificate.")
+		ui.Hint("Next: hal terraform vcs-workflow enable  (org/project/workspace wiring)")
 
 		if target == tfeTargetBoth {
 			fmt.Println("\n🔁 Target includes twin. Continuing with twin Terraform Enterprise deployment...")

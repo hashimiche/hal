@@ -3,6 +3,7 @@ package observability
 import (
 	"fmt"
 	"hal/internal/global"
+	"hal/internal/ui"
 	"net/http"
 	"os"
 	"os/exec"
@@ -67,9 +68,19 @@ var deployCmd = &cobra.Command{
 			return
 		}
 
+		ui.LogoStart("observability")
+		defer ui.LogoStop()
+		step := func(cols int, format string, args ...any) {
+			ui.LogoStep(format, args...)
+			ui.LogoAdvance(cols)
+		}
+
+		// Anchor the fill low, then creep it forward across the (possibly long) pull.
+		step(1, "Pulling observability images (Prometheus, Loki, Promtail, Grafana)")
+		ui.LogoCreep(1500 * time.Millisecond)
+
 		global.EnsureNetwork(engine)
 
-		fmt.Println("📥 Pulling Observability images (this might take a minute)...")
 		images := []string{
 			promImage + ":" + promVer,
 			lokiImage + ":" + lokiVer,
@@ -82,7 +93,7 @@ var deployCmd = &cobra.Command{
 			_ = pullCmd.Run() // Silent pull
 		}
 
-		fmt.Println("⚙️  Generating PLG stack configurations...")
+		step(6, "Generating PLG stack configuration")
 		homeDir, _ := os.UserHomeDir()
 		configDir := filepath.Join(homeDir, ".hal", "obs")
 		targetsDir := filepath.Join(configDir, "targets")
@@ -94,10 +105,12 @@ var deployCmd = &cobra.Command{
 		if promConfigPath != "" {
 			src, err := os.ReadFile(promConfigPath)
 			if err != nil {
+				ui.LogoStop()
 				fmt.Printf("❌ Cannot read --prom-config-path %q: %v\n", promConfigPath, err)
 				return
 			}
 			if err := os.WriteFile(filepath.Join(configDir, "prometheus.yml"), src, 0644); err != nil {
+				ui.LogoStop()
 				fmt.Printf("❌ Failed to write prometheus.yml: %v\n", err)
 				return
 			}
@@ -216,9 +229,10 @@ providers:
 
 		// Helper function to boot containers and catch errors
 		bootContainer := func(name string, args ...string) {
-			fmt.Printf("⚙️  Booting %s...\n", name)
+			step(6, "Booting %s", name)
 			out, err := exec.Command(engine, args...).CombinedOutput()
 			if err != nil {
+				ui.LogoStop()
 				fmt.Printf("❌ Failed to boot %s!\n", name)
 				fmt.Printf("   Error: %v\n", err)
 				fmt.Printf("   Docker Output: %s\n", string(out))
@@ -231,21 +245,22 @@ providers:
 		bootContainer("Promtail", "run", "-d", "--name", obsPromtailContainer, "--network", global.HalNetName, "-v", "hal-vault-logs:/vault/logs:ro", "-v", filepath.Join(configDir, "promtail-config.yaml")+":/etc/promtail/config.yml", promtailImage+":"+promtailVer, "-config.file=/etc/promtail/config.yml")
 		bootContainer("Grafana", "run", "-d", "--name", obsGrafanaContainer, "--network", global.HalNetName, "-p", "3000:3000", "-v", filepath.Join(configDir, "datasources.yml")+":/etc/grafana/provisioning/datasources/datasources.yml", "-v", filepath.Join(configDir, "dashboards.yml")+":/etc/grafana/provisioning/dashboards/dashboards.yml", "-v", dashboardsDir+":/var/lib/grafana/dashboards", "-e", "GF_AUTH_ANONYMOUS_ENABLED=true", "-e", "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin", grafanaImage+":"+grafanaVer)
 
-		fmt.Println("⏳ Waiting for Prometheus, Loki, and Grafana health checks...")
+		ui.LogoStep("Waiting for Prometheus, Loki, Grafana to become healthy")
+		ui.LogoCreep(1500 * time.Millisecond)
 		if err := waitForObsHealth(engine); err != nil {
+			ui.LogoStop()
 			fmt.Printf("⚠️  Stack started but health checks are not fully ready yet: %v\n", err)
 			fmt.Println("   You can still check logs with: hal obs status")
 			return
 		}
 
-		fmt.Println()
-		fmt.Println("✅ Observability Stack Deployed Successfully!")
+		ui.LogoStop()
 		global.RefreshHalHealth(engine)
-		fmt.Println("---------------------------------------------------------")
-		fmt.Printf("🔗 Grafana:    %s (Auto-logged in as Admin)\n", obsGrafanaURL)
-		fmt.Printf("🔗 Prometheus: %s\n", obsPrometheusURL)
-		fmt.Printf("🔗 Loki API:   %s\n", obsLokiReadyURL)
-		fmt.Println("---------------------------------------------------------")
+		ui.Success("Observability stack deployed!")
+		ui.Section("Endpoints")
+		ui.Field("Grafana", fmt.Sprintf("%s  (auto-login as Admin)", obsGrafanaURL))
+		ui.Field("Prometheus", obsPrometheusURL)
+		ui.Field("Loki API", obsLokiReadyURL)
 
 		if obsJobName != "" {
 			configPath := filepath.Join(filepath.Join(homeDir, ".hal", "obs"), "prometheus.yml")
@@ -290,21 +305,18 @@ func waitForObsHealth(engine string) error {
 		grafanaReady := probeHTTP("http://127.0.0.1:3000/api/health")
 		allReady := promReady && lokiReady && grafanaReady
 
-		fmt.Printf("\r   readiness: Prometheus %s | Loki %s | Grafana %s   ", readinessLabel(promReady), readinessLabel(lokiReady), readinessLabel(grafanaReady))
+		ui.LogoStep("Health: Prometheus %s · Loki %s · Grafana %s", readinessLabel(promReady), readinessLabel(lokiReady), readinessLabel(grafanaReady))
 		if allReady {
-			fmt.Print("\n")
 			return nil
 		}
 
 		exitedContainer, stateErr := firstNonRunningObsContainer(engine)
 		if stateErr == nil && exitedContainer != "" {
-			fmt.Print("\n")
 			return fmt.Errorf("%s is not running", exitedContainer)
 		}
 
 		select {
 		case <-timeout:
-			fmt.Print("\n")
 			return fmt.Errorf("timeout while waiting for endpoints to report ready")
 		case <-ticker.C:
 		}

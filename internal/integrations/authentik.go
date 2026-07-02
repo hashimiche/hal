@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/ui"
 )
 
 const (
@@ -101,6 +102,23 @@ func randomHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
+// LoadAuthentikAdminPassword returns the saved akadmin bootstrap password
+// without generating any secrets. It returns "" if the env file is missing or
+// the password is not present, so callers can fall back to a hint.
+func LoadAuthentikAdminPassword() string {
+	data, err := os.ReadFile(AuthentikEnvPath())
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		parts := strings.SplitN(strings.TrimSpace(line), "=", 2)
+		if len(parts) == 2 && parts[0] == "AUTHENTIK_BOOTSTRAP_PASSWORD" {
+			return parts[1]
+		}
+	}
+	return ""
+}
+
 // LoadOrCreateAuthentikSecrets reads ~/.hal/authentik/env or generates fresh values.
 // The file is created with mode 0600.
 func LoadOrCreateAuthentikSecrets() (*AuthentikSecrets, error) {
@@ -183,7 +201,7 @@ func StartAuthentikStack(engine, image, tag string, secrets *AuthentikSecrets) e
 	global.EnsureNetwork(engine)
 
 	// ── 1. PostgreSQL ────────────────────────────────────────────────────────────
-	fmt.Println("  ⏳ Starting Authentik PostgreSQL...")
+	ui.Step("Starting Authentik PostgreSQL")
 	pgArgs := []string{
 		"run", "-d",
 		"--name", AuthentikPGContainer,
@@ -200,7 +218,7 @@ func StartAuthentikStack(engine, image, tag string, secrets *AuthentikSecrets) e
 	}
 
 	// ── 2. Wait for pg ───────────────────────────────────────────────────────────
-	fmt.Print("  ⏳ Waiting for PostgreSQL")
+	ui.Step("Waiting for PostgreSQL")
 	deadline := time.Now().Add(30 * time.Second)
 	pgReady := false
 	for time.Now().Before(deadline) {
@@ -209,17 +227,14 @@ func StartAuthentikStack(engine, image, tag string, secrets *AuthentikSecrets) e
 			pgReady = true
 			break
 		}
-		fmt.Print(".")
 		time.Sleep(2 * time.Second)
 	}
-	fmt.Println()
 	if !pgReady {
 		return fmt.Errorf("postgresql did not become ready within 30s")
 	}
-	fmt.Println("  ✅ PostgreSQL ready")
 
 	// ── 3. Server ────────────────────────────────────────────────────────────────
-	fmt.Println("  ⏳ Starting Authentik server...")
+	ui.Step("Starting Authentik server")
 	serverArgs := []string{
 		"run", "-d",
 		"--name", AuthentikServerContainer,
@@ -261,7 +276,7 @@ func StartAuthentikStack(engine, image, tag string, secrets *AuthentikSecrets) e
 	}
 
 	// ── 4. Worker (no docker socket) ─────────────────────────────────────────────
-	fmt.Println("  ⏳ Starting Authentik worker...")
+	ui.Step("Starting Authentik worker")
 	workerArgs := []string{
 		"run", "-d",
 		"--name", AuthentikWorkerContainer,
@@ -305,20 +320,17 @@ func WaitAuthentikHealthy() error {
 	client := &http.Client{Timeout: 5 * time.Second}
 	deadline := time.Now().Add(90 * time.Second)
 
-	fmt.Print("  ⏳ Waiting for Authentik API")
+	ui.Step("Waiting for Authentik API")
 	for time.Now().Before(deadline) {
 		resp, err := client.Get(url)
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				fmt.Println(" ✅")
 				return nil
 			}
 		}
-		fmt.Print(".")
 		time.Sleep(3 * time.Second)
 	}
-	fmt.Println()
 	return fmt.Errorf("authentik did not become ready within 90s — check: docker logs %s", AuthentikServerContainer)
 }
 
@@ -333,7 +345,7 @@ func WaitAuthentikTokenReady(token string) error {
 	client := &http.Client{Timeout: 5 * time.Second}
 	deadline := time.Now().Add(60 * time.Second)
 
-	fmt.Print("  ⏳ Waiting for Authentik bootstrap token")
+	ui.Step("Waiting for Authentik bootstrap token")
 	for time.Now().Before(deadline) {
 		req, _ := http.NewRequest("GET", url, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -341,14 +353,11 @@ func WaitAuthentikTokenReady(token string) error {
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				fmt.Println(" ✅")
 				return nil
 			}
 		}
-		fmt.Print(".")
 		time.Sleep(3 * time.Second)
 	}
-	fmt.Println()
 	return fmt.Errorf("authentik bootstrap token not ready within 60s — check: docker logs %s", AuthentikWorkerContainer)
 }
 
@@ -361,7 +370,7 @@ func WaitAuthentikFlowsReady(token string) error {
 	deadline := time.Now().Add(120 * time.Second)
 	base := fmt.Sprintf("http://localhost:%s/api/v3/flows/instances/", AuthentikHTTPPort)
 
-	fmt.Print("  ⏳ Waiting for Authentik default flows")
+	ui.Step("Waiting for Authentik default flows")
 	for time.Now().Before(deadline) {
 		authzOK, invOK := false, false
 		for _, desig := range []string{"authorization", "invalidation"} {
@@ -385,13 +394,10 @@ func WaitAuthentikFlowsReady(token string) error {
 			}
 		}
 		if authzOK && invOK {
-			fmt.Println(" ✅")
 			return nil
 		}
-		fmt.Print(".")
 		time.Sleep(3 * time.Second)
 	}
-	fmt.Println()
 	return fmt.Errorf("authentik default flows not ready within 120s — check: docker logs %s", AuthentikWorkerContainer)
 }
 
@@ -406,7 +412,7 @@ func WaitAuthentikScopesReady(token string) error {
 	deadline := time.Now().Add(180 * time.Second)
 	required := map[string]bool{"openid": true, "profile": true, "email": true}
 
-	fmt.Printf("  ⏳ Waiting for Authentik scope mappings (0/%d)", len(required))
+	ui.Step("Waiting for Authentik scope mappings (0/%d)", len(required))
 	lastFound := -1
 	for time.Now().Before(deadline) {
 		req, _ := http.NewRequest("GET", url, nil)
@@ -426,22 +432,19 @@ func WaitAuthentikScopesReady(token string) error {
 					}
 				}
 				if found == len(required) {
-					fmt.Println(" ✅")
 					return nil
 				}
-				// Print updated counter only when progress is made.
+				// Update the counter only when progress is made.
 				if found != lastFound {
-					fmt.Printf(" (%d/%d)", found, len(required))
+					ui.Step("Waiting for Authentik scope mappings (%d/%d)", found, len(required))
 					lastFound = found
 				}
 			}
 		} else if resp != nil {
 			resp.Body.Close()
 		}
-		fmt.Print(".")
 		time.Sleep(3 * time.Second)
 	}
-	fmt.Println()
 	return fmt.Errorf("authentik default scope mappings not ready within 180s — check: docker logs %s", AuthentikWorkerContainer)
 }
 

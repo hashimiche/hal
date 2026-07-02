@@ -65,7 +65,7 @@ var statusCmd = &cobra.Command{
 			fmt.Println("🌐 Authentik IdP")
 			fmt.Printf("   URL      : http://authentik.localhost:%s/if/admin/\n", integrations.AuthentikHTTPPort)
 			fmt.Println("   Username : akadmin")
-			adminPass := loadAuthentikAdminPassword()
+			adminPass := integrations.LoadAuthentikAdminPassword()
 			if adminPass != "" {
 				fmt.Printf("   Password : %s\n", adminPass)
 			} else {
@@ -230,7 +230,7 @@ func CollectActiveCredentials() (ActiveCredentials, error) {
 			URL:     fmt.Sprintf("http://authentik.localhost:%s/if/admin/", integrations.AuthentikHTTPPort),
 		}
 		entry := CredentialEntry{Name: "akadmin", Username: "akadmin"}
-		if adminPass := loadAuthentikAdminPassword(); adminPass != "" {
+		if adminPass := integrations.LoadAuthentikAdminPassword(); adminPass != "" {
 			entry.Secret = adminPass
 		} else {
 			entry.Note = "see " + integrations.AuthentikEnvPath()
@@ -325,19 +325,4 @@ func vaultAuthMountExists(method string) bool {
 	}
 	_, ok := auths[strings.TrimSuffix(method, "/")+"/"]
 	return ok
-}
-
-// loadAuthentikAdminPassword reads AUTHENTIK_BOOTSTRAP_PASSWORD from ~/.hal/authentik/env.
-func loadAuthentikAdminPassword() string {
-	data, err := os.ReadFile(integrations.AuthentikEnvPath())
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		parts := strings.SplitN(strings.TrimSpace(line), "=", 2)
-		if len(parts) == 2 && parts[0] == "AUTHENTIK_BOOTSTRAP_PASSWORD" {
-			return parts[1]
-		}
-	}
-	return ""
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -97,13 +98,15 @@ var deployCmd = &cobra.Command{
 			imageRepo = vaultImage
 		}
 
-		fmt.Printf("🚀 Deploying Vault %s (%s) via %s...\n", actualVersion, strings.ToUpper(vaultEdition), engine)
+		ui.LogoStart("vault", 4)
+		defer ui.LogoStop()
+		ui.LogoStep("Deploying Vault %s (%s) via %s", actualVersion, strings.ToUpper(vaultEdition), engine)
 
 		// 1. Ensure the global HAL network exists
 		global.EnsureNetwork(engine)
 
 		// Correction des permissions du volume d'audit pour l'utilisateur Vault (UID 100)
-		fmt.Println("⚙️  Preparing shared volume permissions...")
+		ui.LogoStep("Preparing shared volume permissions")
 		helperRef := vaultHelperImage + ":" + vaultHelperTag
 		_ = exec.Command(engine, "run", "--rm", "-v", vaultLogsVolume+":/vault/logs", helperRef, "chown", "-R", "100:1000", "/vault/logs").Run()
 		_ = exec.Command(engine, "run", "--rm", "-v", vaultPluginsVolume+":/vault/plugins", helperRef, "sh", "-c", "mkdir -p /vault/plugins && chown -R 100:1000 /vault/plugins").Run()
@@ -132,13 +135,13 @@ var deployCmd = &cobra.Command{
 
 		// Inject the Enterprise License (we already know it exists thanks to the pre-flight check)
 		if vaultEdition == "ent" || vaultEdition == "enterprise" {
-			fmt.Println("   🔐 Injecting VAULT_LICENSE into container...")
+			ui.LogoStep("Injecting VAULT_LICENSE into container")
 			vaultArgs = append(vaultArgs, "-e", fmt.Sprintf("VAULT_LICENSE=%s", os.Getenv("VAULT_LICENSE")))
 		}
 
 		// Inject the Consul Tether
 		if vaultJoinConsul {
-			fmt.Println("   🤝 --join-consul detected! Tethering Vault to the global HAL Consul...")
+			ui.LogoStep("Tethering Vault to the global HAL Consul")
 			vaultArgs = append(vaultArgs, "-e", "CONSUL_HTTP_ADDR=http://hal-consul:8500")
 		}
 
@@ -149,12 +152,15 @@ var deployCmd = &cobra.Command{
 		)
 
 		if global.DryRun {
+			ui.LogoStop()
 			fmt.Printf("[DRY RUN] Would execute: %s %s\n", engine, strings.Join(vaultArgs, " "))
 			return
 		}
 
+		ui.LogoStep("Starting Vault container")
 		out, err := exec.Command(engine, vaultArgs...).CombinedOutput()
 		if err != nil {
+			ui.LogoStop()
 			if strings.Contains(string(out), "AlreadyExists") || strings.Contains(string(out), "already in use") {
 				fmt.Println("⚠️  Vault already exists. Use '--update' to reconcile it.")
 				return
@@ -164,26 +170,29 @@ var deployCmd = &cobra.Command{
 		}
 
 		// 3. THE HEALTH CHECK PHASE
-		fmt.Println("⏳ Waiting for Vault to initialize...")
+		ui.LogoStep("Waiting for Vault to initialize")
 
 		if err := waitForService("Vault", vaultHealthURL, 30); err != nil {
+			ui.LogoStop()
 			handleDockerFailure(vaultContainer, engine)
 			return
 		}
 
-		fmt.Println("✅ Vault is up and running in Dev mode!")
+		ui.LogoStop()
 		global.RefreshHalHealth(engine)
-		fmt.Printf("   🏗️  Edition: %s\n", strings.ToUpper(vaultEdition))
-		fmt.Printf("   🔗 UI Address: %s\n", vaultPublicURL)
-		fmt.Printf("   🔑 Root Token: %s\n", vaultRootToken)
+		ui.Success("Vault is up and running in Dev mode!")
+		ui.Section("Connection")
+		ui.Field("Edition", strings.ToUpper(vaultEdition))
+		ui.Field("UI", vaultPublicURL)
+		ui.Field("Token", vaultRootToken)
 
 		if vaultJoinConsul {
-			fmt.Println("   🟢 Vault is successfully tethered to the global Consul Control Plane!")
+			ui.Item("🟢 Tethered to the global Consul Control Plane")
 		}
 
-		fmt.Println("\n💡 Tip: Export your environment variables to use your local CLI:")
-		fmt.Printf("   export VAULT_ADDR='%s'\n", vaultPublicURL)
-		fmt.Printf("   export VAULT_TOKEN='%s'\n", vaultRootToken)
+		ui.Section("Use your local CLI")
+		ui.Item("export VAULT_ADDR='%s'", vaultPublicURL)
+		ui.Item("export VAULT_TOKEN='%s'", vaultRootToken)
 	},
 }
 
