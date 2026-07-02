@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -63,13 +64,22 @@ var deployCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Printf(" Deploying Nomad %s via Multipass (Ubuntu VM)...\n", nomadVersion)
+		ui.LogoStart("nomad")
+		defer ui.LogoStop()
+		step := func(cols int, format string, args ...any) {
+			ui.LogoStep(format, args...)
+			ui.LogoAdvance(cols)
+		}
+
+		step(1, "Deploying Nomad %s via Multipass (Ubuntu VM)", nomadVersion)
 
 		// 1. Launch the VM
-		fmt.Println("📦 Provisioning Ubuntu VM (This takes a few seconds)...")
-		launchArgs := []string{"launch", nomadUbuntuImage, "--name", nomadInstance, "--cpus", nomadCPUs, "--mem", nomadMem}
+		ui.LogoStep("Provisioning Ubuntu VM")
+		ui.LogoCreep(3 * time.Second)
+		launchArgs := []string{"launch", nomadUbuntuImage, "--name", nomadInstance, "--cpus", nomadCPUs, "--memory", nomadMem}
 		out, err := exec.Command("multipass", launchArgs...).CombinedOutput()
 		if err != nil {
+			ui.LogoStop()
 			if strings.Contains(string(out), "already exists") {
 				fmt.Println("⚠️  VM 'hal-nomad' already exists. Use '--update' to reconcile it.")
 				return
@@ -79,11 +89,8 @@ var deployCmd = &cobra.Command{
 		}
 
 		// 2. Build the dynamic installation script
-		fmt.Println("🔧 Installing binaries and configuring systemd services...")
-
 		joinConsulStr := "false"
 		if nomadJoinConsul {
-			fmt.Println("   🤝 --join-consul detected! Tethering Nomad to the global HAL Consul...")
 			joinConsulStr = "true"
 		}
 
@@ -120,7 +127,10 @@ var deployCmd = &cobra.Command{
 		`, nomadVersion, nomadVersion, joinConsulStr)
 
 		execArgs := []string{"exec", nomadInstance, "--", "bash", "-c", installScript}
+		ui.LogoStep("Installing Nomad + configuring systemd services")
+		ui.LogoCreep(3 * time.Second)
 		if out, err := exec.Command("multipass", execArgs...).CombinedOutput(); err != nil {
+			ui.LogoStop()
 			fmt.Printf("❌ Failed to configure VM: %v\nOutput: %s\n", err, string(out))
 			return
 		}
@@ -130,17 +140,20 @@ var deployCmd = &cobra.Command{
 		ip := extractMultipassIP(string(ipOut))
 
 		// 4. THE HEALTH CHECK PHASE
-		fmt.Println("⏳ Waiting for Nomad to become healthy...")
+		ui.LogoStep("Waiting for Nomad to become healthy")
+		ui.LogoCreep(3 * time.Second)
 		if err := waitForService("Nomad", fmt.Sprintf("http://%s:%d/v1/status/leader", ip, nomadHTTPPort), 45); err != nil {
+			ui.LogoStop()
 			handleServiceFailure("nomad")
 			return
 		}
 
-		fmt.Println("\n✅ Environment is fully verified and ready!")
-		fmt.Printf("   🔗 Nomad UI:  http://%s:%d\n", ip, nomadHTTPPort)
-
+		ui.LogoStop()
+		ui.Success("Nomad is up and ready!")
+		ui.Section("Endpoints")
+		ui.Field("Nomad UI", fmt.Sprintf("http://%s:%d", ip, nomadHTTPPort))
 		if nomadJoinConsul {
-			fmt.Println("   🟢 Nomad is successfully tethered to the global Consul Control Plane!")
+			ui.Item("🟢 Tethered to the global Consul Control Plane")
 		}
 	},
 }

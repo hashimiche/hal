@@ -6,6 +6,7 @@ import (
 
 	"hal/internal/global"
 	"hal/internal/integrations"
+	"hal/internal/ui"
 
 	vault "github.com/hashicorp/vault/api"
 	"github.com/spf13/cobra"
@@ -44,6 +45,12 @@ Actions:
 Demo users created in Authentik:
   alice / password  → group: admin  → Vault policy: admin (all paths)
   bob   / password  → group: user-ro → Vault policy: user-ro (kv-oidc/team1 read)
+
+Authentik admin (for managing the IdP itself):
+  Admin UI : http://authentik.localhost:9100/if/admin/
+  Username : akadmin
+  Password : run 'hal vault oidc status' or 'hal creds status' to reveal it
+  Reset    : docker exec hal-authentik-server ak changepassword akadmin
 
 Flags:
   --scim   [Vault Enterprise] Also wire SCIM provisioning from Authentik to Vault
@@ -170,6 +177,20 @@ func runOIDCStatus(engine string, client *vault.Client, vaultErr error) {
 	fmt.Printf("  %s Vault KV sandbox  : %s/\n", icon(kvMounted), oidcKVMount)
 	fmt.Println()
 
+	// Authentik admin reference — useful for managing the IdP itself.
+	// The demo logins (alice/bob) belong to the enable summary; this block is
+	// the operator-facing admin reference and also lives in 'hal creds status'.
+	fmt.Println("🔑 Authentik admin (manage the IdP):")
+	fmt.Printf("   Admin UI : %s/if/admin/\n", integrations.AuthentikAdminURL())
+	fmt.Println("   Username : akadmin")
+	if pw := integrations.LoadAuthentikAdminPassword(); pw != "" {
+		fmt.Printf("   Password : %s\n", pw)
+	} else {
+		fmt.Printf("   Password : (see %s)\n", integrations.AuthentikEnvPath())
+	}
+	fmt.Println("   Reset    : docker exec hal-authentik-server ak changepassword akadmin")
+	fmt.Println()
+
 	fmt.Println("💡 Next Step:")
 	akt := integrations.IsAuthentikRunning(engine)
 	switch {
@@ -177,7 +198,6 @@ func runOIDCStatus(engine string, client *vault.Client, vaultErr error) {
 		fmt.Println("   hal vault oidc enable")
 	case akt && authMounted:
 		fmt.Println("   vault login -method=oidc")
-		fmt.Printf("   Authentik UI: %s/if/admin/\n", integrations.AuthentikAdminURL())
 	default:
 		fmt.Println("   Environment partially degraded — run: hal vault oidc update")
 	}
@@ -196,8 +216,7 @@ func runOIDCEnable(engine string, client *vault.Client, vaultErr error) {
 		return
 	}
 
-	fmt.Println("🔐 hal vault oidc — deploying Authentik IdP + Vault OIDC")
-	fmt.Println()
+	ui.Title("hal vault oidc — deploying Authentik IdP + Vault OIDC")
 
 	// 1. Load or generate Authentik secrets
 	secrets, err := integrations.LoadOrCreateAuthentikSecrets()
@@ -206,19 +225,23 @@ func runOIDCEnable(engine string, client *vault.Client, vaultErr error) {
 		return
 	}
 
+	ui.Start()
+	fail := func(format string, args ...any) {
+		ui.Fail(format, args...)
+	}
+
 	// 2. Start Authentik if not already up
 	firstBoot := false
 	if integrations.IsAuthentikRunning(engine) {
-		fmt.Println("  ✅ Authentik stack already running — skipping start")
+		ui.Step("Authentik stack already running — skipping start")
 	} else {
 		firstBoot = true
-		fmt.Println("  Starting Authentik stack...")
 		if err := integrations.StartAuthentikStack(engine, oidcAuthentikImage, oidcAuthentikTag, secrets); err != nil {
-			fmt.Printf("❌ %v\n", err)
+			fail("%v", err)
 			return
 		}
 		if err := integrations.WaitAuthentikHealthy(); err != nil {
-			fmt.Printf("❌ %v\n", err)
+			fail("%v", err)
 			return
 		}
 	}
@@ -228,7 +251,7 @@ func runOIDCEnable(engine string, client *vault.Client, vaultErr error) {
 	// if the server health check passed — and on a re-provision (update) the
 	// container is already running but we still need a valid token.
 	if err := integrations.WaitAuthentikTokenReady(secrets.BootstrapToken); err != nil {
-		fmt.Printf("❌ %v\n", err)
+		fail("%v", err)
 		return
 	}
 
@@ -236,60 +259,60 @@ func runOIDCEnable(engine string, client *vault.Client, vaultErr error) {
 		// On first boot Authentik seeds default scope mappings asynchronously
 		// after the token becomes usable — wait for them before provisioning.
 		if err := integrations.WaitAuthentikScopesReady(secrets.BootstrapToken); err != nil {
-			fmt.Printf("❌ %v\n", err)
+			fail("%v", err)
 			return
 		}
 		if err := integrations.WaitAuthentikFlowsReady(secrets.BootstrapToken); err != nil {
-			fmt.Printf("❌ %v\n", err)
+			fail("%v", err)
 			return
 		}
-	}
-
-	if firstBoot {
-		printAuthentikCredentials(secrets)
 	}
 
 	// 3. Register this product as a consumer
 	if err := global.AddSharedServiceConsumer(integrations.AuthentikSharedServiceKey, oidcSharedServiceKey); err != nil {
-		fmt.Printf("⚠️  Could not register shared service consumer: %v\n", err)
+		ui.Step("⚠️  Could not register shared service consumer: %v", err)
 	}
 
 	// 4. Provision Authentik: groups, users, OAuth2 provider, application
-	fmt.Println("  ⚙️  Provisioning Authentik (users, groups, OAuth2 provider, application)...")
+	ui.Step("Provisioning Authentik (users, groups, OAuth2 provider, application)")
 	aktClient := integrations.NewAuthentikClient(secrets.BootstrapToken)
 	clientID, clientSecret, err := provisionAuthentikForVault(aktClient)
 	if err != nil {
-		fmt.Printf("❌ Authentik provisioning failed: %v\n", err)
+		fail("Authentik provisioning failed: %v", err)
 		return
 	}
 
 	// 5. Verify Vault container can reach the discovery URL
 	issuer := integrations.AuthentikOIDCIssuer(authentikVaultSlug)
-	fmt.Println("  ⏳ Verifying Vault can reach Authentik OIDC discovery URL...")
+	ui.Step("Verifying Vault can reach Authentik OIDC discovery URL")
 	if err := integrations.WaitVaultVisibleAuthentik(engine, issuer); err != nil {
-		fmt.Printf("❌ %v\n", err)
+		fail("%v", err)
 		return
 	}
 
 	// 6. Configure Vault OIDC
-	fmt.Println("  ⚙️  Configuring Vault OIDC auth, policies, and identity groups...")
+	ui.Step("Configuring Vault OIDC auth, policies, and identity groups")
 	if err := configureVaultOIDC(client, issuer, clientID, clientSecret); err != nil {
-		fmt.Printf("❌ %v\n", err)
+		fail("%v", err)
 		return
 	}
 
 	// 7. SCIM provisioning (Vault Enterprise + Authentik outbound sync)
 	if oidcWithSCIM {
-		fmt.Println()
-		fmt.Println("🔗 Configuring SCIM provisioning (Authentik → Vault)...")
+		ui.Step("Configuring SCIM provisioning (Authentik → Vault)")
 		if err := configureSCIM(client, aktClient, authentikVaultSlug); err != nil {
+			ui.Stop()
 			fmt.Printf("❌ SCIM setup failed: %v\n", err)
 			fmt.Println("   OIDC is still active. Fix the error and re-run with --scim to retry.")
+			global.RefreshHalHealth(engine)
+			printOIDCSuccess()
+			return
 		}
 	}
 
 	global.RefreshHalHealth(engine)
-	printOIDCSuccess(secrets)
+	ui.Stop()
+	printOIDCSuccess()
 }
 
 // ─── disable ──────────────────────────────────────────────────────────────────
@@ -501,31 +524,18 @@ func setupExternalGroup(client *vault.Client, groupName, accessor string, polici
 	})
 }
 
-func printAuthentikCredentials(secrets *integrations.AuthentikSecrets) {
-	fmt.Println()
-	fmt.Println("  🔑 Authentik — first boot credentials")
-	fmt.Printf("     Admin UI  : %s/if/admin/\n", integrations.AuthentikAdminURL())
-	fmt.Println("     Username  : akadmin")
-	fmt.Printf("     Password  : %s\n", secrets.AdminPassword)
-	fmt.Printf("     Saved at  : %s\n", integrations.AuthentikEnvPath())
-	fmt.Println()
-	fmt.Println("     To reset: docker exec hal-authentik-server ak changepassword akadmin")
-	fmt.Println()
-}
+func printOIDCSuccess() {
+	ui.Success("Vault OIDC + Authentik IdP ready!")
 
-func printOIDCSuccess(secrets *integrations.AuthentikSecrets) {
-	fmt.Println()
-	fmt.Println("✅ Vault OIDC + Authentik IdP ready!")
-	fmt.Println()
-	fmt.Printf("  UI login   : %s  (select 'OIDC', leave role blank)\n", vaultPublicURL)
-	fmt.Println("  CLI login  : vault login -method=oidc")
-	fmt.Println()
-	fmt.Println("  Demo users:")
-	fmt.Println("    alice / password  →  admin policy (full access)")
-	fmt.Println("    bob   / password  →  user-ro policy (kv-oidc/team1 read)")
-	fmt.Println()
-	fmt.Printf("  Authentik admin  : %s/if/admin/\n", integrations.AuthentikAdminURL())
-	fmt.Printf("  Authentik login  : akadmin / %s\n", secrets.AdminPassword)
+	ui.Section("Sign in to Vault")
+	ui.Field("UI login", fmt.Sprintf("%s  (select 'OIDC', leave role blank)", vaultPublicURL))
+	ui.Field("CLI login", "vault login -method=oidc")
+
+	ui.Section("Demo users")
+	ui.Item("alice / password  →  admin policy (full access)")
+	ui.Item("bob   / password  →  user-ro policy (kv-oidc/team1 read)")
+
+	ui.Hint("Authentik admin credentials: hal creds status  (or: hal vault oidc status)")
 }
 
 func init() {

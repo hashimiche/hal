@@ -103,7 +103,7 @@ var sshCmd = &cobra.Command{
 			_ = exec.Command("multipass", "delete", boundarySSHInstance).Run()
 			_ = exec.Command("multipass", "purge").Run()
 
-			vmArgs := []string{"launch", sshUbuntuImage, "--name", boundarySSHInstance, "--cpus", sshVMCPUs, "--mem", sshVMMem}
+			vmArgs := []string{"launch", sshUbuntuImage, "--name", boundarySSHInstance, "--cpus", sshVMCPUs, "--memory", sshVMMem}
 			_, vmErr := exec.Command("multipass", vmArgs...).CombinedOutput()
 
 			if vmErr == nil {

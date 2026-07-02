@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -38,16 +39,24 @@ var deployCmd = &cobra.Command{
 			return
 		}
 
+		ui.LogoStart("boundary")
+		defer ui.LogoStop()
+		step := func(cols int, format string, args ...any) {
+			ui.LogoStep(format, args...)
+			ui.LogoAdvance(cols)
+		}
+
 		if boundaryUpdate {
-			fmt.Println("♻️  Update requested. Reconciling existing Boundary Control Plane...")
+			step(1, "Reconciling existing Boundary Control Plane (update)")
 			_ = exec.Command(engine, "rm", "-f", boundaryContainer, boundaryBackendContainer).Run()
 		}
 
-		fmt.Printf("🚀 Deploying Boundary %s (with Postgres %s) via %s...\n", boundaryVersion, pgVersion, engine)
+		step(1, "Deploying Boundary %s (Postgres %s)", boundaryVersion, pgVersion)
 
 		global.EnsureNetwork(engine)
 
-		fmt.Printf("⚙️  Provisioning Boundary Control Plane Database (%s:%s)...\n", pgImage, pgVersion)
+		ui.LogoStep("Provisioning Control Plane database")
+		ui.LogoCreep(2 * time.Second)
 		backendArgs := []string{
 			"run", "-d",
 			"--name", boundaryBackendContainer,
@@ -59,6 +68,7 @@ var deployCmd = &cobra.Command{
 		}
 
 		if global.DryRun {
+			ui.LogoStop()
 			fmt.Printf("[DRY RUN] Would execute: %s %s\n", engine, strings.Join(backendArgs, " "))
 			return
 		}
@@ -66,7 +76,7 @@ var deployCmd = &cobra.Command{
 		_ = exec.Command(engine, backendArgs...).Run()
 		time.Sleep(3 * time.Second)
 
-		fmt.Println("⚙️  Booting Boundary Controller & Worker...")
+		step(2, "Booting Boundary Controller & Worker")
 		boundaryArgs := []string{
 			"run", "-d",
 			"--name", boundaryContainer,
@@ -77,7 +87,6 @@ var deployCmd = &cobra.Command{
 		}
 
 		if boundaryJoinConsul {
-			fmt.Println("   🤝 --join-consul detected! Tethering Boundary to the global HAL Consul...")
 			boundaryArgs = append(boundaryArgs, "-e", "CONSUL_HTTP_ADDR=http://hal-consul:8500")
 		}
 
@@ -91,6 +100,7 @@ var deployCmd = &cobra.Command{
 
 		out, err := exec.Command(engine, boundaryArgs...).CombinedOutput()
 		if err != nil {
+			ui.LogoStop()
 			if strings.Contains(string(out), "AlreadyExists") || strings.Contains(string(out), "already in use") {
 				fmt.Println("⚠️  Boundary already exists. Use '--update' to reconcile it.")
 				return
@@ -99,27 +109,28 @@ var deployCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println("⏳ Waiting for Boundary to initialize (this can take 10-15 seconds)...")
+		ui.LogoStep("Waiting for Boundary to initialize")
+		ui.LogoCreep(2 * time.Second)
 
 		if err := waitForService("Boundary", boundaryLocalAPIURL, 30); err != nil {
+			ui.LogoStop()
 			handleDockerFailure(boundaryContainer, engine)
 			return
 		}
 
-		fmt.Println()
-		fmt.Println("✅ Boundary Controller & Worker are up!")
+		ui.LogoStop()
 		global.RefreshHalHealth(engine)
-		fmt.Println("---------------------------------------------------------")
-		fmt.Printf("   🔗 UI Address: %s\n", boundaryUIURL)
-		fmt.Printf("   👤 Login:      %s / %s\n", boundaryAdminUsername, boundaryAdminPassword)
+		ui.Success("Boundary Controller & Worker are up!")
+		ui.Section("Access")
+		ui.Field("UI", boundaryUIURL)
+		ui.Field("Login", fmt.Sprintf("%s / %s", boundaryAdminUsername, boundaryAdminPassword))
 		if boundaryJoinConsul {
-			fmt.Println("   🟢 Tethered:   Global Consul Control Plane")
+			ui.Item("🟢 Tethered to the global Consul Control Plane")
 		}
-		fmt.Println("---------------------------------------------------------")
-		fmt.Println("💡 Next Step: Deploy some targets to connect to!")
-		fmt.Println("   hal boundary mariadb enable")
-		fmt.Println("   hal boundary mariadb enable --with-vault (for dynamic credentials, Vault must be running)")
-		fmt.Println("   hal boundary ssh enable")
+		ui.Section("Next: add targets")
+		ui.Item("hal boundary mariadb enable")
+		ui.Item("hal boundary mariadb enable --with-vault  (dynamic creds; Vault must be running)")
+		ui.Item("hal boundary ssh enable")
 	},
 }
 
