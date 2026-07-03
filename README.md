@@ -137,7 +137,12 @@ hal vault oidc disable
 # JWT auth method (deploys GitLab CE as the OIDC provider)
 hal vault jwt enable --vault-gitlab-tag 18.10.1-ce.0
 
-# Database secrets engine
+# AAP JWT/OIDC org-mapped auth setup (starts AAP container + configures OIDC)
+hal vault aap enable
+hal vault aap update
+hal vault aap disable
+
+# Database secrets engine (MariaDB backend — only supported backend today)
 hal vault database enable --backend mariadb --vault-mariadb-tag 11.4
 hal vault database enable --backend oracle \
   --oracle-plugin-path /path/to/vault-plugin-database-oracle   # Enterprise only — see docs/vault-oracle-plugin-build.md
@@ -223,6 +228,17 @@ hal consul delete
 hal consul obs create
 hal consul obs status
 hal consul obs delete
+```
+
+---
+
+### AAP + Vault OIDC/SSH (`hal vault aap`)
+
+```bash
+hal vault create
+hal vault aap enable
+hal vault aap update
+hal vault aap disable
 ```
 
 ---

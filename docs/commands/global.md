@@ -17,7 +17,7 @@ This file covers the root `hal` command, persistent flags, and global commands t
 ## Global Commands
 - `hal status`
   - Purpose: global multi-product status summary
-  - Behavior: reports deployment state for Vault, Boundary, Consul, Nomad, TFE, and Observability
+  - Behavior: reports deployment state for AAP, Vault, Boundary, Consul, Nomad, TFE, and Observability
   - Spec: [global-status.md](global-status.md)
 
 - `hal capacity`
