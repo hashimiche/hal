@@ -36,6 +36,15 @@ func TestRequiredOpsToolsRegistered(t *testing.T) {
 		"get_capabilities",
 		"hal_policy_profile",
 		"validate_command",
+		"get_boundary_ssh_status",
+		"get_tfe_agent_status",
+		"get_tfe_twin_status",
+		"get_tfe_saml_status",
+		"get_vault_userpass_status",
+		"get_vault_os_status",
+		"get_product_obs_status",
+		"get_plus_status",
+		"get_version",
 	}
 	tools := mcpOpsTools()
 	seen := map[string]bool{}
@@ -73,6 +82,15 @@ func TestOpsResponsesContainContractFields(t *testing.T) {
 		{name: "get_capabilities", args: map[string]interface{}{}},
 		{name: "hal_policy_profile", args: map[string]interface{}{}},
 		{name: "validate_command", args: map[string]interface{}{"command": "hal vault status"}},
+		{name: "get_boundary_ssh_status", args: map[string]interface{}{}},
+		{name: "get_tfe_agent_status", args: map[string]interface{}{}},
+		{name: "get_tfe_twin_status", args: map[string]interface{}{}},
+		{name: "get_tfe_saml_status", args: map[string]interface{}{}},
+		{name: "get_vault_userpass_status", args: map[string]interface{}{}},
+		{name: "get_vault_os_status", args: map[string]interface{}{}},
+		{name: "get_product_obs_status", args: map[string]interface{}{"product": "vault"}},
+		{name: "get_plus_status", args: map[string]interface{}{}},
+		{name: "get_version", args: map[string]interface{}{}},
 	}
 
 	for _, tc := range invocations {
@@ -223,5 +241,40 @@ func TestInvalidArgsReturnErrorAndRecoveryCommands(t *testing.T) {
 		if len(payload.RecommendedCommands) == 0 {
 			t.Fatalf("expected recovery commands for %s", tc.name)
 		}
+	}
+}
+
+func TestValidateCommandReflectsCurrentSurface(t *testing.T) {
+	valid := []string{
+		"hal terraform api-workflow", "hal terraform vcs-workflow", "hal terraform twin",
+		"hal terraform saml", "hal terraform agent", "hal terraform obs",
+		"hal terraform workspace", "hal terraform api",
+		"hal vault pki", "hal vault userpass", "hal vault os", "hal vault obs", "hal vault db",
+		"hal boundary ssh", "hal boundary obs", "hal consul obs", "hal nomad obs",
+		"hal plus status", "hal health create", "hal creds status",
+	}
+	for _, c := range valid {
+		res := validateCommand(c)
+		if ok, _ := res["valid"].(bool); !ok {
+			t.Fatalf("expected %q to be valid against current surface", c)
+		}
+	}
+
+	invalid := []string{"hal terraform cli", "hal vault bogus", "hal boundary nope"}
+	for _, c := range invalid {
+		res := validateCommand(c)
+		if ok, _ := res["valid"].(bool); ok {
+			t.Fatalf("expected %q to be rejected", c)
+		}
+	}
+}
+
+func TestProductObsStatusRejectsUnknownProduct(t *testing.T) {
+	res, handled := handleOpsTool("get_product_obs_status", map[string]interface{}{"product": "bogus"})
+	if !handled {
+		t.Fatalf("get_product_obs_status not handled")
+	}
+	if !res.IsError {
+		t.Fatalf("expected error for unknown obs product")
 	}
 }
