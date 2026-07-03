@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"hal/cmd/aap"
 	"hal/cmd/boundary"
 	"hal/cmd/consul"
 	"hal/cmd/creds"
@@ -50,7 +49,6 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&ui.Verbose, "verbose", "", false, "Show every sub-step instead of a single collapsing progress line")
 	rootCmd.PersistentFlags().StringVar(&global.HalNetSubnet, "network-subnet", "", "Subnet for the hal-net Docker network on first creation (e.g. 10.89.3.0/24)")
 
-	rootCmd.AddCommand(aap.Cmd)
 	rootCmd.AddCommand(vault.Cmd)
 	rootCmd.AddCommand(nomad.Cmd)
 	rootCmd.AddCommand(boundary.Cmd)
