@@ -21,7 +21,7 @@ Deploy MariaDB and configure Vault dynamic database credentials workflow.
       --mariadb-version string   Version of the MariaDB container image to deploy (default "11.4")
 -u, --update                    Reconcile selected backend and Vault database configuration
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

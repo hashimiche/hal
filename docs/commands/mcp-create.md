@@ -20,7 +20,7 @@ Create or replace the HAL MCP client scaffold configuration and, when enabled, t
 -h, --help                 help for create
 --json                 Only generate/replace MCP config JSON (skip managed binary provisioning)
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - Rewrites `~/.hal/mcp/hal-mcp.json`.

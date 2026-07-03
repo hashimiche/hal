@@ -21,7 +21,7 @@ Deploy a MariaDB database target for Boundary labs.
 -u, --update                   Reconcile MariaDB target and Boundary target configuration
 --with-vault               Link with Vault Dynamic Creds
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

@@ -20,7 +20,7 @@ Display local runtime capacity and what-if deployment estimates.
 -h, --help       help for capacity
 --pending    Show pending heavy deployment impact estimates
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

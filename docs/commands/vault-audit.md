@@ -22,7 +22,7 @@ Manage and inspect Vault audit logging state in local lab environments.
 -t, --type string   Type of audit device (file, socket, syslog) (default "file")
 -u, --update        Reconcile the audit configuration (disable then enable)
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

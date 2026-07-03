@@ -42,7 +42,7 @@ Build and run the ephemeral Terraform/TFX API helper shell for local TFE workflo
 -h, --help            help for api-workflow
 -t, --target string   Terraform scope to act on: primary or twin (default "primary")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 Advanced helper and twin-tuning flags remain available but are intentionally hidden from default help to keep the command surface concise.
 

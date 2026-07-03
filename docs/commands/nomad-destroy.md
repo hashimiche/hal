@@ -17,7 +17,7 @@ Destroy local Nomad VM resources provisioned by HAL.
 ```text
 -h, --help   help for destroy
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

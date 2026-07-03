@@ -35,4 +35,4 @@ A: This cleans Vault OIDC mounts and policies, removes the Authentik application
 
 User: What is the Authentik admin password?
 
-A: The admin username is `akadmin`. The password was printed on first `hal vault oidc enable` and is stored in `~/.hal/authentik/env` under `AUTHENTIK_BOOTSTRAP_PASSWORD`. Access the UI at `http://authentik.localhost:9100/if/admin/`.
+A: The admin username is `akadmin`. Reveal the password with `hal vault oidc status` or `hal creds status`; it is also stored in `~/.hal/authentik/env` under `AUTHENTIK_BOOTSTRAP_PASSWORD`. Access the UI at `http://authentik.localhost:9100/if/admin/`. Reset it with `docker exec hal-authentik-server ak changepassword akadmin`.

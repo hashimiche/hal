@@ -17,7 +17,7 @@ Submit sample jobs/workloads to the local Nomad deployment.
 ```text
 -h, --help   help for job
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

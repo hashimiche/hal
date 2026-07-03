@@ -17,7 +17,7 @@ Print HAL CLI version information.
 ```text
 -h, --help   help for version
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

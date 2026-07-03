@@ -21,7 +21,7 @@ Deploy OpenLDAP and configure Vault LDAP auth and related secrets integrations.
 --phpldapadmin-version string   phpLDAPadmin image tag for the LDAP demo UI (default "0.9.0")
 -u, --update                        Reconcile OpenLDAP and Vault LDAP integration
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

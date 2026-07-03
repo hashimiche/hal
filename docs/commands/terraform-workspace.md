@@ -26,7 +26,7 @@ Configure a Terraform VCS-driven workflow lab with shared GitLab reuse and targe
 -h, --help        help for vcs-workflow
 -t, --target string Terraform scope to act on: primary, twin, or both (default "primary")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 Advanced VCS and GitLab tuning flags remain available but are intentionally hidden from default help to keep the command surface concise.
 

@@ -24,7 +24,7 @@ Run the HAL MCP stdio server for an MCP client such as `hal-plus`.
 -h, --help               help for serve
 --transport string       MCP transport to use (stdio for MVP) (default "stdio")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command serves framed JSON-RPC messages over stdio. It does not create or update the MCP config file.

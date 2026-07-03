@@ -20,7 +20,7 @@ Deploy a standalone local Consul server for labs/testing.
 -h, --help             help for deploy
 -v, --version string   Consul version to deploy (default "1.15.0")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 Observability artifacts are now managed explicitly with `hal consul obs <create|update|delete|status>`.
 

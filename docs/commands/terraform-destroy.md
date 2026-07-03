@@ -28,7 +28,7 @@ Tear down the local Terraform Enterprise stack and related local state for a cle
 -h, --help          help for delete
 -t, --target string Terraform scope to act on: primary, twin, or both (default "primary")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

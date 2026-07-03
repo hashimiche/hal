@@ -22,7 +22,7 @@ Deploy a Multipass Ubuntu VM as a Boundary SSH target.
 -u, --update                Reconcile SSH target VM and Boundary target wiring
 --ubuntu-image string   Multipass image/channel used for the SSH target VM (default "22.04")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

@@ -23,7 +23,7 @@ Deploy Prometheus, Loki, Grafana, and Promtail stack components.
 --prom-version string       Tag for the prom/prometheus image (default "main")
 --promtail-version string   Tag for the grafana/promtail image (default "3.6")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

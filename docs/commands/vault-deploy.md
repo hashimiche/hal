@@ -23,7 +23,7 @@ Deploy a local Vault instance and baseline configuration for HAL labs.
 -c, --join-consul           Tether Vault to the global HAL Consul instance
 -v, --version string        Vault version to deploy (default "2.0")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 Observability artifacts are now managed explicitly with `hal vault obs <create|update|delete|status>`.
 

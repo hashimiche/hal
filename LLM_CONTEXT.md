@@ -34,7 +34,7 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 - Keep user-facing output short, state-oriented, and action-oriented.
 - **Standardized installer-style output (`internal/ui`)**: long-running create/enable flows should use the shared `ui` package instead of ad-hoc `fmt.Println` + emoji.
   - `ui.Title(...)` prints a persistent header. `ui.Start()` begins a progress flow; each `ui.Step(...)` overwrites the previous line with an animated Braille spinner (single updating line, like a software installer). `ui.Stop()`/`ui.Fail(...)` end the flow.
-  - Non-TTY (piped/MCP) degrades automatically to one plain `→ step` line each; the global `--verbose`/`-v` flag forces the same per-step lines on a TTY.
+  - Non-TTY (piped/MCP) degrades automatically to one plain `→ step` line each; the global `--verbose` flag forces the same per-step lines on a TTY.
   - The "command is done" block uses `ui.Success`/`ui.Section`/`ui.Field`/`ui.Item`/`ui.Hint` for a consistent summary across products.
   - **Credential placement rule**: command output shows credentials with immediate demo value (e.g. Vault OIDC `alice`/`bob`); operator/admin credentials (e.g. Authentik `akadmin`) live in `hal creds status` and the product's `status`/`-h`, not in the enable summary.
   - **Pilot**: `hal vault oidc enable/status` is the reference implementation; the Authentik integration (`internal/integrations/authentik.go`) routes its start/wait substeps through `ui.Step`. Roll the same pattern out to other products after review.
