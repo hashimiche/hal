@@ -35,7 +35,7 @@ With `--scim`, also wire Authentik outbound SCIM to provision users and teams in
 -e, --enable                      Start Authentik and configure TFE SAML SSO
 -d, --disable                     Remove TFE SAML and tear down Authentik if unused
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Lifecycle Actions
 

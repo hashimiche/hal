@@ -43,7 +43,7 @@ Each cleanup step reports one of three statuses:
     --auto-approve   Skip confirmation prompt
 -h, --help           help for delete
 ```
-Global flags: `--debug`, `--dry-run`, `--network-subnet`
+Global flags: `--debug`, `--dry-run`, `--verbose`, `--network-subnet`
 
 ## Example
 ```bash

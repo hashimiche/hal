@@ -11,6 +11,8 @@ This file covers the root `hal` command, persistent flags, and global commands t
 ## Persistent Flags
 - `--debug`: enable debug logging through global runtime state
 - `--dry-run`: simulate execution with no state mutation
+- `--verbose`: show every sub-step as its own line instead of the single collapsing progress line
+- `--network-subnet <cidr>`: pin the `hal-net` subnet on first creation only (e.g. `10.89.3.0/24`)
 
 ## Global Commands
 - `hal status`

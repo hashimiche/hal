@@ -24,7 +24,7 @@ If a PID file points to a running process, HAL also attempts a best-effort `SIGT
 ```text
 -h, --help   help for delete
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - Removes HAL-managed MCP local artifacts.

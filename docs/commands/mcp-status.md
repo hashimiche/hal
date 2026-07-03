@@ -23,7 +23,7 @@ Display HAL MCP readiness and scaffold/config state.
 ```text
 -h, --help   help for status
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - None. This is a read-only inspection command.

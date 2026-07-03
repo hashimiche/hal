@@ -22,7 +22,7 @@ Deploy the local Boundary control plane and required services.
 --pg-version string   PostgreSQL version for Boundary backend (default "16")
 -v, --version string      Boundary version to deploy (default "0.15.2")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 Observability artifacts are now managed explicitly with `hal boundary obs <create|update|delete|status>`.
 

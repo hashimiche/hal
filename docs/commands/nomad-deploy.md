@@ -24,7 +24,7 @@ Deploy local Nomad cluster resources via Multipass.
 --ubuntu-image string   Multipass image/channel used for the Nomad VM (default "22.04")
 -v, --version string        Nomad version to install (default "1.11.3")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 Observability artifacts are now managed explicitly with `hal nomad obs <create|update|delete|status>`.
 

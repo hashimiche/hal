@@ -26,7 +26,7 @@ With `--scim` (Vault Enterprise only), also wire Authentik outbound SCIM to prov
 -e, --enable                      Start Authentik and configure Vault OIDC
 -d, --disable                     Remove Vault OIDC and tear down Authentik if unused
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Lifecycle Actions
 

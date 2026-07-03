@@ -26,7 +26,7 @@ Display health and readiness of the local Terraform Enterprise deployment.
 -h, --help          help for status
 -t, --target string Terraform scope to act on: primary, twin, or both (default "primary")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

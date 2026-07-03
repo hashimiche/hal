@@ -20,7 +20,7 @@ Simulate enterprise Secret Zero CI/CD pipeline auth flow with GitLab JWT.
 --gitlab-version string   Version of the GitLab CE container image to deploy (default "18.10.1-ce.0")
 -h, --help                    help for jwt
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

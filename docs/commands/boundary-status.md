@@ -20,7 +20,7 @@ Show health and connectivity status for Boundary and targets.
 ```text
 -h, --help   help for status
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.

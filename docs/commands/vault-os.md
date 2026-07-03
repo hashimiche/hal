@@ -22,7 +22,7 @@ Deploy an Ubuntu VM via Multipass and configure Vault's OS secret engine to mana
       --vm-mem string         Amount of RAM for the VM (default "1G")
   -h, --help                  help for os
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - Creates a Multipass VM named `hal-vault-os`

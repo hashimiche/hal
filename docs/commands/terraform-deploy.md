@@ -59,7 +59,7 @@ Deploy the local Terraform Enterprise (TFE) stack for HAL labs.
 --twin-version string               Terraform Enterprise Docker image tag for the twin instance (default "1.2.0")
 -v, --version string               Terraform Enterprise Docker image tag (default "1.2.0")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 Observability artifacts are managed explicitly with `hal terraform obs <create|update|delete|status>`.
 

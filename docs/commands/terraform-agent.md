@@ -34,7 +34,7 @@ Manage custom TFE agent-pool runtime for local workspace runs.
 -h, --help            help for agent
 -t, --target string   Terraform scope to act on: primary, twin, or both (default "primary")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 Advanced agent tuning flags remain available but are intentionally hidden from default help to keep the command surface concise.
 

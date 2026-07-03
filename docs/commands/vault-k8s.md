@@ -25,7 +25,7 @@ Deploy KinD and Vault Secrets Operator scenario for Kubernetes integration labs.
 --web-backend-image string   Demo backend container image (default "httpd:2.4-alpine")
 --web-proxy-image string     Demo reverse proxy container image (default "nginx:alpine")
 ```
-- Global flags: `--debug`, `--dry-run`
+- Global flags: `--debug`, `--dry-run`, `--verbose`
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.
