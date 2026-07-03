@@ -49,7 +49,7 @@
 
 - `hal vault aap`
   - Manage Vault integration flows for local AAP
-  - Subcommands: `oidc`
+  - Subcommands: `enabled`, `oidc`
   - Spec: [vault-aap.md](vault-aap.md)
 
 - `hal vault os`

@@ -66,10 +66,10 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 
 ## Product Notes
 
-- AAP product lifecycle is managed via `hal aap create|update|status|delete`.
+- AAP lifecycle and Vault OIDC/SSH integration is managed via `hal vault aap enable|update|disable` (status is the default when no subcommand is given).
     - Default image is `ubi9-aap` and runs as container `hal-aap` on `hal-net`.
     - HTTPS is published locally on host port `443` by default (`https://aap.localhost`).
-    - Use `--host-port` on `hal aap create` if port 443 is already in use.
+    - Use `--host-port` on `hal vault aap enable` if port 443 is already in use.
 - Boundary target setup has version-sensitive API behavior around auth methods, grant strings, target host-source actions, and brokered credential source attachment.
 - HAL MCP command namespace (`hal mcp`) supports two transports:
     - **stdio** (default, local/dev): `hal mcp serve` — spawned directly by HAL Plus; protocol `2024-11-05`.
@@ -185,9 +185,15 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - **`update` pattern**: calls `cleanTFESAML` + `clearOldTFESAMLCert`, deletes Authentik application + SAML/SCIM providers, then falls through to the enable path.
     - **Implementation files**: `cmd/terraform/saml.go`, `cmd/terraform/saml_scim.go`, `internal/integrations/authentik.go` (SAML/proxy methods appended).
 - `hal vault aap` manages local AAP-specific Vault integration flows.
-    - **Command**: `hal vault aap oidc enable|disable|update|status`.
-    - **Vault objects**: `auth/jwt-aap/config`, policies `aap-development-policy` and `aap-production-policy`, roles `aap-development-role` and `aap-production-role` at `auth/jwt-aap/role/...`.
+    - **Command**: `hal vault aap [enable|disable|update|status]`. The `enable` action starts the AAP container if not already running, configures Vault JWT auth for AAP OIDC, enables the Vault SSH secrets engine, starts a `hal-ssh-target` demo container, and provisions per-environment SSH credentials in AAP.
+    - **Vault JWT objects**: `auth/jwt-aap/config`, policies `aap-development-policy` and `aap-production-policy`, roles `aap-development-role` and `aap-production-role` at `auth/jwt-aap/role/...`.
+    - **Vault SSH objects**: `ssh/` secrets engine, CA at `ssh/config/ca`, policy `ssh-signer`, SSH signing role `ssh-signer-role` at `ssh/roles/ssh-signer-role`, JWT roles `aap-ssh-dev-role` and `aap-ssh-prod-role` at `auth/jwt-aap/role/...`.
+    - **SSH target container**: `hal-ssh-target` (UBI9, hostname `ssh-target.demo.local`, on `hal-net`). Hosts sshd with Vault CA public key in `TrustedUserCAKeys` so Vault-signed certificates for `rhel` are accepted.
+    - **AAP SSH credentials**: per-environment `Vault Signed SSH Credential - <Label>` (HashiCorp Vault Signed SSH OIDC type) and `<Label> SSH Credential` (Machine type), linked via a `signed_key` credential input source. An ephemeral RSA-4096 key pair is generated in-process; the private key is stored only in AAP.
+    - **AAP SSH Target Inventory**: `"SSH Target Inventory"` with a `hal-ssh-target` host entry. KV Demo job templates use this inventory and carry both the KV credential and the SSH Machine Credential.
     - **Seeded data**: `secret/data/development` and `secret/data/production`.
+    - **`disable`** tears down SSH credentials, OIDC resources, the Vault SSH engine, `hal-ssh-target`, and `hal-aap`.
+    - **Flags**: `--ssh-target-image` (default `ubi9`) and `--ssh-target-tag` (default `latest`) override the SSH target container image.
 - Shared runtime helpers live under `internal/global`, especially engine detection and network management.
 - Engine resource advisory helpers live under `internal/global`; reuse them instead of open-coding engine-specific capacity checks in individual commands.
 - Vault k8s demo (`hal vault k8s`) now supports two explicit demo modes behind the same nginx endpoint (`http://web.localhost:8088`):

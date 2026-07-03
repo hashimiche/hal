@@ -12,10 +12,6 @@ This index maps the HAL command tree to one spec file per command area.
 - [Global daisy](global-daisy.md)
 
 ## Product Namespaces
-- [AAP](aap.md)
-- [AAP deploy](aap-deploy.md)
-- [AAP status](aap-status.md)
-- [AAP destroy](aap-destroy.md)
 - [Vault](vault.md)
 - [Vault deploy](vault-deploy.md)
 - [Vault status](vault-status.md)
@@ -67,7 +63,6 @@ This index maps the HAL command tree to one spec file per command area.
 
 ## Command Defaults
 When called without a subcommand, namespaces default to status-style behavior:
-- `hal aap` -> `hal aap status`
 - `hal vault` -> `hal vault status`
 - `hal boundary` -> `hal boundary status`
 - `hal consul` -> `hal consul status`

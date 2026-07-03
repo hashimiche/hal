@@ -2,8 +2,12 @@ package vault
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +21,16 @@ import (
 
 	vault "github.com/hashicorp/vault/api"
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/ssh"
+)
+
+const (
+	aapDefaultImage          = "ubi9-aap"
+	aapDefaultTag            = "latest"
+	aapDefaultHostPort       = 443
+	aapSSHTargetContainer    = "hal-ssh-target"
+	aapSSHTargetDefaultImage = "redhat/ubi9-init"
+	aapSSHTargetDefaultTag   = "latest"
 )
 
 const (
@@ -37,6 +51,15 @@ const (
 	vaultAAPAAPProjectPlaybook    = "print_kv.yml"
 )
 
+const (
+	vaultAAPSSHMountPath           = "ssh"
+	vaultAAPSSHPolicyName          = "ssh-signer"
+	vaultAAPSSHSignerRoleName      = "ssh-signer-role"
+	vaultAAPSSHDevJWTRoleName      = "aap-ssh-dev-role"
+	vaultAAPSSHProdJWTRoleName     = "aap-ssh-prod-role"
+	vaultAAPSSHTargetInventoryName = "SSH Target Inventory"
+)
+
 var (
 	vaultAAPEnable  bool
 	vaultAAPDisable bool
@@ -51,18 +74,28 @@ var (
 	vaultAAPAAPPassword      string
 	vaultAAPAAPVaultURL      string
 	vaultAAPAAPLookupTypeID  int
+
+	vaultAAPImage    string
+	vaultAAPTag      string
+	vaultAAPHostPort int
+
+	vaultAAPSSHTargetImage string
+	vaultAAPSSHTargetTag   string
 )
 
 type aapEnvironmentConfig struct {
-	Environment      string
-	Organization     string
-	RoleName         string
-	SecretPath       string
-	ExternalCredName string
-	CustomTypeName   string
-	CustomCredName   string
-	ProjectName      string
-	JobTemplateName  string
+	Environment        string
+	Organization       string
+	RoleName           string
+	SecretPath         string
+	ExternalCredName   string
+	CustomTypeName     string
+	CustomCredName     string
+	ProjectName        string
+	JobTemplateName    string
+	SSHVaultCredName   string
+	SSHMachineCredName string
+	SSHJWTRoleName     string
 }
 
 type aapAPIClient struct {
@@ -74,17 +107,8 @@ type aapAPIClient struct {
 }
 
 var vaultAAPCmd = &cobra.Command{
-	Use:   "aap",
-	Short: "Manage AAP-related Vault integrations",
-	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		vaultAAPOIDCCmd.Run(vaultAAPOIDCCmd, []string{"status"})
-	},
-}
-
-var vaultAAPOIDCCmd = &cobra.Command{
-	Use:   "oidc [status|enable|disable|update]",
-	Short: "Configure Vault JWT auth for local AAP organization-scoped access",
+	Use:   "aap [status|enable|disable|update]",
+	Short: "Manage AAP runtime and Vault OIDC integration",
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := parseLifecycleAction(args, &vaultAAPEnable, &vaultAAPDisable, &vaultAAPUpdate); err != nil {
@@ -106,39 +130,55 @@ var vaultAAPOIDCCmd = &cobra.Command{
 		}
 
 		if vaultAAPDisable {
-			if vaultErr != nil {
-				fmt.Printf("❌ Cannot disable AAP JWT integration: %v\n", vaultErr)
-				return
-			}
-
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would delete AAP JWT roles/policies and disable auth/%s mount.\n", vaultAAPJWTMountPath)
-				fmt.Println("[DRY RUN] Would remove AAP OIDC organizations/credentials/input sources managed by this command.")
+				fmt.Println("[DRY RUN] Would remove the hal-aap container.")
 				return
 			}
 
-			envCfgs := vaultAAPAAPEnvironmentConfigs()
+			fmt.Println("🛑 Tearing down AAP environment...")
+	
 			if global.IsContainerRunning(engine, "hal-aap") {
-				aapClient, err := newAAPAPIClient(engine, vaultAAPAAPUsername, vaultAAPAAPPassword)
-				if err != nil {
-					fmt.Printf("❌ Failed to connect to AAP API for disable: %v\n", err)
-					return
+				aapClient, aapClientErr := newAAPAPIClient(engine, vaultAAPAAPUsername, vaultAAPAAPPassword)
+				if aapClientErr == nil {
+					envCfgs := vaultAAPAAPEnvironmentConfigs()
+					if err := disableAAPSSHResources(aapClient, envCfgs); err != nil {
+						fmt.Printf("⚠️  Failed to remove AAP SSH credentials: %v\n", err)
+					} else {
+						fmt.Println("✅ AAP SSH credentials removed.")
+					}
+					if err := disableAAPAAPOIDCResources(aapClient, envCfgs); err != nil {
+						fmt.Printf("⚠️  Failed to remove AAP OIDC resources: %v\n", err)
+					} else {
+						fmt.Println("✅ AAP OIDC resources removed.")
+					}
+				} else {
+					fmt.Printf("⚠️  AAP API unavailable; skipped AAP resource cleanup: %v\n", aapClientErr)
 				}
-				if err := disableAAPAAPOIDCResources(aapClient, envCfgs); err != nil {
-					fmt.Printf("❌ Failed to disable AAP-side OIDC resources: %v\n", err)
-					return
+			}
+	
+			if vaultErr == nil && client != nil {
+				if err := disableVaultSSHEngine(client); err != nil {
+					fmt.Printf("⚠️  Failed to disable Vault SSH engine: %v\n", err)
+				} else {
+					fmt.Println("✅ Vault SSH engine disabled.")
 				}
-				fmt.Println("✅ AAP-side OIDC resources disabled.")
+				if err := disableVaultAAPJWT(client); err != nil {
+					fmt.Printf("⚠️  Failed to disable Vault AAP JWT integration: %v\n", err)
+				} else {
+					fmt.Println("✅ Vault AAP JWT integration disabled.")
+				}
 			} else {
-				fmt.Println("⚠️  AAP runtime is not running; skipping AAP-side cleanup.")
+				fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
 			}
-
-			if err := disableVaultAAPJWT(client); err != nil {
-				fmt.Printf("❌ Failed to disable AAP JWT integration: %v\n", err)
-				return
-			}
-
-			fmt.Println("✅ Vault AAP JWT integration disabled.")
+	
+			fmt.Printf("⚙️  Removing %s container...\n", aapSSHTargetContainer)
+			_ = exec.Command(engine, "rm", "-f", aapSSHTargetContainer).Run()
+	
+			fmt.Println("⚙️  Removing hal-aap container...")
+			_ = exec.Command(engine, "rm", "-f", "hal-aap").Run()
+	
+			fmt.Println("✅ AAP environment destroyed successfully!")
 			global.RefreshHalHealth(engine)
 			return
 		}
@@ -148,10 +188,16 @@ var vaultAAPOIDCCmd = &cobra.Command{
 			return
 		}
 
+		// Ensure the AAP container is running, starting it if necessary.
 		if !global.IsContainerRunning(engine, "hal-aap") {
-			fmt.Println("❌ AAP runtime is not running.")
-			fmt.Println("   💡 Run 'hal aap create' first.")
-			return
+			if global.DryRun {
+				fmt.Println("[DRY RUN] Would start AAP container.")
+			} else {
+				if err := ensureAAPContainer(engine); err != nil {
+					fmt.Printf("❌ Failed to start AAP runtime: %v\n", err)
+					return
+				}
+			}
 		}
 
 		if global.DryRun {
@@ -184,6 +230,31 @@ var vaultAAPOIDCCmd = &cobra.Command{
 			"oidc_discovery_ca_pem": caPem,
 		}); err != nil {
 			fmt.Printf("❌ Failed to configure auth/%s/config: %v\n", vaultAAPJWTMountPath, err)
+			return
+		}
+
+		if err := enableVaultSSHEngine(client); err != nil {
+			fmt.Printf("❌ Failed to enable SSH secrets engine: %v\n", err)
+			return
+		}
+
+		if err := ensureVaultSSHCA(client); err != nil {
+			fmt.Printf("❌ Failed to configure SSH CA: %v\n", err)
+			return
+		}
+
+		if err := ensureVaultSSHPolicy(client); err != nil {
+			fmt.Printf("❌ Failed to write SSH signer policy: %v\n", err)
+			return
+		}
+
+		if err := ensureVaultSSHSignerRole(client); err != nil {
+			fmt.Printf("❌ Failed to write SSH signer role: %v\n", err)
+			return
+		}
+
+		if err := ensureVaultSSHJWTRoles(client, vaultAAPDevOrgName, vaultAAPProdOrgName); err != nil {
+			fmt.Printf("❌ Failed to write SSH JWT roles: %v\n", err)
 			return
 		}
 
@@ -243,6 +314,16 @@ var vaultAAPOIDCCmd = &cobra.Command{
 			return
 		}
 
+		if err := ensureSSHTargetContainer(engine); err != nil {
+			fmt.Printf("❌ Failed to start %s: %v\n", aapSSHTargetContainer, err)
+			return
+		}
+
+		if err := injectVaultCAPublicKey(engine, client); err != nil {
+			fmt.Printf("❌ Failed to inject Vault CA public key into %s: %v\n", aapSSHTargetContainer, err)
+			return
+		}
+
 		aapClient, err := newAAPAPIClient(engine, vaultAAPAAPUsername, vaultAAPAAPPassword)
 		if err != nil {
 			fmt.Printf("❌ Failed to connect to AAP API: %v\n", err)
@@ -250,16 +331,42 @@ var vaultAAPOIDCCmd = &cobra.Command{
 		}
 
 		envCfgs := vaultAAPAAPEnvironmentConfigs()
-		if err := reconcileAAPAAPOIDCResources(aapClient, envCfgs, caPem); err != nil {
+
+		if err := ensureSSHTargetInventory(aapClient); err != nil {
+			fmt.Printf("❌ Failed to reconcile SSH target inventory: %v\n", err)
+			return
+		}
+
+		sshPrivPEM, sshPubOpenSSH, err := generateSSHKeyPair()
+		if err != nil {
+			fmt.Printf("❌ Failed to generate SSH key pair: %v\n", err)
+			return
+		}
+
+		sshVaultTypeID, machineTypeID, machineCredIDs, err := reconcileAAPSSHResources(aapClient, envCfgs, sshPrivPEM, sshPubOpenSSH)
+		if err != nil {
+			fmt.Printf("❌ Failed to reconcile AAP SSH resources: %v\n", err)
+			return
+		}
+		_ = sshVaultTypeID
+		_ = machineTypeID
+
+		if err := reconcileAAPAAPOIDCResources(aapClient, envCfgs, caPem, machineCredIDs); err != nil {
 			fmt.Printf("❌ Failed to reconcile AAP-side OIDC resources: %v\n", err)
 			return
 		}
 
+		aapUIURL := aapUIBaseURL(aapClient.baseURL)
 		fmt.Println("✅ Vault AAP JWT integration configured.")
 		fmt.Println("   Roles: aap-development-role, aap-production-role")
 		fmt.Println("   Policies: aap-development-policy, aap-production-policy")
 		fmt.Println("   Secret paths: secret/data/development, secret/data/production")
-		fmt.Println("   AAP resources: orgs, external lookup creds, custom credential types, input sources, projects, and job templates reconciled")
+		fmt.Println("   SSH engine, CA, and signing role configured.")
+		fmt.Println("   SSH target container: hal-ssh-target (ssh-target.demo.local)")
+		fmt.Println("   AAP resources: orgs, external lookup creds, custom credential types, SSH credentials, input sources, projects, and job templates reconciled")
+		fmt.Printf("\n🌐 AAP URL  : %s\n", aapUIURL)
+		fmt.Printf("   Username : %s\n", vaultAAPAAPUsername)
+		fmt.Printf("   Password : %s\n", vaultAAPAAPPassword)
 		global.RefreshHalHealth(engine)
 	},
 }
@@ -268,10 +375,16 @@ func vaultAAPStatus(engine string, client *vault.Client, vaultErr error) {
 	fmt.Println("🔍 Checking Vault AAP JWT integration status...")
 
 	aapRunning := global.IsContainerRunning(engine, "hal-aap")
+	sshTargetRunning := global.IsContainerRunning(engine, aapSSHTargetContainer)
 	if aapRunning {
 		fmt.Println("  ✅ AAP runtime     : running (hal-aap)")
 	} else {
 		fmt.Println("  ❌ AAP runtime     : not running")
+	}
+	if sshTargetRunning {
+		fmt.Printf("  ✅ SSH target      : running (%s)\n", aapSSHTargetContainer)
+	} else {
+		fmt.Printf("  ❌ SSH target      : not running (%s)\n", aapSSHTargetContainer)
 	}
 
 	if vaultErr != nil {
@@ -310,7 +423,24 @@ func vaultAAPStatus(engine string, client *vault.Client, vaultErr error) {
 	fmt.Printf("  %s Dev secret      : secret/data/development\n", statusIcon(devSecret))
 	fmt.Printf("  %s Prod secret     : secret/data/production\n", statusIcon(prodSecret))
 
-	fullyReady := aapRunning && jwtMounted && devRole && prodRole && devPolicy && prodPolicy && devSecret && prodSecret
+	// SSH Vault checks
+	mounts, _ := client.Sys().ListMounts()
+	_, sshMounted := mounts[vaultAAPSSHMountPath+"/"]
+	sshCA := vaultPathExists(client, vaultAAPSSHMountPath+"/config/ca")
+	sshPolicy := vaultPolicyExists(client, vaultAAPSSHPolicyName)
+	sshSignerRole := vaultPathExists(client, vaultAAPSSHMountPath+"/roles/"+vaultAAPSSHSignerRoleName)
+	sshDevJWTRole := vaultPathExists(client, "auth/"+vaultAAPJWTMountPath+"/role/"+vaultAAPSSHDevJWTRoleName)
+	sshProdJWTRole := vaultPathExists(client, "auth/"+vaultAAPJWTMountPath+"/role/"+vaultAAPSSHProdJWTRoleName)
+
+	fmt.Printf("  %s SSH engine      : %s\n", statusIcon(sshMounted), vaultAAPSSHMountPath+"/")
+	fmt.Printf("  %s SSH CA          : ssh/config/ca\n", statusIcon(sshCA))
+	fmt.Printf("  %s SSH policy      : %s\n", statusIcon(sshPolicy), vaultAAPSSHPolicyName)
+	fmt.Printf("  %s SSH signer role : %s\n", statusIcon(sshSignerRole), vaultAAPSSHSignerRoleName)
+	fmt.Printf("  %s SSH dev role    : %s\n", statusIcon(sshDevJWTRole), vaultAAPSSHDevJWTRoleName)
+	fmt.Printf("  %s SSH prod role   : %s\n", statusIcon(sshProdJWTRole), vaultAAPSSHProdJWTRoleName)
+
+	fullyReady := aapRunning && sshTargetRunning && jwtMounted && devRole && prodRole && devPolicy && prodPolicy && devSecret && prodSecret &&
+		sshMounted && sshCA && sshPolicy && sshSignerRole && sshDevJWTRole && sshProdJWTRole
 
 	if aapRunning {
 		envCfgs := vaultAAPAAPEnvironmentConfigs()
@@ -329,15 +459,27 @@ func vaultAAPStatus(engine string, client *vault.Client, vaultErr error) {
 					fullyReady = false
 				}
 			}
+
+			sshReady, sshStatusErr := aapSSHResourcesReady(aapClient, envCfgs)
+			if sshStatusErr != nil {
+				fmt.Printf("  ⚠️  AAP SSH creds   : unknown (%v)\n", sshStatusErr)
+			} else {
+				if sshReady {
+					fmt.Println("  ✅ AAP SSH creds   : reconciled")
+				} else {
+					fmt.Println("  ❌ AAP SSH creds   : not fully reconciled")
+					fullyReady = false
+				}
+			}
 		}
 	}
 
 	fmt.Println("\n💡 Next Step:")
 	if fullyReady {
-		fmt.Println("   Integration is ready. Reconcile at any time with: hal vault aap oidc update")
+		fmt.Println("   Integration is ready. Reconcile at any time with: hal vault aap update")
 		return
 	}
-	fmt.Println("   hal vault aap oidc enable")
+	fmt.Println("   hal vault aap enable")
 }
 
 func ensureVaultJWTMount(client *vault.Client) error {
@@ -369,6 +511,95 @@ func disableVaultAAPJWT(client *vault.Client) error {
 	return nil
 }
 
+func enableVaultSSHEngine(client *vault.Client) error {
+	mounts, err := client.Sys().ListMounts()
+	if err == nil {
+		if _, exists := mounts[vaultAAPSSHMountPath+"/"]; exists {
+			return nil
+		}
+	}
+	return client.Sys().Mount(vaultAAPSSHMountPath, &vault.MountInput{Type: "ssh"})
+}
+
+func ensureVaultSSHCA(client *vault.Client) error {
+	secret, err := client.Logical().Read(vaultAAPSSHMountPath + "/config/ca")
+	if err == nil && secret != nil && secret.Data["public_key"] != nil {
+		return nil
+	}
+	_, err = client.Logical().Write(vaultAAPSSHMountPath+"/config/ca", map[string]interface{}{
+		"generate_signing_key": true,
+	})
+	return err
+}
+
+func ensureVaultSSHPolicy(client *vault.Client) error {
+	policy := `path "ssh/sign/ssh-signer-role" {
+	capabilities = ["read", "create", "update"]
+}
+path "ssh/issue/ssh-signer-role" {
+	capabilities = ["read", "create", "update"]
+}
+path "ssh/public_key" {
+	capabilities = ["read"]
+}
+path "ssh/config/ca" {
+	capabilities = ["read"]
+}`
+	return client.Sys().PutPolicy(vaultAAPSSHPolicyName, policy)
+}
+
+func ensureVaultSSHJWTRoles(client *vault.Client, devOrg, prodOrg string) error {
+	for _, entry := range []struct {
+		roleName string
+		org      string
+	}{
+		{vaultAAPSSHDevJWTRoleName, devOrg},
+		{vaultAAPSSHProdJWTRoleName, prodOrg},
+	} {
+		if _, err := client.Logical().Write("auth/"+vaultAAPJWTMountPath+"/role/"+entry.roleName, map[string]interface{}{
+			"role_type":       "jwt",
+			"bound_audiences": []string{vaultAAPBoundAudience},
+			"user_claim":      "sub",
+			"bound_claims": map[string]interface{}{
+				"aap_controller_organization_name": []string{entry.org},
+			},
+			"token_policies": []string{vaultAAPSSHPolicyName},
+		}); err != nil {
+			return fmt.Errorf("writing JWT role %s: %w", entry.roleName, err)
+		}
+	}
+	return nil
+}
+
+func ensureVaultSSHSignerRole(client *vault.Client) error {
+	_, err := client.Logical().Write(vaultAAPSSHMountPath+"/roles/"+vaultAAPSSHSignerRoleName, map[string]interface{}{
+		"key_type":               "ca",
+		"algorithm_signer":       "rsa-sha2-256",
+		"allow_user_certificates": true,
+		"allow_host_certificates": true,
+		"allowed_users":          "rhel",
+		"default_user":           "rhel",
+		"ttl":                    "30m",
+		"max_ttl":                "1h",
+	})
+	return err
+}
+
+func disableVaultSSHEngine(client *vault.Client) error {
+	_, _ = client.Logical().Delete("auth/" + vaultAAPJWTMountPath + "/role/" + vaultAAPSSHDevJWTRoleName)
+	_, _ = client.Logical().Delete("auth/" + vaultAAPJWTMountPath + "/role/" + vaultAAPSSHProdJWTRoleName)
+	_ = client.Sys().DeletePolicy(vaultAAPSSHPolicyName)
+
+	if err := client.Sys().Unmount(vaultAAPSSHMountPath); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no handler for route") ||
+			strings.Contains(strings.ToLower(err.Error()), "not found") {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func readAAPCACertFromContainer(engine, containerPath string) (string, error) {
 	out, err := exec.Command(engine, "exec", "hal-aap", "cat", containerPath).CombinedOutput()
 	if err != nil {
@@ -379,6 +610,103 @@ func readAAPCACertFromContainer(engine, containerPath string) (string, error) {
 		return "", fmt.Errorf("empty certificate content at %s", containerPath)
 	}
 	return cert, nil
+}
+
+func ensureAAPContainer(engine string) error {
+	global.EnsureNetwork(engine)
+
+	imageRef := resolveAAPImageRef(engine)
+	runArgs := []string{
+		"run", "-d",
+		"--name", "hal-aap",
+		"--hostname", "aap.demo.local",
+		"--network", "hal-net",
+		"--privileged",
+		"--cgroupns=host",
+		"-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw",
+		"--tmpfs", "/run",
+		"--tmpfs", "/run/lock",
+		"-p", fmt.Sprintf("%d:443", vaultAAPHostPort),
+		imageRef,
+	}
+
+	out, err := exec.Command(engine, runArgs...).CombinedOutput()
+	if err != nil {
+		if strings.Contains(string(out), "AlreadyExists") || strings.Contains(string(out), "already in use") {
+			// Container exists but with a potentially different image — remove it and re-run.
+			_ = exec.Command(engine, "rm", "-f", "hal-aap").Run()
+			out2, err2 := exec.Command(engine, runArgs...).CombinedOutput()
+			if err2 != nil {
+				return fmt.Errorf("%s", strings.TrimSpace(string(out2)))
+			}
+		} else {
+			return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+		}
+	}
+
+	fmt.Println("⏳ Waiting for AAP to initialize (this can take a few minutes)...")
+	if err := waitForAAPHealth(engine, 600); err != nil {
+		return err
+	}
+	fmt.Println("✅ AAP runtime started.")
+	return nil
+}
+
+func resolveAAPImageRef(engine string) string {
+	ref := fmt.Sprintf("%s:%s", vaultAAPImage, vaultAAPTag)
+	localRef := fmt.Sprintf("local/%s:%s", vaultAAPImage, vaultAAPTag)
+
+	if !strings.HasPrefix(vaultAAPImage, "local/") {
+		if exec.Command(engine, "image", "inspect", localRef).Run() == nil {
+			return localRef
+		}
+	}
+	return ref
+}
+
+func waitForAAPHealth(engine string, maxRetries int) error {
+	portOut, err := exec.Command(
+		engine,
+		"inspect",
+		"-f",
+		"{{(index (index .NetworkSettings.Ports \"443/tcp\") 0).HostPort}}",
+		"hal-aap",
+	).Output()
+	if err != nil {
+		return fmt.Errorf("failed to inspect hal-aap port mapping: %w", err)
+	}
+
+	hostPort := strings.TrimSpace(string(portOut))
+	healthBase := "https://127.0.0.1"
+	if hostPort != "" && hostPort != "<no value>" && hostPort != "443" {
+		healthBase = fmt.Sprintf("https://127.0.0.1:%s", hostPort)
+	}
+
+	candidates := []string{
+		healthBase + "/api/controller/v2/ping/",
+		healthBase + "/api/v2/ping/",
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	transport.Proxy = nil
+	client := &http.Client{Timeout: 10 * time.Second, Transport: transport}
+
+	for i := 0; i < maxRetries; i++ {
+		for _, u := range candidates {
+			resp, reqErr := client.Get(u)
+			if reqErr != nil {
+				continue
+			}
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	return fmt.Errorf("timeout waiting for AAP to become healthy")
 }
 
 func vaultPathExists(client *vault.Client, path string) bool {
@@ -398,18 +726,30 @@ func vaultPolicyExists(client *vault.Client, policyName string) bool {
 }
 
 func init() {
-	vaultAAPOIDCCmd.Flags().StringVar(&vaultAAPOIDCDiscoveryURL, "oidc-discovery-url", "https://hal-aap/o", "AAP OIDC discovery URL used by Vault JWT auth config")
-	vaultAAPOIDCCmd.Flags().StringVar(&vaultAAPBoundAudience, "bound-audience", "http://hal-vault:8200", "JWT audience expected by Vault AAP roles")
-	vaultAAPOIDCCmd.Flags().StringVar(&vaultAAPDevOrgName, "development-org", "Development", "AAP organization mapped to development Vault role")
-	vaultAAPOIDCCmd.Flags().StringVar(&vaultAAPProdOrgName, "production-org", "Production", "AAP organization mapped to production Vault role")
-	vaultAAPOIDCCmd.Flags().StringVar(&vaultAAPCACertFile, "aap-ca-cert-file", "/home/aap/aap/tls/ca.cert", "Path to the AAP CA certificate inside hal-aap container")
-	vaultAAPOIDCCmd.Flags().StringVar(&vaultAAPAAPUsername, "aap-username", "admin", "AAP controller username")
-	vaultAAPOIDCCmd.Flags().StringVar(&vaultAAPAAPPassword, "aap-password", "admin", "AAP controller password")
-	vaultAAPOIDCCmd.Flags().StringVar(&vaultAAPAAPVaultURL, "aap-vault-url", "http://hal-vault:8200", "Vault URL used by AAP external secret lookup credentials")
-	vaultAAPOIDCCmd.Flags().IntVar(&vaultAAPAAPLookupTypeID, "aap-vault-lookup-type-id", 29, "AAP credential type ID for HashiCorp Vault Secret Lookup (OIDC)")
-
-	vaultAAPCmd.AddCommand(vaultAAPOIDCCmd)
+	bindVaultAAPFlags(vaultAAPCmd)
 	Cmd.AddCommand(vaultAAPCmd)
+}
+
+func bindVaultAAPFlags(cmd *cobra.Command) {
+	// OIDC / Vault integration flags
+	cmd.Flags().StringVar(&vaultAAPOIDCDiscoveryURL, "oidc-discovery-url", "https://hal-aap/o", "AAP OIDC discovery URL used by Vault JWT auth config")
+	cmd.Flags().StringVar(&vaultAAPBoundAudience, "bound-audience", "http://hal-vault:8200", "JWT audience expected by Vault AAP roles")
+	cmd.Flags().StringVar(&vaultAAPDevOrgName, "development-org", "Development", "AAP organization mapped to development Vault role")
+	cmd.Flags().StringVar(&vaultAAPProdOrgName, "production-org", "Production", "AAP organization mapped to production Vault role")
+	cmd.Flags().StringVar(&vaultAAPCACertFile, "aap-ca-cert-file", "/home/aap/aap/tls/ca.cert", "Path to the AAP CA certificate inside hal-aap container")
+	cmd.Flags().StringVar(&vaultAAPAAPUsername, "aap-username", "admin", "AAP controller username")
+	cmd.Flags().StringVar(&vaultAAPAAPPassword, "aap-password", "admin", "AAP controller password")
+	cmd.Flags().StringVar(&vaultAAPAAPVaultURL, "aap-vault-url", "http://hal-vault:8200", "Vault URL used by AAP external secret lookup credentials")
+	cmd.Flags().IntVar(&vaultAAPAAPLookupTypeID, "aap-vault-lookup-type-id", 29, "AAP credential type ID for HashiCorp Vault Secret Lookup (OIDC)")
+
+	// AAP container lifecycle flags
+	cmd.Flags().StringVar(&vaultAAPImage, "aap-image", aapDefaultImage, "AAP container image name")
+	cmd.Flags().StringVar(&vaultAAPTag, "aap-tag", aapDefaultTag, "AAP container image tag")
+	cmd.Flags().IntVar(&vaultAAPHostPort, "host-port", aapDefaultHostPort, "Host HTTPS port to publish AAP container port 443")
+
+	// SSH target container flags
+	cmd.Flags().StringVar(&vaultAAPSSHTargetImage, "ssh-target-image", aapSSHTargetDefaultImage, "SSH target container image name")
+	cmd.Flags().StringVar(&vaultAAPSSHTargetTag, "ssh-target-tag", aapSSHTargetDefaultTag, "SSH target container image tag")
 }
 
 func vaultAAPAAPEnvironmentConfigs() []aapEnvironmentConfig {
@@ -418,26 +758,32 @@ func vaultAAPAAPEnvironmentConfigs() []aapEnvironmentConfig {
 
 	return []aapEnvironmentConfig{
 		{
-			Environment:      "development",
-			Organization:     vaultAAPDevOrgName,
-			RoleName:         vaultAAPDevelopmentRoleName,
-			SecretPath:       "/development",
-			ExternalCredName: vaultAAPAAPExternalCredPrefix + devLabel,
-			CustomTypeName:   vaultAAPAAPCustomTypePrefix + devLabel + vaultAAPAAPCustomTypeSuffix,
-			CustomCredName:   vaultAAPAAPCustomTypePrefix + devLabel + vaultAAPAAPCustomTypeSuffix + vaultAAPAAPCustomCredSuffix,
-			ProjectName:      devLabel + vaultAAPAAPProjectSuffix,
-			JobTemplateName:  devLabel + vaultAAPAAPJobTemplateSuffix,
+			Environment:        "development",
+			Organization:       vaultAAPDevOrgName,
+			RoleName:           vaultAAPDevelopmentRoleName,
+			SecretPath:         "/development",
+			ExternalCredName:   vaultAAPAAPExternalCredPrefix + devLabel,
+			CustomTypeName:     vaultAAPAAPCustomTypePrefix + devLabel + vaultAAPAAPCustomTypeSuffix,
+			CustomCredName:     vaultAAPAAPCustomTypePrefix + devLabel + vaultAAPAAPCustomTypeSuffix + vaultAAPAAPCustomCredSuffix,
+			ProjectName:        devLabel + vaultAAPAAPProjectSuffix,
+			JobTemplateName:    devLabel + vaultAAPAAPJobTemplateSuffix,
+			SSHVaultCredName:   "Vault Signed SSH Credential - " + devLabel,
+			SSHMachineCredName: devLabel + " SSH Credential",
+			SSHJWTRoleName:     vaultAAPSSHDevJWTRoleName,
 		},
 		{
-			Environment:      "production",
-			Organization:     vaultAAPProdOrgName,
-			RoleName:         vaultAAPProductionRoleName,
-			SecretPath:       "/production",
-			ExternalCredName: vaultAAPAAPExternalCredPrefix + prodLabel,
-			CustomTypeName:   vaultAAPAAPCustomTypePrefix + prodLabel + vaultAAPAAPCustomTypeSuffix,
-			CustomCredName:   vaultAAPAAPCustomTypePrefix + prodLabel + vaultAAPAAPCustomTypeSuffix + vaultAAPAAPCustomCredSuffix,
-			ProjectName:      prodLabel + vaultAAPAAPProjectSuffix,
-			JobTemplateName:  prodLabel + vaultAAPAAPJobTemplateSuffix,
+			Environment:        "production",
+			Organization:       vaultAAPProdOrgName,
+			RoleName:           vaultAAPProductionRoleName,
+			SecretPath:         "/production",
+			ExternalCredName:   vaultAAPAAPExternalCredPrefix + prodLabel,
+			CustomTypeName:     vaultAAPAAPCustomTypePrefix + prodLabel + vaultAAPAAPCustomTypeSuffix,
+			CustomCredName:     vaultAAPAAPCustomTypePrefix + prodLabel + vaultAAPAAPCustomTypeSuffix + vaultAAPAAPCustomCredSuffix,
+			ProjectName:        prodLabel + vaultAAPAAPProjectSuffix,
+			JobTemplateName:    prodLabel + vaultAAPAAPJobTemplateSuffix,
+			SSHVaultCredName:   "Vault Signed SSH Credential - " + prodLabel,
+			SSHMachineCredName: prodLabel + " SSH Credential",
+			SSHJWTRoleName:     vaultAAPSSHProdJWTRoleName,
 		},
 	}
 }
@@ -504,6 +850,17 @@ func detectAAPAPIBaseURL(engine string) (string, error) {
 	}
 
 	return "", fmt.Errorf("unable to find a reachable AAP API base URL")
+}
+
+// aapUIBaseURL strips the API path suffix from baseURL and returns the bare
+// host URL suitable for browser access (e.g. "https://127.0.0.1:8443").
+func aapUIBaseURL(baseURL string) string {
+	for _, suffix := range []string{"/api/controller/v2", "/api/v2"} {
+		if idx := strings.LastIndex(baseURL, suffix); idx >= 0 {
+			return baseURL[:idx]
+		}
+	}
+	return baseURL
 }
 
 func (c *aapAPIClient) doJSON(method, path string, query url.Values, payload interface{}) (map[string]interface{}, int, error) {
@@ -1231,21 +1588,30 @@ func (c *aapAPIClient) runAWXManageJSON(script string, out interface{}) error {
 	return fmt.Errorf("awx-manage output did not include JSON payload: %s", strings.TrimSpace(string(rawOut)))
 }
 
-func reconcileAAPAAPOIDCResources(c *aapAPIClient, envCfgs []aapEnvironmentConfig, caPem string) error {
+func reconcileAAPAAPOIDCResources(c *aapAPIClient, envCfgs []aapEnvironmentConfig, caPem string, machineCredIDs map[string]int) error {
 	lookupType, err := c.findCredentialTypeForVaultOIDC()
 	if err != nil {
 		return err
 	}
 	lookupTypeID := aapMapInt(lookupType, "id")
 
-	demoInventory, err := c.findInventory(vaultAAPAAPDemoInventoryName)
-	if err != nil {
-		return err
+	// Prefer SSH target inventory; fall back to Demo Inventory if not present.
+	inventoryID := 0
+	sshInventory, err := c.findInventory(vaultAAPSSHTargetInventoryName)
+	if err == nil && sshInventory != nil {
+		inventoryID = aapMapInt(sshInventory, "id")
 	}
-	if demoInventory == nil {
-		return fmt.Errorf("could not locate %s inventory in AAP", vaultAAPAAPDemoInventoryName)
+	if inventoryID == 0 {
+		fmt.Printf("  ⚠️  SSH target inventory not found; falling back to %s\n", vaultAAPAAPDemoInventoryName)
+		demoInventory, err := c.findInventory(vaultAAPAAPDemoInventoryName)
+		if err != nil {
+			return err
+		}
+		if demoInventory == nil {
+			return fmt.Errorf("could not locate %s or %s inventory in AAP", vaultAAPSSHTargetInventoryName, vaultAAPAAPDemoInventoryName)
+		}
+		inventoryID = aapMapInt(demoInventory, "id")
 	}
-	demoInventoryID := aapMapInt(demoInventory, "id")
 
 	for _, cfg := range envCfgs {
 		org, err := c.ensureOrganization(cfg.Organization)
@@ -1289,7 +1655,7 @@ func reconcileAAPAAPOIDCResources(c *aapAPIClient, envCfgs []aapEnvironmentConfi
 			return fmt.Errorf("project playbooks %s: %w", cfg.ProjectName, err)
 		}
 
-		jobTemplate, err := c.ensureJobTemplate(cfg.JobTemplateName, orgID, demoInventoryID, projectID, map[string]interface{}{
+		jobTemplate, err := c.ensureJobTemplate(cfg.JobTemplateName, orgID, inventoryID, projectID, map[string]interface{}{
 			"var_names": []string{"env_name"},
 		})
 		if err != nil {
@@ -1298,6 +1664,15 @@ func reconcileAAPAAPOIDCResources(c *aapAPIClient, envCfgs []aapEnvironmentConfi
 		jobTemplateID := aapMapInt(jobTemplate, "id")
 		if err := c.ensureJobTemplateCredential(jobTemplateID, targetCredID); err != nil {
 			return fmt.Errorf("job template credential %s: %w", cfg.JobTemplateName, err)
+		}
+
+		// Attach SSH Machine Credential if available.
+		if machineCredIDs != nil {
+			if machineCredID, ok := machineCredIDs[cfg.Environment]; ok && machineCredID > 0 {
+				if err := c.ensureJobTemplateCredential(jobTemplateID, machineCredID); err != nil {
+					return fmt.Errorf("job template SSH machine credential %s: %w", cfg.JobTemplateName, err)
+				}
+			}
 		}
 
 		metadata, err := buildAAPVaultLookupMetadata(lookupType, cfg)
@@ -1381,6 +1756,19 @@ func aapOIDCResourcesReady(c *aapAPIClient, envCfgs []aapEnvironmentConfig) (boo
 	}
 	lookupTypeID := aapMapInt(lookupType, "id")
 
+	// Determine expected inventory ID (SSH target preferred, Demo Inventory fallback).
+	expectedInventoryID := 0
+	sshInventory, err := c.findInventory(vaultAAPSSHTargetInventoryName)
+	if err == nil && sshInventory != nil {
+		expectedInventoryID = aapMapInt(sshInventory, "id")
+	}
+	if expectedInventoryID == 0 {
+		demoInventory, err := c.findInventory(vaultAAPAAPDemoInventoryName)
+		if err == nil && demoInventory != nil {
+			expectedInventoryID = aapMapInt(demoInventory, "id")
+		}
+	}
+
 	for _, cfg := range envCfgs {
 		org, err := c.findOrganization(cfg.Organization)
 		if err != nil {
@@ -1444,6 +1832,9 @@ func aapOIDCResourcesReady(c *aapAPIClient, envCfgs []aapEnvironmentConfig) (boo
 		if aapMapInt(jobTemplate, "project") != projectID {
 			return false, nil
 		}
+		if expectedInventoryID > 0 && aapMapInt(jobTemplate, "inventory") != expectedInventoryID {
+			return false, nil
+		}
 		jobTemplateID := aapMapInt(jobTemplate, "id")
 		hasCredential, err := c.jobTemplateHasCredential(jobTemplateID, targetCredID)
 		if err != nil {
@@ -1451,6 +1842,21 @@ func aapOIDCResourcesReady(c *aapAPIClient, envCfgs []aapEnvironmentConfig) (boo
 		}
 		if !hasCredential {
 			return false, nil
+		}
+
+		// Check SSH Machine Credential is attached.
+		if cfg.SSHMachineCredName != "" {
+			machineCred, err := c.findCredential(cfg.SSHMachineCredName, orgID, 0)
+			if err == nil && machineCred != nil {
+				machineCredID := aapMapInt(machineCred, "id")
+				hasSSH, err := c.jobTemplateHasCredential(jobTemplateID, machineCredID)
+				if err != nil {
+					return false, err
+				}
+				if !hasSSH {
+					return false, nil
+				}
+			}
 		}
 	}
 
@@ -1508,6 +1914,7 @@ func buildAAPVaultLookupInputs(lookupType map[string]interface{}, cfg aapEnviron
 
 	if len(fields) == 0 && len(reqFields) == 0 {
 		inputs["url"] = vaultAAPAAPVaultURL
+		inputs["default_auth_path"] = vaultAAPJWTMountPath
 		inputs["jwt_role"] = cfg.RoleName
 		inputs["api_version"] = "v2"
 		return inputs, nil
@@ -1636,4 +2043,355 @@ func buildAAPVaultLookupMetadata(lookupType map[string]interface{}, cfg aapEnvir
 	}
 
 	return metadata, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-Task 2: hal-ssh-target container lifecycle
+// ─────────────────────────────────────────────────────────────────────────────
+
+func ensureSSHTargetContainer(engine string) error {
+	if global.IsContainerRunning(engine, aapSSHTargetContainer) {
+		return nil
+	}
+
+	global.EnsureNetwork(engine)
+
+	imageRef := fmt.Sprintf("%s:%s", vaultAAPSSHTargetImage, vaultAAPSSHTargetTag)
+	runArgs := []string{
+		"run", "-d",
+		"--name", aapSSHTargetContainer,
+		"--hostname", "ssh-target.demo.local",
+		"--network", "hal-net",
+		imageRef,
+		"sleep", "infinity",
+	}
+
+	out, err := exec.Command(engine, runArgs...).CombinedOutput()
+	if err != nil {
+		if strings.Contains(string(out), "AlreadyExists") || strings.Contains(string(out), "already in use") {
+			_ = exec.Command(engine, "rm", "-f", aapSSHTargetContainer).Run()
+			out2, err2 := exec.Command(engine, runArgs...).CombinedOutput()
+			if err2 != nil {
+				return fmt.Errorf("%s", strings.TrimSpace(string(out2)))
+			}
+		} else {
+			return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+		}
+	}
+
+	fmt.Printf("⏳ Configuring %s (installing sshd, creating rhel user)...\n", aapSSHTargetContainer)
+
+	steps := [][]string{
+		{engine, "exec", aapSSHTargetContainer, "dnf", "install", "-y", "openssh-server"},
+		{engine, "exec", aapSSHTargetContainer, "useradd", "-m", "rhel"},
+		{engine, "exec", aapSSHTargetContainer, "bash", "-c", "touch /etc/ssh/trusted_user_ca_keys.pub"},
+		{engine, "exec", aapSSHTargetContainer, "bash", "-c", "echo 'TrustedUserCAKeys /etc/ssh/trusted_user_ca_keys.pub' >> /etc/ssh/sshd_config"},
+		{engine, "exec", aapSSHTargetContainer, "bash", "-c", "ssh-keygen -A && /usr/sbin/sshd"},
+	}
+
+	for _, step := range steps {
+		if out, err := exec.Command(step[0], step[1:]...).CombinedOutput(); err != nil {
+			// Ignore "user already exists" on idempotent re-runs.
+			if strings.Contains(string(out), "already exists") {
+				continue
+			}
+			return fmt.Errorf("container setup step %v: %s", step, strings.TrimSpace(string(out)))
+		}
+	}
+
+	fmt.Printf("✅ %s started and configured.\n", aapSSHTargetContainer)
+	return nil
+}
+
+func injectVaultCAPublicKey(engine string, client *vault.Client) error {
+	secret, err := client.Logical().Read(vaultAAPSSHMountPath + "/config/ca")
+	if err != nil {
+		return fmt.Errorf("reading ssh/config/ca: %w", err)
+	}
+	if secret == nil {
+		return fmt.Errorf("ssh/config/ca not found in Vault")
+	}
+	pubKey, ok := secret.Data["public_key"].(string)
+	if !ok || strings.TrimSpace(pubKey) == "" {
+		return fmt.Errorf("ssh/config/ca returned no public_key")
+	}
+
+	writeCmd := fmt.Sprintf("echo %q > /etc/ssh/trusted_user_ca_keys.pub", strings.TrimSpace(pubKey))
+	if out, err := exec.Command(engine, "exec", aapSSHTargetContainer, "bash", "-c", writeCmd).CombinedOutput(); err != nil {
+		return fmt.Errorf("writing CA public key to container: %s", strings.TrimSpace(string(out)))
+	}
+
+	// Reload sshd so it picks up the new trusted CA keys file.
+	_ = exec.Command(engine, "exec", aapSSHTargetContainer, "pkill", "-HUP", "sshd").Run()
+
+	fmt.Println("✅ Vault CA public key injected into hal-ssh-target.")
+	return nil
+}
+
+func ensureSSHTargetInventory(c *aapAPIClient) error {
+	inv, err := c.findInventory(vaultAAPSSHTargetInventoryName)
+	if err != nil {
+		return err
+	}
+
+	var inventoryID int
+	if inv == nil {
+		// Inventory requires an organization. Use the Development org (always
+		// ensured before this call) so the inventory is visible to both envs.
+		org, err := c.ensureOrganization(vaultAAPDevOrgName)
+		if err != nil {
+			return fmt.Errorf("resolving org for SSH target inventory: %w", err)
+		}
+		orgID := aapMapInt(org, "id")
+
+		body, _, err := c.doJSON(http.MethodPost, "/inventories/", nil, map[string]interface{}{
+			"name":         vaultAAPSSHTargetInventoryName,
+			"description":  "Inventory for Vault-signed SSH demo target",
+			"organization": orgID,
+		})
+		if err != nil {
+			return fmt.Errorf("creating SSH target inventory: %w", err)
+		}
+		inventoryID = aapMapInt(body, "id")
+	} else {
+		inventoryID = aapMapInt(inv, "id")
+	}
+
+	// Ensure the hal-ssh-target host entry exists.
+	hostsBody, _, err := c.doJSON(http.MethodGet, "/hosts/", url.Values{
+		"name":      []string{aapSSHTargetContainer},
+		"inventory": []string{strconv.Itoa(inventoryID)},
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("checking SSH target host: %w", err)
+	}
+
+	for _, item := range aapResults(hostsBody) {
+		if aapMapString(item, "name") == aapSSHTargetContainer {
+			return nil // already exists
+		}
+	}
+
+	_, _, err = c.doJSON(http.MethodPost, "/hosts/", nil, map[string]interface{}{
+		"name":      aapSSHTargetContainer,
+		"inventory": inventoryID,
+		"variables": "ansible_host: ssh-target.demo.local\nansible_user: rhel",
+	})
+	if err != nil {
+		return fmt.Errorf("creating SSH target host: %w", err)
+	}
+	return nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-Task 3: AAP SSH credential provisioning
+// ─────────────────────────────────────────────────────────────────────────────
+
+func generateSSHKeyPair() (privatePEM, publicOpenSSH string, err error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return "", "", fmt.Errorf("generating RSA key: %w", err)
+	}
+
+	privBytes := x509.MarshalPKCS1PrivateKey(privateKey)
+	privBlock := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: privBytes}
+	privatePEM = string(pem.EncodeToMemory(privBlock))
+
+	pubKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		return "", "", fmt.Errorf("encoding SSH public key: %w", err)
+	}
+	publicOpenSSH = strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pubKey)))
+
+	return privatePEM, publicOpenSSH, nil
+}
+
+func (c *aapAPIClient) findCredentialTypeForVaultSSH() (map[string]interface{}, error) {
+	preferredNames := []string{
+		"HashiCorp Vault Signed SSH (OIDC)",
+		"HashiCorp Vault SSH (OIDC)",
+		"HashiCorp Vault Signed SSH",
+	}
+	for _, name := range preferredNames {
+		body, _, err := c.doJSON(http.MethodGet, "/credential_types/", url.Values{"name": []string{name}}, nil)
+		if err != nil {
+			continue
+		}
+		for _, item := range aapResults(body) {
+			if aapMapString(item, "name") == name {
+				return item, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("could not locate HashiCorp Vault Signed SSH credential type in AAP")
+}
+
+func (c *aapAPIClient) findMachineCredentialType() (map[string]interface{}, error) {
+	body, _, err := c.doJSON(http.MethodGet, "/credential_types/", url.Values{"kind": []string{"ssh"}}, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range aapResults(body) {
+		if strings.ToLower(aapMapString(item, "kind")) == "ssh" {
+			return item, nil
+		}
+	}
+	return nil, fmt.Errorf("could not locate Machine (SSH) credential type in AAP")
+}
+
+// reconcileAAPSSHResources creates Vault Signed SSH and Machine credentials for each
+// environment and links them via a credential input source. Returns the type IDs and
+// a map of environment → machine credential ID.
+
+func reconcileAAPSSHResources(
+	c *aapAPIClient,
+	envCfgs []aapEnvironmentConfig,
+	privateKeyPEM, publicKeyOpenSSH string,
+) (sshVaultTypeID, machineTypeID int, machineCredIDs map[string]int, err error) {
+	sshVaultType, err := c.findCredentialTypeForVaultSSH()
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	sshVaultTypeID = aapMapInt(sshVaultType, "id")
+
+	machineType, err := c.findMachineCredentialType()
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	machineTypeID = aapMapInt(machineType, "id")
+
+	machineCredIDs = make(map[string]int, len(envCfgs))
+
+	for _, cfg := range envCfgs {
+		org, err := c.ensureOrganization(cfg.Organization)
+		if err != nil {
+			return 0, 0, nil, fmt.Errorf("org %s: %w", cfg.Organization, err)
+		}
+		orgID := aapMapInt(org, "id")
+
+		// Vault Signed SSH (OIDC) credential fields: url, default_auth_path, jwt_role.
+		sshVaultCred, err := c.ensureCredential(cfg.SSHVaultCredName, orgID, sshVaultTypeID, map[string]interface{}{
+			"url":               vaultAAPAAPVaultURL,
+			"default_auth_path": vaultAAPJWTMountPath,
+			"jwt_role":          cfg.SSHJWTRoleName,
+		})
+		if err != nil {
+			return 0, 0, nil, fmt.Errorf("Vault SSH credential %s: %w", cfg.SSHVaultCredName, err)
+		}
+		sshVaultCredID := aapMapInt(sshVaultCred, "id")
+
+		// Machine credential — username + private key.
+		machineCred, err := c.ensureCredential(cfg.SSHMachineCredName, orgID, machineTypeID, map[string]interface{}{
+			"username":     "rhel",
+			"ssh_key_data": privateKeyPEM,
+		})
+		if err != nil {
+			return 0, 0, nil, fmt.Errorf("Machine credential %s: %w", cfg.SSHMachineCredName, err)
+		}
+		machineCredID := aapMapInt(machineCred, "id")
+		machineCredIDs[cfg.Environment] = machineCredID
+
+		// Credential input source: target field is ssh_public_key_data ("Signed SSH Certificate")
+		// on the Machine credential. Metadata field names come from the OIDC type schema.
+		if err := c.ensureCredentialInputSource(machineCredID, sshVaultCredID, "ssh_public_key_data", map[string]interface{}{
+			"public_key":        publicKeyOpenSSH,
+			"secret_path":       "ssh",
+			"default_auth_path": vaultAAPJWTMountPath,
+			"role":              vaultAAPSSHSignerRoleName,
+			"valid_principals":  "rhel",
+		}); err != nil {
+			return 0, 0, nil, fmt.Errorf("input source signed_key for %s: %w", cfg.Environment, err)
+		}
+	}
+
+	return sshVaultTypeID, machineTypeID, machineCredIDs, nil
+}
+
+func disableAAPSSHResources(c *aapAPIClient, envCfgs []aapEnvironmentConfig) error {
+	sshVaultType, err := c.findCredentialTypeForVaultSSH()
+	sshVaultTypeID := 0
+	if err == nil && sshVaultType != nil {
+		sshVaultTypeID = aapMapInt(sshVaultType, "id")
+	}
+
+	machineType, err := c.findMachineCredentialType()
+	machineTypeID := 0
+	if err == nil && machineType != nil {
+		machineTypeID = aapMapInt(machineType, "id")
+	}
+
+	for _, cfg := range envCfgs {
+		org, err := c.findOrganization(cfg.Organization)
+		if err != nil || org == nil {
+			continue
+		}
+		orgID := aapMapInt(org, "id")
+
+		// Delete input source first.
+		machineCred, err := c.findCredential(cfg.SSHMachineCredName, orgID, machineTypeID)
+		if err == nil && machineCred != nil {
+			machineCredID := aapMapInt(machineCred, "id")
+			_ = c.deleteCredentialInputSource(machineCredID, "ssh_public_key_data")
+		}
+
+		if err := c.deleteCredential(cfg.SSHMachineCredName, orgID, machineTypeID); err != nil {
+			return err
+		}
+		if err := c.deleteCredential(cfg.SSHVaultCredName, orgID, sshVaultTypeID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func aapSSHResourcesReady(c *aapAPIClient, envCfgs []aapEnvironmentConfig) (bool, error) {
+	sshVaultType, err := c.findCredentialTypeForVaultSSH()
+	if err != nil {
+		return false, nil
+	}
+	sshVaultTypeID := aapMapInt(sshVaultType, "id")
+
+	machineType, err := c.findMachineCredentialType()
+	if err != nil {
+		return false, nil
+	}
+	machineTypeID := aapMapInt(machineType, "id")
+
+	for _, cfg := range envCfgs {
+		org, err := c.findOrganization(cfg.Organization)
+		if err != nil {
+			return false, err
+		}
+		if org == nil {
+			return false, nil
+		}
+		orgID := aapMapInt(org, "id")
+
+		sshVaultCred, err := c.findCredential(cfg.SSHVaultCredName, orgID, sshVaultTypeID)
+		if err != nil {
+			return false, err
+		}
+		if sshVaultCred == nil {
+			return false, nil
+		}
+
+		machineCred, err := c.findCredential(cfg.SSHMachineCredName, orgID, machineTypeID)
+		if err != nil {
+			return false, err
+		}
+		if machineCred == nil {
+			return false, nil
+		}
+
+		machineCredID := aapMapInt(machineCred, "id")
+		inputSource, err := c.findCredentialInputSource(machineCredID, "ssh_public_key_data")
+		if err != nil {
+			return false, err
+		}
+		if inputSource == nil {
+			return false, nil
+		}
+	}
+
+	return true, nil
 }

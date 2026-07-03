@@ -58,7 +58,7 @@ Intent:
 | `hal vault ldap` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault oidc` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault jwt` | `enable`, `update`, `disable`, `status` | Same as above. |
-| `hal vault aap oidc` | `enable`, `update`, `disable`, `status` | Configure Vault JWT auth for local AAP OIDC integration. |
+| `hal vault aap` | `enabled` (preferred), plus `oidc` lifecycle `enable`, `update`, `disable`, `status` | Configure Vault JWT auth for local AAP OIDC integration. |
 | `hal vault database` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault audit` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal boundary mariadb` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |
