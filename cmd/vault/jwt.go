@@ -21,8 +21,9 @@ var (
 	jwtEnable         bool
 	jwtDisable        bool
 	jwtUpdate         bool
-	gitlabVersion     string
+	gitlabTag         string
 	gitlabImage       string
+	gitlabPort        int
 	gitlabRunnerImage string
 	gitlabRunnerTag   string
 )
@@ -56,7 +57,10 @@ var vaultJwtCmd = &cobra.Command{
 			projectExists := false
 			runnerActive := false
 			if gitlabExists {
-				apiToken := getGitLabToken("http://127.0.0.1:8080/oauth/token")
+				if p := integrations.DetectGitLabPort(engine); p > 0 {
+					gitlabPort = p
+				}
+				apiToken := getGitLabToken(jwtGitLabHostURL() + "/oauth/token")
 				if apiToken != "" {
 					projectExists = gitLabProjectExists(apiToken, "root/secret-zero")
 					runnerActive, _ = gitLabHasActiveRunner(apiToken)
@@ -72,7 +76,7 @@ var vaultJwtCmd = &cobra.Command{
 
 			// Output Status
 			if gitlabExists {
-				fmt.Printf("  ✅ GitLab CE     : Active (http://gitlab.localhost:8080)\n")
+				fmt.Printf("  ✅ GitLab CE     : Active (%s)\n", jwtGitLabAliasURL())
 			} else {
 				fmt.Printf("  ❌ GitLab CE     : Not running\n")
 			}
@@ -102,7 +106,7 @@ var vaultJwtCmd = &cobra.Command{
 				fmt.Println("   hal vault jwt enable")
 			} else if gitlabExists && projectExists && runnerActive && jwtMounted {
 				fmt.Println("   Demo is ready! View the pipeline at:")
-				fmt.Println("   http://gitlab.localhost:8080/root/secret-zero/-/pipelines")
+				fmt.Printf("   %s/root/secret-zero/-/pipelines\n", jwtGitLabAliasURL())
 				fmt.Println("\n   To completely remove this demo environment, run:")
 				fmt.Println("   hal vault jwt disable")
 			} else {
@@ -174,19 +178,23 @@ var vaultJwtCmd = &cobra.Command{
 
 			global.EnsureNetwork(engine)
 
-			reused, err := integrations.EnsureGitLabCE(engine, gitlabImage+":"+gitlabVersion, "hal9000FTW")
+			gitlab, err := integrations.EnsureSharedGitLab(engine, gitlabImage+":"+gitlabTag, "hal9000FTW", gitlabPort, 0)
 			if err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return
 			}
-			if reused {
+			// Adopt the port the shared GitLab is actually reachable on so this
+			// flow targets the same instance even if it was booted elsewhere
+			// (e.g. terraform vcs-workflow) on a non-default port.
+			gitlabPort = gitlab.Port
+			if gitlab.Reused {
 				fmt.Println("ℹ️  Reusing existing GitLab CE shared service.")
 			} else {
-				fmt.Printf("🚀 Booted GitLab CE shared service (%s:%s).\n", gitlabImage, gitlabVersion)
+				fmt.Printf("🚀 Booted GitLab CE shared service (%s:%s on port %d).\n", gitlabImage, gitlabTag, gitlabPort)
 			}
 
 			fmt.Println("⏳ Waiting for GitLab API...")
-			if err := waitForGitLab("http://127.0.0.1:8080", 90); err != nil {
+			if err := waitForGitLab(jwtGitLabHostURL(), 90); err != nil {
 				fmt.Println("\n❌ GitLab failed to initialize within the time limit.")
 				return
 			}
@@ -194,7 +202,7 @@ var vaultJwtCmd = &cobra.Command{
 			global.RefreshHalHealth(engine)
 			// 1. Authenticate via OAuth
 			fmt.Println("⚙️  Authenticating root account via API...")
-			apiToken := getGitLabToken("http://127.0.0.1:8080/oauth/token")
+			apiToken := getGitLabToken(jwtGitLabHostURL() + "/oauth/token")
 			if apiToken == "" {
 				fmt.Println("❌ Failed to retrieve GitLab API token.")
 				return
@@ -218,7 +226,7 @@ var vaultJwtCmd = &cobra.Command{
 
 			// Protect tags
 			fmt.Println("🔒 Applying security guardrails: Protecting 'v*' tags...")
-			_ = gitlabPost(fmt.Sprintf("http://127.0.0.1:8080/api/v4/projects/%s/protected_tags", projectID), apiToken, map[string]interface{}{
+			_ = gitlabPost(fmt.Sprintf("%s/api/v4/projects/%s/protected_tags", jwtGitLabHostURL(), projectID), apiToken, map[string]interface{}{
 				"name":                "v*",
 				"create_access_level": 40, // 40 = Maintainer/Admin level
 			})
@@ -237,7 +245,7 @@ var vaultJwtCmd = &cobra.Command{
 
 			_ = client.Sys().PutPolicy("cicd-read", `path "kv-jwt/data/cicd" { capabilities = ["read"] }`)
 			_ = client.Sys().EnableAuthWithOptions("jwt", &vault.EnableAuthOptions{Type: "jwt"})
-			gitlabOIDC := integrations.GitLabCE("http://gitlab.localhost:8080")
+			gitlabOIDC := integrations.GitLabCE(jwtGitLabAliasURL())
 
 			_, _ = client.Logical().Write("auth/jwt/config", map[string]interface{}{
 				"jwks_url":     gitlabOIDC.JWKSURL,
@@ -292,7 +300,7 @@ var vaultJwtCmd = &cobra.Command{
 
 			fmt.Println("\n✅ Enterprise Secret Zero Environment Ready!")
 			fmt.Println("---------------------------------------------------------")
-			fmt.Println("🔗 GitLab UI:    http://gitlab.localhost:8080/root/secret-zero/-/pipelines")
+			fmt.Printf("🔗 GitLab UI:    %s/root/secret-zero/-/pipelines\n", jwtGitLabAliasURL())
 			fmt.Println("   Login:        root / hal9000FTW")
 			fmt.Println("\n💡 THE DEMO WORKFLOW:")
 			fmt.Println("   1. The repository and pipeline were created or updated quickly against the shared GitLab instance.")
@@ -310,6 +318,32 @@ var vaultJwtCmd = &cobra.Command{
 // -----------------------------------------------------------------------------
 // Helper Functions (Kept exactly as you wrote them)
 // -----------------------------------------------------------------------------
+
+// gitlabPortOrDefault resolves the port the shared GitLab is reachable on,
+// falling back to the standard default before detection has run.
+func gitlabPortOrDefault() int {
+	if gitlabPort <= 0 {
+		return integrations.DefaultGitLabPort
+	}
+	return gitlabPort
+}
+
+// jwtGitLabHostURL is the host-reachable GitLab base URL (HAL CLI -> GitLab).
+func jwtGitLabHostURL() string {
+	return fmt.Sprintf("http://127.0.0.1:%d", gitlabPortOrDefault())
+}
+
+// jwtGitLabAliasURL is the in-network GitLab base URL via the hal-net alias; it
+// matches GitLab's external_url and therefore the OIDC/JWT issuer.
+func jwtGitLabAliasURL() string {
+	return fmt.Sprintf("http://gitlab.localhost:%d", gitlabPortOrDefault())
+}
+
+// jwtGitLabContainerURL is the in-network GitLab base URL via the container
+// name (used for GitLab Runner registration).
+func jwtGitLabContainerURL() string {
+	return fmt.Sprintf("http://%s:%d", gitlabContainer, gitlabPortOrDefault())
+}
 
 func waitForGitLab(baseURL string, maxRetries int) error {
 	for i := 0; i < maxRetries; i++ {
@@ -347,7 +381,7 @@ func ensureJWTProject(token string) (string, error) {
 		return existingID, nil
 	}
 
-	projectResp, err := integrations.GitLabPost("http://127.0.0.1:8080/api/v4/projects", token, map[string]interface{}{
+	projectResp, err := integrations.GitLabPost(jwtGitLabHostURL()+"/api/v4/projects", token, map[string]interface{}{
 		"name":                   "secret-zero",
 		"initialize_with_readme": true,
 		"default_branch":         "main",
@@ -374,7 +408,7 @@ func ensureJWTProject(token string) (string, error) {
 }
 
 func findJWTProjectID(token, repoPath string) (string, error) {
-	searchURL := fmt.Sprintf("http://127.0.0.1:8080/api/v4/projects?search=%s", url.QueryEscape("secret-zero"))
+	searchURL := fmt.Sprintf("%s/api/v4/projects?search=%s", jwtGitLabHostURL(), url.QueryEscape("secret-zero"))
 	body, err := integrations.GitLabGet(searchURL, token)
 	if err != nil {
 		return "", err
@@ -412,7 +446,7 @@ func upsertJWTProjectFiles(projectID, token, pipelineYAML string) error {
 
 func commitJWTProjectFiles(projectID, token, message string, actions []map[string]string) error {
 	_, err := integrations.GitLabPost(
-		fmt.Sprintf("http://127.0.0.1:8080/api/v4/projects/%s/repository/commits", projectID),
+		fmt.Sprintf("%s/api/v4/projects/%s/repository/commits", jwtGitLabHostURL(), projectID),
 		token,
 		map[string]interface{}{
 			"branch":         "main",
@@ -424,7 +458,7 @@ func commitJWTProjectFiles(projectID, token, message string, actions []map[strin
 }
 
 func gitLabHasActiveRunner(token string) (bool, error) {
-	body, err := integrations.GitLabGet("http://127.0.0.1:8080/api/v4/runners/all?status=online", token)
+	body, err := integrations.GitLabGet(jwtGitLabHostURL()+"/api/v4/runners/all?status=online", token)
 	if err != nil {
 		return false, err
 	}
@@ -476,6 +510,10 @@ func ensureJWTGitLabRunner(engine, token, projectID string) error {
 			return ipErr
 		}
 
+		if err := integrations.EnsureImageAvailable(engine, gitlabRunnerImage+":"+gitlabRunnerTag); err != nil {
+			return err
+		}
+
 		runnerArgs := []string{
 			"run", "-d",
 			"--name", gitlabRunnerContainer,
@@ -497,8 +535,8 @@ func ensureJWTGitLabRunner(engine, token, projectID string) error {
 	registerArgs := []string{
 		"exec", gitlabRunnerContainer,
 		"gitlab-runner", "register", "--non-interactive",
-		"--url", "http://hal-gitlab:8080",
-		"--clone-url", "http://hal-gitlab:8080",
+		"--url", jwtGitLabContainerURL(),
+		"--clone-url", jwtGitLabContainerURL(),
 		"--token", runnerToken,
 		"--executor", "shell",
 		"--description", managedRunnerDesc,
@@ -570,7 +608,7 @@ func gitlabContainerIP(engine string) (string, error) {
 }
 
 func createJWTRunnerAuthToken(token string) (string, error) {
-	body, err := integrations.GitLabPost("http://127.0.0.1:8080/api/v4/user/runners", token, map[string]interface{}{
+	body, err := integrations.GitLabPost(jwtGitLabHostURL()+"/api/v4/user/runners", token, map[string]interface{}{
 		"runner_type":  "instance_type",
 		"description":  "hal-jwt-runner-shell",
 		"run_untagged": false,
@@ -602,11 +640,11 @@ func runnerConfigUsesInternalGitLab(engine string) bool {
 		return false
 	}
 	cfg := string(out)
-	return strings.Contains(cfg, `url = "http://hal-gitlab:8080"`) && strings.Contains(cfg, `clone_url = "http://hal-gitlab:8080"`)
+	return strings.Contains(cfg, fmt.Sprintf(`url = "%s"`, jwtGitLabContainerURL())) && strings.Contains(cfg, fmt.Sprintf(`clone_url = "%s"`, jwtGitLabContainerURL()))
 }
 
 func gitLabHasActiveRunnerByDescription(token, desc string) (bool, error) {
-	body, err := integrations.GitLabGet("http://127.0.0.1:8080/api/v4/runners/all?status=online", token)
+	body, err := integrations.GitLabGet(jwtGitLabHostURL()+"/api/v4/runners/all?status=online", token)
 	if err != nil {
 		return false, err
 	}
@@ -638,10 +676,11 @@ func init() {
 	_ = vaultJwtCmd.Flags().MarkHidden("update")
 
 	// 2. Feature-Specific Flags
-	vaultJwtCmd.Flags().StringVar(&gitlabVersion, "vault-gitlab-tag", "18.10.1-ce.0", "GitLab CE container image tag")
-	vaultJwtCmd.Flags().StringVar(&gitlabImage, "vault-gitlab-image", "gitlab/gitlab-ce", "GitLab CE container image name")
-	vaultJwtCmd.Flags().StringVar(&gitlabRunnerImage, "vault-gitlab-runner-image", "gitlab/gitlab-runner", "GitLab Runner container image name")
-	vaultJwtCmd.Flags().StringVar(&gitlabRunnerTag, "vault-gitlab-runner-tag", "alpine", "GitLab Runner container image tag")
+	vaultJwtCmd.Flags().StringVar(&gitlabTag, "gitlab-tag", "18.10.1-ce.0", "GitLab CE container image tag")
+	vaultJwtCmd.Flags().StringVar(&gitlabImage, "gitlab-image", "gitlab/gitlab-ce", "GitLab CE container image name")
+	vaultJwtCmd.Flags().IntVar(&gitlabPort, "gitlab-port", integrations.DefaultGitLabPort, "Host/container port for the shared GitLab service (ignored when reusing a running instance)")
+	vaultJwtCmd.Flags().StringVar(&gitlabRunnerImage, "gitlab-runner-image", "gitlab/gitlab-runner", "GitLab Runner container image name")
+	vaultJwtCmd.Flags().StringVar(&gitlabRunnerTag, "gitlab-runner-tag", "alpine", "GitLab Runner container image tag")
 
 	Cmd.AddCommand(vaultJwtCmd)
 }

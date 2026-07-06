@@ -23,7 +23,9 @@ var (
 	workspaceDisable         bool
 	workspaceUpdate          bool
 	workspaceAutoApprove     bool
-	workspaceGitLabVersion   string
+	workspaceGitLabTag       string
+	workspaceGitLabImage     string
+	workspaceGitLabPort      int
 	workspaceGitLabPassword  string
 	workspaceProjectPath     string
 	workspaceProjectName     string
@@ -40,6 +42,28 @@ var (
 	tfeVCSBranch             string
 	workspaceGitLabServiceID = "gitlab"
 )
+
+// gitlabHostBaseURL is the host-reachable base URL for the shared GitLab
+// service (used by the HAL CLI running on the host). It honors --gitlab-port.
+func gitlabHostBaseURL() string {
+	port := workspaceGitLabPort
+	if port <= 0 {
+		port = 8080
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
+}
+
+// gitlabInternalBaseURL is the in-network base URL other containers (e.g. the
+// TFE runtime) use to reach the shared GitLab service via its hal-net alias.
+// It honors --gitlab-port because GitLab listens on that port inside the
+// container as well.
+func gitlabInternalBaseURL() string {
+	port := workspaceGitLabPort
+	if port <= 0 {
+		port = 8080
+	}
+	return fmt.Sprintf("http://gitlab.localhost:%d", port)
+}
 
 var workspaceCmd = &cobra.Command{
 	Use:     "vcs-workflow [status|enable|disable|update]",
@@ -152,18 +176,22 @@ func runWorkspaceScenarioEnable(cmd *cobra.Command, engine, target string) error
 
 	global.EnsureNetwork(engine)
 
-	reused, err := integrations.EnsureGitLabCE(engine, workspaceGitLabVersion, workspaceGitLabPassword)
+	gitlab, err := integrations.EnsureSharedGitLab(engine, workspaceGitLabImage+":"+workspaceGitLabTag, workspaceGitLabPassword, workspaceGitLabPort, 0)
 	if err != nil {
 		return err
 	}
-	if reused {
+	// Converge on the port the shared GitLab is actually reachable on. If it was
+	// booted by another product (e.g. vault jwt) on a different port, adopt that
+	// port so every downstream URL in this flow targets the same instance.
+	workspaceGitLabPort = gitlab.Port
+	if gitlab.Reused {
 		fmt.Println("ℹ️  Reusing existing shared GitLab service.")
 	} else {
 		fmt.Println("🚀 Booted shared GitLab service for Terraform VCS workflow setup.")
 	}
 
 	fmt.Println("⏳ Waiting for GitLab API...")
-	if err := integrations.WaitForGitLab("http://127.0.0.1:8080", 90); err != nil {
+	if err := integrations.WaitForGitLab(gitlabHostBaseURL(), 90); err != nil {
 		return fmt.Errorf("GitLab failed to become ready in time")
 	}
 
@@ -172,7 +200,7 @@ func runWorkspaceScenarioEnable(cmd *cobra.Command, engine, target string) error
 		fmt.Println("   💡 VCS push events may not trigger runs if tfe.localhost is unreachable from hal-gitlab.")
 	}
 
-	vcsToken, err := integrations.GitLabPasswordToken("http://127.0.0.1:8080/oauth/token", "root", workspaceGitLabPassword)
+	vcsToken, err := integrations.GitLabPasswordToken(gitlabHostBaseURL()+"/oauth/token", "root", workspaceGitLabPassword)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve GitLab API token: %w", err)
 	}
@@ -480,7 +508,7 @@ func deleteOrgOAuthTokensForClient(orgName, clientID string) error {
 func createGitLabPAT(apiToken string) (string, error) {
 	expires := time.Now().AddDate(1, 0, 0).Format("2006-01-02")
 	name := fmt.Sprintf("hal-tfe-vcs-%d", time.Now().Unix())
-	body, err := integrations.GitLabPost("http://127.0.0.1:8080/api/v4/users/1/personal_access_tokens", apiToken, map[string]interface{}{
+	body, err := integrations.GitLabPost(gitlabHostBaseURL()+"/api/v4/users/1/personal_access_tokens", apiToken, map[string]interface{}{
 		"name":       name,
 		"scopes":     []string{"api", "read_repository", "write_repository", "read_user"},
 		"expires_at": expires,
@@ -519,8 +547,8 @@ func ensureTFEGitLabOAuthClient(orgName string) (string, error) {
 				"attributes": map[string]interface{}{
 					"name":             "hal-gitlab",
 					"service-provider": "gitlab_community_edition",
-					"http-url":         "http://gitlab.localhost:8080",
-					"api-url":          "http://gitlab.localhost:8080/api/v4",
+					"http-url":         gitlabInternalBaseURL(),
+					"api-url":          gitlabInternalBaseURL() + "/api/v4",
 				},
 			},
 		},
@@ -530,8 +558,8 @@ func ensureTFEGitLabOAuthClient(orgName string) (string, error) {
 				"attributes": map[string]interface{}{
 					"name":             "hal-gitlab",
 					"service-provider": "gitlab",
-					"http-url":         "http://gitlab.localhost:8080",
-					"api-url":          "http://gitlab.localhost:8080/api/v4",
+					"http-url":         gitlabInternalBaseURL(),
+					"api-url":          gitlabInternalBaseURL() + "/api/v4",
 				},
 			},
 		},
@@ -707,7 +735,7 @@ func isGitLabOAuthTokenIDUsable(tokenID string) (bool, string) {
 }
 
 func ensureGitLabAllowsLocalWebhooks(apiToken string) error {
-	settingsURL := "http://127.0.0.1:8080/api/v4/application/settings?allow_local_requests_from_web_hooks_and_services=true"
+	settingsURL := gitlabHostBaseURL() + "/api/v4/application/settings?allow_local_requests_from_web_hooks_and_services=true"
 	req, err := http.NewRequest(http.MethodPut, settingsURL, nil)
 	if err != nil {
 		return err
@@ -729,7 +757,7 @@ func ensureGitLabAllowsLocalWebhooks(apiToken string) error {
 }
 
 func ensureTFDemoProject(token string) (string, string, error) {
-	body, err := integrations.GitLabPost("http://127.0.0.1:8080/api/v4/projects", token, map[string]interface{}{
+	body, err := integrations.GitLabPost(gitlabHostBaseURL()+"/api/v4/projects", token, map[string]interface{}{
 		"name":                   workspaceProjectName,
 		"path":                   workspaceProjectPath,
 		"initialize_with_readme": true,
@@ -743,7 +771,7 @@ func ensureTFDemoProject(token string) (string, string, error) {
 	}
 
 	query := url.QueryEscape(workspaceProjectPath)
-	searchURL := fmt.Sprintf("http://127.0.0.1:8080/api/v4/projects?search=%s", query)
+	searchURL := fmt.Sprintf("%s/api/v4/projects?search=%s", gitlabHostBaseURL(), query)
 	searchBody, searchErr := integrations.GitLabGet(searchURL, token)
 	if searchErr != nil {
 		return "", "", fmt.Errorf("create project failed and search failed: %w", err)
@@ -795,7 +823,7 @@ terraform-validate:
 	}
 
 	_, err := integrations.GitLabPost(
-		fmt.Sprintf("http://127.0.0.1:8080/api/v4/projects/%s/repository/commits", projectID),
+		fmt.Sprintf("%s/api/v4/projects/%s/repository/commits", gitlabHostBaseURL(), projectID),
 		token,
 		map[string]interface{}{
 			"branch":         "main",
@@ -817,7 +845,7 @@ terraform-validate:
 	}
 
 	_, updateErr := integrations.GitLabPost(
-		fmt.Sprintf("http://127.0.0.1:8080/api/v4/projects/%s/repository/commits", projectID),
+		fmt.Sprintf("%s/api/v4/projects/%s/repository/commits", gitlabHostBaseURL(), projectID),
 		token,
 		map[string]interface{}{
 			"branch":         "main",
@@ -919,7 +947,9 @@ func init() {
 	_ = workspaceCmd.Flags().MarkHidden("disable")
 	_ = workspaceCmd.Flags().MarkHidden("update")
 	workspaceCmd.Flags().BoolVar(&workspaceAutoApprove, "auto-approve", false, "Skip interactive confirmation for destructive disable operations")
-	workspaceCmd.Flags().StringVar(&workspaceGitLabVersion, "gitlab-version", "18.10.1-ce.0", "Version of the GitLab CE image used for shared Terraform workspace setup")
+	workspaceCmd.Flags().StringVar(&workspaceGitLabTag, "gitlab-tag", "18.10.1-ce.0", "GitLab CE container image tag used for shared Terraform workspace setup")
+	workspaceCmd.Flags().StringVar(&workspaceGitLabImage, "gitlab-image", "gitlab/gitlab-ce", "GitLab CE container image name used for shared Terraform workspace setup")
+	workspaceCmd.Flags().IntVar(&workspaceGitLabPort, "gitlab-port", 8080, "Host/container port for the shared GitLab service (override to avoid conflicts on 8080)")
 	workspaceCmd.Flags().StringVar(&workspaceGitLabPassword, "gitlab-root-password", "hal9000FTW", "Root password used to bootstrap GitLab when HAL starts it")
 	workspaceCmd.Flags().StringVar(&workspaceProjectName, "project-name", "tfe-agent-demo", "GitLab project name for the Terraform workspace demo")
 	workspaceCmd.Flags().StringVar(&workspaceProjectPath, "project-path", "tfe-agent-demo", "GitLab project path for the Terraform workspace demo")
@@ -938,7 +968,6 @@ func init() {
 
 	bindTFETargetFlag(workspaceCmd)
 	for _, name := range []string{
-		"gitlab-version",
 		"gitlab-root-password",
 		"project-name",
 		"project-path",

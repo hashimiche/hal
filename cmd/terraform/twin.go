@@ -206,7 +206,9 @@ var twinCmd = &cobra.Command{
 		tfeArgs = append(tfeArgs,
 			"-e", "TFE_OPERATIONAL_MODE=external",
 			"-e", fmt.Sprintf("TFE_HOSTNAME=%s", tfeTwinHostname),
-			"-e", fmt.Sprintf("TFE_VCS_HOSTNAME=%s:%d", tfeTwinHostname, tfeTwinHTTPSPort),
+			// NOTE: see create.go — the VCS commit-status run link is built from the
+			// primary (portless) TFE_HOSTNAME and cannot be given a :port without moving
+			// the whole primary hostname (too broad a blast radius). Accepted limitation.
 			"-e", "VAULT_ADDR=http://127.0.0.1:8200",
 			"-e", "TFE_METRICS_ENABLE=true",
 			"-e", "TFE_METRICS_HTTP_PORT=9090",
