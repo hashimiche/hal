@@ -22,13 +22,22 @@ Configure a Terraform VCS-driven workflow lab with shared GitLab reuse and targe
 ## Flags
 - Command flags from `hal terraform vcs-workflow --help`:
 ```text
---auto-approve    Skip interactive confirmation for destructive disable operations
--h, --help        help for vcs-workflow
--t, --target string Terraform scope to act on: primary, twin, or both (default "primary")
+--auto-approve          Skip interactive confirmation for destructive disable operations
+--gitlab-image string   GitLab CE container image name (default "gitlab/gitlab-ce")
+--gitlab-tag string     GitLab CE container image tag (default "18.10.1-ce.0")
+--gitlab-port int       Host/container port for the shared GitLab service (default 8080)
+-h, --help              help for vcs-workflow
+-t, --target string     Terraform scope to act on: primary, twin, or both (default "primary")
 ```
 - Global flags: `--debug`, `--dry-run`, `--verbose`
 
-Advanced VCS and GitLab tuning flags remain available but are intentionally hidden from default help to keep the command surface concise.
+The GitLab tuning flags read identically on `hal vault jwt`, which shares the same GitLab singleton:
+- `--gitlab-image` (default `gitlab/gitlab-ce`) and `--gitlab-tag` (default `18.10.1-ce.0`) select the GitLab CE container image and tag.
+- `--gitlab-port` (default `8080`) sets the host/container port for the shared GitLab service; override it when host port `8080` is already in use.
+
+Other advanced flags (`--gitlab-root-password`, `--tfe-*`, `--project-*`) stay hidden from default help to keep the command surface concise.
+
+> Note: the shared GitLab service is reused if it is already running. `--gitlab-image`, `--gitlab-tag`, and `--gitlab-port` only take effect when HAL boots a fresh `hal-gitlab` container.
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.
@@ -37,5 +46,6 @@ Advanced VCS and GitLab tuning flags remain available but are intentionally hidd
 ```bash
 hal terraform vcs-workflow enable
 hal terraform vcs-workflow enable -t both
+hal terraform vcs-workflow enable --gitlab-port 8929
 hal terraform vcs-workflow disable -t primary --auto-approve
 ```

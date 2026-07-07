@@ -22,7 +22,7 @@ This skill covers the local GitLab-backed JWT auth demo implemented by `hal vaul
 - KV engine: `kv-jwt/`
 - Policy: `cicd-read`
 - Role: `auth/jwt/role/cicd-role`
-- Bound issuer: `http://gitlab.localhost:8080`
+- Bound issuer: `http://gitlab.localhost:<gitlab-port>` (default port `8080`; tracks `--gitlab-port`)
 - Bound claims: `project_path=root/secret-zero` and `ref=v*`
 - Bound claims type: `glob` (tag-based guardrail)
 
@@ -36,7 +36,7 @@ Use smart status mode if needed:
 
 Then use the correct lifecycle command:
 
-    hal vault jwt enable --gitlab-version 18.10.1-ce.0
+    hal vault jwt enable --gitlab-tag 18.10.1-ce.0
     hal vault jwt update
     hal vault jwt disable
 
@@ -70,8 +70,8 @@ Provide a brief confirmation that the JWT auth method is enabled and configured.
 | Component | Value | Description |
 |-----------|-------|-------------|
 | Auth Path | `auth/jwt/` | The mount point for the JWT auth method |
-| Bound Issuer | `http://gitlab.localhost:8080` | The trusted GitLab issuer |
-| JWKS URL | `http://gitlab.localhost:8080/oauth/discovery/keys` | Public key source |
+| Bound Issuer | `http://gitlab.localhost:<gitlab-port>` | The trusted GitLab issuer (default port `8080`, follows `--gitlab-port`) |
+| JWKS URL | `http://gitlab.localhost:<gitlab-port>/oauth/discovery/keys` | Public key source |
 | Role | `cicd-role` | The role used by the GitLab pipeline |
 | Policy | `cicd-read` | Read access to the demo secret |
 | Bound Claims | `project_path=root/secret-zero`, `ref=v*` | Restricts access to this repository and protected tag pattern |

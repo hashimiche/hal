@@ -9,8 +9,24 @@
       "name": "--dry-run"
     },
     {
-      "description": "Version of the GitLab CE container image to deploy (default \"18.10.1-ce.0\")",
-      "name": "--gitlab-version string"
+      "description": "GitLab CE container image name (default \"gitlab/gitlab-ce\")",
+      "name": "--gitlab-image string"
+    },
+    {
+      "description": "Host/container port for the shared GitLab service (ignored when reusing a running instance) (default 8080)",
+      "name": "--gitlab-port int"
+    },
+    {
+      "description": "GitLab Runner container image name (default \"gitlab/gitlab-runner\")",
+      "name": "--gitlab-runner-image string"
+    },
+    {
+      "description": "GitLab Runner container image tag (default \"alpine\")",
+      "name": "--gitlab-runner-tag string"
+    },
+    {
+      "description": "GitLab CE container image tag (default \"18.10.1-ce.0\")",
+      "name": "--gitlab-tag string"
     },
     {
       "description": "Remove GitLab CE and strip JWT from Vault",

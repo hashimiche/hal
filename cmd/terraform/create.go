@@ -202,7 +202,15 @@ var deployCmd = &cobra.Command{
 		tfeArgs = append(tfeArgs,
 			"-e", "TFE_OPERATIONAL_MODE=external",
 			"-e", fmt.Sprintf("TFE_HOSTNAME=%s", tfeHostname),
-			"-e", fmt.Sprintf("TFE_VCS_HOSTNAME=%s:%d", tfePrimaryHostname, tfeHTTPSPort),
+			// NOTE: the VCS commit-status run link TFE posts to GitLab is built from the
+			// primary TFE_HOSTNAME, which is intentionally portless (tfe.localhost) so the
+			// rest of the deployment works behind hal-tfe-proxy. That link therefore comes
+			// out as https://tfe.localhost/... (no :8443) and is not host-reachable. This
+			// cannot be fixed via a secondary hostname: TFE_VCS_HOSTNAME_CHOICE=secondary
+			// only governs VCS workload-identity federation, not the human-facing run link
+			// (verified experimentally — TFE accepted TFE_HOSTNAME_SECONDARY=host:8443 but
+			// the commit-status link stayed portless). The proxy can't rewrite it either
+			// (outbound TFE->GitLab, not served through the proxy). Accepted limitation.
 			"-e", "VAULT_ADDR=http://127.0.0.1:8200",
 			"-e", "TFE_METRICS_ENABLE=true",
 			"-e", fmt.Sprintf("TFE_METRICS_HTTP_PORT=%d", tfeMetricsHTTPPort),
