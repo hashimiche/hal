@@ -135,7 +135,8 @@ hal vault oidc update
 hal vault oidc disable
 
 # JWT auth method (deploys GitLab CE as the OIDC provider)
-hal vault jwt enable --vault-gitlab-tag 18.10.1-ce.0
+hal vault jwt enable --gitlab-tag 18.10.1-ce.0
+hal vault jwt enable --gitlab-port 8929   # if host port 8080 is taken (shared with terraform vcs-workflow)
 
 # AAP JWT/OIDC org-mapped auth setup (starts AAP container + configures OIDC)
 hal vault aap enable
@@ -288,7 +289,9 @@ hal terraform delete --target twin
 
 ```bash
 # VCS-driven workspace workflow (local GitLab integration)
-hal terraform vcs-workflow enable --vault-gitlab-tag 18.10.1-ce.0
+hal terraform vcs-workflow enable
+hal terraform vcs-workflow enable --gitlab-image gitlab/gitlab-ce --gitlab-tag 18.10.1-ce.0
+hal terraform vcs-workflow enable --gitlab-port 8929   # if host port 8080 is taken
 hal terraform vcs-workflow update
 hal terraform vcs-workflow disable
 
