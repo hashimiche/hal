@@ -239,6 +239,8 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 
 If guidance here starts duplicating `.github/copilot-instructions.md`, move the canonical rule there and keep only the repo-specific reminder here.
 
+**Scope discipline:** this file is for durable architecture patterns and implementation lessons, not a changelog. One-off bug-fix history and version-specific API quirks belong next to the code (package doc comments or `docs/`), not here — keep entries at the "pattern worth remembering" level so the file stays loadable as AI context. Human contribution process (branch naming, doc-sync, build/test) lives in `CONTRIBUTING.md`; do not duplicate it here.
+
 When lifecycle verbs/flags change (for example replacing force with update), keep all LLM-facing guidance synchronized in the same change set: this file, `.github/copilot/skills/**/*.md`, and MCP-facing docs/contracts (`docs/commands/mcp*.md`, `cmd/mcp/ops_api.go`, MCP test snapshots).
 
 Before making code changes in either `hal` or `hal-plus`, ask the user to create or confirm a working branch first. Every `hal` CLI change must land on a named branch — use `feature/<short-description>` for new capabilities and `bugfix/<short-description>` for fixes. Once the branch exists, keep code and LLM markdown updates aligned on that branch.

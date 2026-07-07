@@ -1,0 +1,15 @@
+# Code owners for HAL.
+# Order matters: the last matching pattern takes precedence.
+# See https://docs.github.com/articles/about-code-owners
+
+# Default owner for everything in the repo.
+*                               @hashimiche
+
+# AI-facing contract surfaces: changes here affect Copilot, HAL Plus, and the
+# MCP server, so they must be reviewed before merge.
+/cmd/mcp/                       @hashimiche
+/LLM_CONTEXT.md                 @hashimiche
+/HAL_MCP_CONTRACT.json          @hashimiche
+/.github/copilot-instructions.md @hashimiche
+/.github/copilot/               @hashimiche
+/docs/cli-lifecycle-model.md    @hashimiche

@@ -491,6 +491,9 @@ HAL uses environment variables and Docker/Podman networking — there is no conf
 
 ## Contributing & Development
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, the doc-sync rule, and
+conventions before opening a pull request.
+
 ```bash
 # From the repo root
 go build -o hal main.go   # build the binary
