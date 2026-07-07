@@ -221,6 +221,61 @@ func mcpOpsTools() []map[string]interface{} {
 				},
 			},
 		},
+		{
+			"name":        "get_boundary_ssh_status",
+			"description": "Return Boundary SSH target readiness (Multipass Ubuntu VM target) and key checks.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "get_tfe_agent_status",
+			"description": "Return Terraform Enterprise custom agent (agent-pool-backed runs) readiness and key checks.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "get_tfe_twin_status",
+			"description": "Return the second (twin) local Terraform Enterprise instance readiness and key checks.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "get_tfe_saml_status",
+			"description": "Return Terraform Enterprise SAML SSO (Authentik IdP) readiness and key checks.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "get_vault_userpass_status",
+			"description": "Return Vault userpass auth demo readiness and key checks.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "get_vault_os_status",
+			"description": "Return Vault OS secret engine (Linux user management via Ubuntu VM) readiness and key checks.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "get_product_obs_status",
+			"description": "Return one product's observability integration readiness (its `hal <product> obs` Grafana/Prometheus/Loki wiring). Distinct from the standalone `hal obs` stack.",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"product": map[string]interface{}{
+						"type":        "string",
+						"description": "product whose observability integration to inspect",
+						"enum":        []string{"vault", "consul", "nomad", "boundary", "terraform"},
+					},
+				},
+				"required": []string{"product"},
+			},
+		},
+		{
+			"name":        "get_plus_status",
+			"description": "Return HAL Plus web UI runtime readiness (hal-plus, hal-mcp, hal-qdrant containers).",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "get_version",
+			"description": "Return the HAL CLI version string.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
 	}
 }
 
@@ -430,9 +485,81 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		return handleValidateCommand(proposed), true
 
+	case "get_boundary_ssh_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_boundary_ssh_status", codeParseError, err.Error(), nil, []string{"hal boundary ssh"}, nil, nil, nil), true
+		}
+		return handleStatusCommandTool("get_boundary_ssh_status", []string{"boundary", "ssh"}, []string{"hal boundary ssh", "hal boundary ssh enable"}, []string{"https://developer.hashicorp.com/boundary"}), true
+
+	case "get_tfe_agent_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_tfe_agent_status", codeParseError, err.Error(), nil, []string{"hal terraform agent"}, nil, nil, nil), true
+		}
+		return handleStatusCommandTool("get_tfe_agent_status", []string{"terraform", "agent"}, []string{"hal terraform agent", "hal terraform agent enable"}, []string{"https://developer.hashicorp.com/terraform/cloud-docs/agents"}), true
+
+	case "get_tfe_twin_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_tfe_twin_status", codeParseError, err.Error(), nil, []string{"hal terraform twin"}, nil, nil, nil), true
+		}
+		return handleStatusCommandTool("get_tfe_twin_status", []string{"terraform", "twin"}, []string{"hal terraform twin", "hal terraform create --target twin"}, []string{"https://developer.hashicorp.com/terraform/enterprise"}), true
+
+	case "get_tfe_saml_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_tfe_saml_status", codeParseError, err.Error(), nil, []string{"hal terraform saml"}, nil, nil, nil), true
+		}
+		return handleStatusCommandTool("get_tfe_saml_status", []string{"terraform", "saml"}, []string{"hal terraform saml", "hal terraform saml enable"}, []string{"https://developer.hashicorp.com/terraform/enterprise/saml"}), true
+
+	case "get_vault_userpass_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_vault_userpass_status", codeParseError, err.Error(), nil, []string{"hal vault userpass"}, nil, nil, nil), true
+		}
+		return handleStatusCommandTool("get_vault_userpass_status", []string{"vault", "userpass"}, []string{"hal vault userpass", "hal vault userpass enable"}, []string{"https://developer.hashicorp.com/vault/docs/auth/userpass"}), true
+
+	case "get_vault_os_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_vault_os_status", codeParseError, err.Error(), nil, []string{"hal vault os"}, nil, nil, nil), true
+		}
+		return handleStatusCommandTool("get_vault_os_status", []string{"vault", "os"}, []string{"hal vault os", "hal vault os enable"}, []string{"https://developer.hashicorp.com/vault/docs/secrets/ssh"}), true
+
+	case "get_product_obs_status":
+		if err := ensureOnlyKeys(args, map[string]bool{"product": true}); err != nil {
+			return opErrorForTool("get_product_obs_status", codeParseError, err.Error(), nil, []string{"hal obs status"}, nil, nil, nil), true
+		}
+		return handleProductObsStatus(args), true
+
+	case "get_plus_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_plus_status", codeParseError, err.Error(), nil, []string{"hal plus status"}, nil, nil, nil), true
+		}
+		return handleStatusCommandTool("get_plus_status", []string{"plus", "status"}, []string{"hal plus status", "hal plus create"}, nil), true
+
+	case "get_version":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_version", codeParseError, err.Error(), nil, []string{"hal version"}, nil, nil, nil), true
+		}
+		return handleStatusCommandTool("get_version", []string{"version"}, []string{"hal version"}, nil), true
+
 	default:
 		return mcpToolCallResult{}, false
 	}
+}
+
+// handleProductObsStatus resolves the read-only observability integration status
+// for a single product's `hal <product> obs` wiring.
+func handleProductObsStatus(args map[string]interface{}) mcpToolCallResult {
+	product, _ := args["product"].(string)
+	product = strings.ToLower(strings.TrimSpace(product))
+	switch product {
+	case "vault", "consul", "nomad", "boundary", "terraform":
+	default:
+		return opErrorForTool("get_product_obs_status", codeParseError, "invalid product; expected vault, consul, nomad, boundary, or terraform", nil, []string{"hal obs status"}, nil, nil, nil)
+	}
+	recommended := []string{
+		fmt.Sprintf("hal %s obs", product),
+		fmt.Sprintf("hal %s obs create", product),
+	}
+	docs := []string{"https://grafana.com/docs/", "https://prometheus.io/docs/", "https://grafana.com/oss/loki/"}
+	return handleStatusCommandTool("get_product_obs_status", []string{product, "obs", "status"}, recommended, docs)
 }
 
 func handleValidateCommand(proposed string) mcpToolCallResult {
@@ -1120,8 +1247,8 @@ func buildOIDCOrJWTStatus(mode string) (map[string]interface{}, []string, error)
 	if !enabled {
 		missing = append(missing, "auth_mount")
 	}
-	if mode == "oidc" && !global.CheckContainer(engine, "hal-keycloak") {
-		missing = append(missing, "keycloak_provider")
+	if mode == "oidc" && !global.CheckContainer(engine, "hal-authentik-server") {
+		missing = append(missing, "authentik_provider")
 	}
 	if mode == "jwt" && !global.CheckContainer(engine, "hal-gitlab") {
 		missing = append(missing, "gitlab_provider")

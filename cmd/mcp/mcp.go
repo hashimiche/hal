@@ -9,12 +9,14 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -32,19 +34,35 @@ type CleanupResult struct {
 }
 
 const (
-	// mcpProtocolVersionStdio is advertised over stdio (legacy MCP clients).
+	// mcpProtocolVersionStdio is the default version advertised over stdio when a
+	// client does not request one. Kept for backwards compatibility with the
+	// bundled HAL Plus stdio client.
 	mcpProtocolVersionStdio = "2024-11-05"
-	// mcpProtocolVersionStreamableHTTP is advertised over the streamable-http transport,
-	// matching the MCP 2025-03-26 spec used by HashiCorp's MCP servers.
+	// mcpProtocolVersionStreamableHTTP is the default version advertised over the
+	// streamable-http transport when a client does not request one.
 	mcpProtocolVersionStreamableHTTP = "2025-03-26"
-	mcpServerName                    = "hal-mcp"
-	mcpServerVersion                 = "0.1.0"
+	// mcpProtocolVersionLatest is the newest MCP revision this server understands.
+	// It is returned when a client requests a version we do not recognise, per the
+	// spec's version-negotiation rules.
+	mcpProtocolVersionLatest = "2025-11-25"
+	mcpServerName            = "hal-mcp"
+	mcpServerVersion         = "0.1.0"
 
 	// transportStdio is the default stdio transport.
 	transportStdio = "stdio"
 	// transportStreamableHTTP is the streamable-http transport per MCP 2025-03-26.
 	transportStreamableHTTP = "streamable-http"
 )
+
+// supportedProtocolVersions lists every MCP revision this server can speak,
+// newest first. Used for initialize version negotiation and to validate the
+// MCP-Protocol-Version header on the streamable-http transport.
+var supportedProtocolVersions = []string{
+	"2025-11-25",
+	"2025-06-18",
+	"2025-03-26",
+	"2024-11-05",
+}
 
 const (
 	rpcParseError     = -32700
@@ -306,11 +324,21 @@ type toolsCallParams struct {
 	Arguments map[string]interface{} `json:"arguments"`
 }
 
+type initializeParams struct {
+	ProtocolVersion string `json:"protocolVersion"`
+}
+
 type toolExecution struct {
 	Command   string `json:"command"`
 	ExitCode  int    `json:"exit_code"`
 	Output    string `json:"output"`
 	Timestamp string `json:"timestamp"`
+}
+
+// snapshotJob is a single read-only hal command executed as part of hal_snapshot.
+type snapshotJob struct {
+	key  string
+	args []string
 }
 
 func ensureMCPDir() (string, error) {
@@ -511,6 +539,21 @@ func handleStreamableHTTPRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Security: validate the Origin header to prevent DNS-rebinding attacks from
+	// browsers (MCP streamable-http requirement). Non-browser clients omit Origin
+	// and are allowed; a present-but-disallowed Origin is rejected with 403.
+	if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" && !isAllowedOrigin(origin) {
+		writeJSONRPCErrorStatus(w, nil, http.StatusForbidden, rpcInvalidRequest, "origin not allowed")
+		return
+	}
+
+	// Spec: a present-but-unsupported MCP-Protocol-Version header MUST yield 400.
+	// An absent header is tolerated for backwards compatibility.
+	if pv := strings.TrimSpace(r.Header.Get("MCP-Protocol-Version")); pv != "" && !isSupportedProtocolVersion(pv) {
+		writeJSONRPCErrorStatus(w, nil, http.StatusBadRequest, rpcInvalidRequest, "unsupported MCP-Protocol-Version")
+		return
+	}
+
 	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	if err != nil {
 		writeJSONRPCError(w, nil, rpcParseError, "failed to read request body")
@@ -553,13 +596,95 @@ func writeJSONRPCError(w http.ResponseWriter, id interface{}, code int, message 
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-func handleRPCRequest(req rpcRequest, protocolVersion string) *rpcResponse {
+// writeJSONRPCErrorStatus writes a JSON-RPC error body under a specific HTTP
+// status code (for example 400/403 required by the streamable-http transport).
+func writeJSONRPCErrorStatus(w http.ResponseWriter, id interface{}, httpStatus, code int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpStatus)
+	resp := rpcResponse{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: message}}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// negotiateProtocolVersion resolves the protocolVersion returned in an
+// initialize response. If the client requested a version we support we echo it
+// back; if it requested an unknown version we return our latest supported
+// version; if it requested nothing we fall back to the transport default.
+func negotiateProtocolVersion(requested, fallback string) string {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return fallback
+	}
+	if isSupportedProtocolVersion(requested) {
+		return requested
+	}
+	return mcpProtocolVersionLatest
+}
+
+// isSupportedProtocolVersion reports whether the given MCP revision is one this
+// server can speak.
+func isSupportedProtocolVersion(v string) bool {
+	for _, s := range supportedProtocolVersions {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
+// isAllowedOrigin reports whether a browser Origin is permitted to reach the
+// streamable-http endpoint. Loopback and *.localhost origins are always allowed;
+// additional origins may be supplied via HAL_MCP_ALLOWED_ORIGINS (comma list).
+func isAllowedOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := u.Hostname()
+	switch host {
+	case "localhost", "127.0.0.1", "::1", "0.0.0.0":
+		return true
+	}
+	if strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	for _, allowed := range extraAllowedOrigins() {
+		if strings.EqualFold(allowed, origin) || strings.EqualFold(allowed, u.Host) || strings.EqualFold(allowed, host) {
+			return true
+		}
+	}
+	return false
+}
+
+// extraAllowedOrigins parses the optional HAL_MCP_ALLOWED_ORIGINS allowlist.
+func extraAllowedOrigins() []string {
+	raw := strings.TrimSpace(os.Getenv("HAL_MCP_ALLOWED_ORIGINS"))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func handleRPCRequest(req rpcRequest, defaultProtocolVersion string) *rpcResponse {
 	base := &rpcResponse{JSONRPC: "2.0", ID: req.ID}
 
 	switch req.Method {
 	case "initialize":
+		requested := ""
+		if len(req.Params) > 0 {
+			var ip initializeParams
+			if err := json.Unmarshal(req.Params, &ip); err == nil {
+				requested = strings.TrimSpace(ip.ProtocolVersion)
+			}
+		}
 		base.Result = map[string]interface{}{
-			"protocolVersion": protocolVersion,
+			"protocolVersion": negotiateProtocolVersion(requested, defaultProtocolVersion),
 			"capabilities": map[string]interface{}{
 				"tools": map[string]interface{}{},
 			},
@@ -772,21 +897,39 @@ func callTool(name string, args map[string]interface{}) mcpToolCallResult {
 			"hal_snapshot": map[string]interface{}{},
 		}
 
-		entries := map[string]interface{}{}
-		entries["status"] = runHAL("status")
-		entries["capacity_current"] = runHAL("capacity")
+		jobs := []snapshotJob{
+			{key: "status", args: []string{"status"}},
+			{key: "capacity_current", args: []string{"capacity"}},
+		}
 		if includeCapacityViews {
-			entries["capacity_active"] = runHAL("capacity", "--active")
-			entries["capacity_pending"] = runHAL("capacity", "--pending")
+			jobs = append(jobs,
+				snapshotJob{key: "capacity_active", args: []string{"capacity", "--active"}},
+				snapshotJob{key: "capacity_pending", args: []string{"capacity", "--pending"}},
+			)
 		}
 		if includeProducts {
-			entries["vault_status"] = runHAL("vault", "status")
-			entries["consul_status"] = runHAL("consul", "status")
-			entries["nomad_status"] = runHAL("nomad", "status")
-			entries["boundary_status"] = runHAL("boundary", "status")
-			entries["terraform_status"] = runHAL("terraform", "status")
-			entries["obs_status"] = runHAL("obs", "status")
+			for _, product := range []string{"vault", "consul", "nomad", "boundary", "terraform", "obs"} {
+				jobs = append(jobs, snapshotJob{key: product + "_status", args: []string{product, "status"}})
+			}
 		}
+
+		// These commands are independent read-only status probes; run them
+		// concurrently so a full snapshot costs one subprocess round-trip instead
+		// of a serial chain of up to ten.
+		entries := make(map[string]interface{}, len(jobs))
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for _, job := range jobs {
+			wg.Add(1)
+			go func(job snapshotJob) {
+				defer wg.Done()
+				res := runHAL(job.args...)
+				mu.Lock()
+				entries[job.key] = res
+				mu.Unlock()
+			}(job)
+		}
+		wg.Wait()
 		snapshot["hal_snapshot"] = entries
 
 		textBody, _ := json.MarshalIndent(snapshot, "", "  ")

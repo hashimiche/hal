@@ -191,13 +191,17 @@ func validateCommand(proposed string) map[string]interface{} {
 		"catalog":   {},
 		"delete":    {},
 		"version":   {},
+		"daisy":     {},
+		"creds":     {"status"},
+		"health":    {"create", "update", "delete"},
+		"plus":      {"create", "status", "delete"},
 		"mcp":       {"create", "serve", "status", "delete"},
-		"vault":     {"create", "status", "delete", "audit", "jwt", "k8s", "ldap", "database", "oidc", "db"},
-		"consul":    {"create", "status", "delete"},
-		"nomad":     {"create", "status", "delete", "job"},
-		"boundary":  {"create", "status", "delete", "mariadb", "ssh"},
-		"terraform": {"create", "status", "delete", "workspace", "cli", "agent"},
-		"obs":       {"create", "status", "delete"},
+		"vault":     {"create", "status", "delete", "update", "audit", "oidc", "jwt", "k8s", "ldap", "database", "db", "userpass", "up", "os", "pki", "obs"},
+		"consul":    {"create", "status", "delete", "update", "obs"},
+		"nomad":     {"create", "status", "delete", "update", "job", "obs"},
+		"boundary":  {"create", "status", "delete", "update", "mariadb", "ssh", "obs"},
+		"terraform": {"create", "status", "delete", "update", "agent", "api-workflow", "api", "vcs-workflow", "vcs", "workspace", "ws", "twin", "bis", "dup", "saml", "obs"},
+		"obs":       {"create", "status", "delete", "update"},
 	}
 
 	root := parts[1]
@@ -271,7 +275,7 @@ func buildDiagnostics(product string, tailLines int) (map[string]interface{}, er
 	}
 
 	containersByProduct := map[string][]string{
-		"vault":     {"hal-vault", "hal-openldap", "hal-keycloak", "hal-mariadb", "hal-gitlab"},
+		"vault":     {"hal-vault", "hal-openldap", "hal-authentik-server", "hal-authentik-worker", "hal-mariadb", "hal-gitlab"},
 		"consul":    {"hal-consul"},
 		"nomad":     {},
 		"boundary":  {"hal-boundary", "hal-boundary-target-mariadb"},
