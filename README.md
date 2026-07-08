@@ -19,7 +19,7 @@ HAL is a local lab orchestrator for HashiCorp products. It replaces the hand-wri
 ## TL;DR
 
 ```bash
-brew tap hashimiche/tap && brew install hal
+brew tap hashimiche/tap && brew trust hashimiche/tap && brew install hal
 
 hal status          # see what's running
 hal vault create    # spin up Vault
@@ -49,8 +49,11 @@ Install the tooling required by the labs you want to run before installing HAL.
 
 ```bash
 brew tap hashimiche/tap
+brew trust hashimiche/tap   # Homebrew 6.0+ requires trusting non-official taps
 brew install hal
 ```
+
+> **Homebrew 6.0+ (June 2026):** non-official taps must be explicitly trusted before install. `brew trust hashimiche/tap` grants whole-tap trust. To trust only the formula instead, run `brew trust --formula hashimiche/tap/hal`, or skip trust entirely by installing the fully-qualified name: `brew install hashimiche/tap/hal`.
 
 ### Manual binary
 
