@@ -1,7 +1,6 @@
 name: Bug report
 description: Report a defect in HAL command behavior, output, or lifecycle handling.
 title: "bug: <short description>"
-labels: ["bug"]
 body:
   - type: markdown
     attributes:

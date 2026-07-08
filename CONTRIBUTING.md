@@ -19,7 +19,8 @@ actionable:
   conventions below.
 
 Search existing issues before opening a new one, and keep each issue scoped to a
-single bug or request.
+single bug or request. Don't worry about labels — maintainers apply and triage
+them.
 
 ## Quick start
 

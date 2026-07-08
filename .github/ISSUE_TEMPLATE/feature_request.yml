@@ -1,7 +1,6 @@
 name: Feature request
 description: Propose a new capability or an enhancement to existing HAL behavior.
 title: "feat: <short description>"
-labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
