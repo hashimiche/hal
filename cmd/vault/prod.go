@@ -31,6 +31,52 @@ import (
 // the standard HAL way (internal/global.CacheVaultInit) so they can always be
 // retrieved via `hal vault status` and `hal creds status`.
 
+// Detected edition of a running Vault server (see verifyProdEdition).
+const (
+	editionEnterprise = "enterprise"
+	editionCommunity  = "community"
+	editionUnknown    = "unknown"
+)
+
+// verifyProdEdition asks the running server whether it is a licensed Enterprise
+// build by reading sys/license/status (an Enterprise-only endpoint). It returns
+// the detected edition and, when Enterprise, the license expiration time.
+//   - 200            -> enterprise (+ expiry if present)
+//   - any other code -> community (the endpoint only exists on Enterprise)
+//   - request error  -> unknown (server unreachable / transient)
+func verifyProdEdition(rootToken string) (string, string) {
+	client := prodHTTPClient()
+	req, err := http.NewRequest(http.MethodGet, vaultProdLocalAPIURL+"/v1/sys/license/status", nil)
+	if err != nil {
+		return editionUnknown, ""
+	}
+	req.Header.Set("X-Vault-Token", rootToken)
+	resp, err := client.Do(req)
+	if err != nil {
+		return editionUnknown, ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return editionCommunity, ""
+	}
+	var body struct {
+		Data struct {
+			ExpirationTime string `json:"expiration_time"`
+			Autoloaded     struct {
+				ExpirationTime string `json:"expiration_time"`
+			} `json:"autoloaded"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return editionEnterprise, "" // 200 but unparseable — still Enterprise
+	}
+	expiry := body.Data.Autoloaded.ExpirationTime
+	if expiry == "" {
+		expiry = body.Data.ExpirationTime
+	}
+	return editionEnterprise, expiry
+}
+
 // runVaultProd stands up the production Vault Enterprise instance. imageRef is
 // the fully-qualified "<repo>:<tag>" already resolved by the create command
 // (edition is forced to Enterprise on the prod path). The VAULT_LICENSE env var
@@ -187,6 +233,12 @@ func runVaultProd(engine, imageRef, displayVersion string) {
 		return
 	}
 
+	// 11. Verify the running server is actually a licensed Enterprise build. A
+	// wrong --vault-image (e.g. a Community image) boots fine and silently
+	// ignores VAULT_LICENSE, so we assert edition rather than trust the flag.
+	ui.LogoStep("Verifying Enterprise license")
+	edition, licenseExpiry := verifyProdEdition(initData.RootToken)
+
 	ui.LogoStop()
 	global.RefreshHalHealth(engine)
 
@@ -195,15 +247,46 @@ func runVaultProd(engine, imageRef, displayVersion string) {
 		unsealKey = initData.UnsealKeysB64[0]
 	}
 
-	ui.Success("Vault Enterprise %s is UP! (prod, single-node Raft)", displayVersion)
+	editionLabel := "ENTERPRISE"
+	if edition == editionCommunity {
+		editionLabel = "COMMUNITY (⚠️ prod expects Enterprise)"
+	} else if edition == editionUnknown {
+		editionLabel = "ENTERPRISE (unverified)"
+	}
+
+	if edition == editionCommunity {
+		ui.Success("Vault %s is UP! (prod mode, single-node Raft) — ⚠️ Community build, NOT Enterprise", displayVersion)
+	} else {
+		ui.Success("Vault Enterprise %s is UP! (prod, single-node Raft)", displayVersion)
+	}
 	ui.Section("Connection")
-	ui.Field("Edition", "ENTERPRISE")
+	ui.Field("Edition", editionLabel)
 	ui.Field("Mode", "prod (integrated Raft, persistent)")
 	ui.Field("UI", vaultProdPublicURL)
 	ui.Field("Root token", initData.RootToken)
 	ui.Field("Unseal key", unsealKey)
+	if edition == editionEnterprise {
+		if licenseExpiry != "" {
+			ui.Field("License", "active (expires "+licenseExpiry+")")
+		} else {
+			ui.Field("License", "active")
+		}
+	}
 	if vaultJoinConsul {
 		ui.Item("🟢 Tethered to the global Consul Control Plane")
+	}
+
+	// Loud, actionable warning if the running server is not licensed Enterprise.
+	if edition == editionCommunity {
+		ui.Section("⚠️  Enterprise license check FAILED")
+		ui.Item("The running server is a Community build — VAULT_LICENSE is INACTIVE and")
+		ui.Item("Enterprise features (Raft auto-snapshots, namespaces, etc.) are unavailable.")
+		ui.Item("This almost always means --vault-image points at a Community image.")
+		ui.Item("Fix: re-run without --vault-image (defaults to %s) using a valid license.", defaultVaultImageEnt)
+	} else if edition == editionUnknown {
+		ui.Section("ℹ️  Enterprise license check")
+		ui.Item("Could not confirm the Enterprise license (status endpoint unreachable).")
+		ui.Item("Verify manually: VAULT_TOKEN=<root> vault read sys/license/status")
 	}
 
 	ui.Section("Credentials saved")
