@@ -77,7 +77,15 @@ var vaultDestroyCmd = &cobra.Command{
 			_ = exec.Command(engine, "volume", "rm", "-f", volume).Run()
 		}
 
-		// 3. Attempt to clean the network (Only deletes hal-net if NO containers are using it)
+		// 3. Remove production-mode state (~/.hal/vault-prod: init.json, vault.hcl,
+		//    TLS certs) so a delete never strands the saved unseal key / root token.
+		if global.DryRun {
+			fmt.Printf("[DRY RUN] Would remove prod state dir: %s\n", global.VaultProdStateDir())
+		} else if err := global.RemoveCachedVaultInit(); err != nil {
+			fmt.Printf("⚠️  Could not remove prod Vault state (%s): %v\n", global.VaultProdStateDir(), err)
+		}
+
+		// 4. Attempt to clean the network (Only deletes hal-net if NO containers are using it)
 		global.CleanNetworkIfEmpty(engine)
 
 		if err := global.RemoveObsPromTargetFile("vault"); err != nil {

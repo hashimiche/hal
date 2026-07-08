@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,7 +13,108 @@ import (
 	"hal/internal/ui"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
+
+// promptForVaultLicense interactively asks for a Vault Enterprise license when
+// none was found in the environment. It returns "" on a non-interactive stdin
+// (piped input, MCP, CI) or when the user submits nothing, so callers fall back
+// to the standard non-interactive error. The input may be the license string
+// itself or a path to a .hclic file (a leading ~ is expanded); if it resolves to
+// a readable file, its contents are used.
+//
+// The read uses full raw mode (term.MakeRaw + a manual byte loop) rather than a
+// line reader or term.ReadPassword. This is deliberate and non-obvious: Vault
+// Enterprise license strings routinely exceed the terminal's canonical-mode line
+// limit (MAX_CANON, ~1024 bytes on macOS), which makes a cooked-mode reader
+// silently stop accepting input — including Enter — mid-paste. term.ReadPassword
+// does NOT help here because on macOS it keeps ICANON enabled (it only disables
+// echo), so it hits the same cap. Full raw mode disables ICANON, removing the
+// cap so long pastes submit correctly.
+func promptForVaultLicense() string {
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return "" // not a TTY — preserve non-interactive behavior
+	}
+
+	fmt.Println("🔑 Vault Enterprise requires a license, but none was found in the environment.")
+	fmt.Println("   Tip: the most reliable path is a file — export VAULT_LICENSE_PATH=/path/to/vault.hclic")
+	fmt.Print("   Or paste the license OR a path to a .hclic file, then press Enter (empty Enter aborts):\n   > ")
+
+	raw, err := readLineRaw(fd)
+	fmt.Println() // raw mode does not echo the newline
+	if err != nil {
+		return ""
+	}
+	input := strings.TrimSpace(raw)
+	if input == "" {
+		return ""
+	}
+	// Reassure the user the (unechoed) paste landed.
+	fmt.Printf("   ✓ received %d characters\n", len(input))
+
+	// Expand a leading ~ so "~/vault.hclic" resolves.
+	candidate := input
+	if strings.HasPrefix(candidate, "~/") {
+		if home, herr := os.UserHomeDir(); herr == nil {
+			candidate = filepath.Join(home, candidate[2:])
+		}
+	}
+	if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+		if b, readErr := os.ReadFile(candidate); readErr == nil {
+			return strings.TrimSpace(string(b))
+		}
+	}
+	return input
+}
+
+// readLineRaw reads a single line from the terminal in FULL raw mode, so pasted
+// input is not subject to the canonical-mode line-length cap (MAX_CANON) that
+// makes long licenses impossible to submit. It terminates on CR or LF, supports
+// Ctrl-C/Ctrl-D as abort and backspace for edits, and strips bracketed-paste
+// escape markers a terminal may wrap the paste in.
+func readLineRaw(fd int) (string, error) {
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return "", err
+	}
+	defer term.Restore(fd, oldState)
+
+	var buf []byte
+	b := make([]byte, 1)
+	for {
+		n, readErr := os.Stdin.Read(b)
+		if n > 0 {
+			switch b[0] {
+			case '\r', '\n':
+				return stripBracketedPaste(buf), nil
+			case 3, 4: // Ctrl-C / Ctrl-D → abort
+				return "", fmt.Errorf("input aborted")
+			case 127, 8: // DEL / backspace
+				if len(buf) > 0 {
+					buf = buf[:len(buf)-1]
+				}
+			default:
+				buf = append(buf, b[0])
+			}
+		}
+		if readErr != nil {
+			if len(buf) > 0 {
+				return stripBracketedPaste(buf), nil
+			}
+			return "", readErr
+		}
+	}
+}
+
+// stripBracketedPaste removes the ESC[200~ / ESC[201~ markers some terminals
+// wrap pasted content in when bracketed-paste mode is active.
+func stripBracketedPaste(b []byte) string {
+	s := string(b)
+	s = strings.ReplaceAll(s, "\x1b[200~", "")
+	s = strings.ReplaceAll(s, "\x1b[201~", "")
+	return s
+}
 
 var (
 	vaultVersion     string
@@ -22,6 +124,12 @@ var (
 	vaultHelperTag   string
 	vaultUpdate      bool
 	vaultJoinConsul  bool
+
+	// Production-mode (--mode prod) knobs. See prod.go.
+	vaultMode         string // dev or prod
+	vaultKeyShares    int
+	vaultKeyThreshold int
+	vaultProdNodeID   string
 )
 
 var deployCmd = &cobra.Command{
@@ -44,6 +152,23 @@ var deployCmd = &cobra.Command{
 			return
 		}
 
+		// ==========================================
+		// MODE RESOLUTION (dev vs prod)
+		// ==========================================
+		// Production mode is Enterprise-only. It implies --edition ent; an explicit
+		// --edition ce alongside --mode prod is a contradiction we reject early.
+		if vaultMode == "prod" {
+			if cmd.Flags().Changed("edition") && vaultEdition != "ent" && vaultEdition != "enterprise" {
+				fmt.Println("❌ Error: --mode prod requires Vault Enterprise; '--edition ce' is incompatible.")
+				fmt.Println("   💡 Drop --edition (prod implies Enterprise) or pass --edition ent.")
+				return
+			}
+			vaultEdition = "ent"
+		} else if vaultMode != "" && vaultMode != "dev" {
+			fmt.Printf("❌ Error: unknown --mode %q (expected 'dev' or 'prod').\n", vaultMode)
+			return
+		}
+
 		// THE NEW LICENSE CHECK
 		if vaultEdition == "ent" || vaultEdition == "enterprise" {
 			license := os.Getenv("VAULT_LICENSE")
@@ -59,13 +184,21 @@ var deployCmd = &cobra.Command{
 				license = string(licenseBytes)
 			}
 
+			// Nothing in the environment. On an interactive terminal, offer to
+			// take the license (or a path to a .hclic) inline instead of failing.
 			if license == "" {
+				license = promptForVaultLicense()
+			}
+
+			if strings.TrimSpace(license) == "" {
 				fmt.Println("❌ Error: Vault Enterprise requested but no license found.")
-				fmt.Println("   💡 Set one of:")
+				fmt.Println("   💡 Provide it one of these ways:")
 				fmt.Println("      export VAULT_LICENSE='your_license_string'")
 				fmt.Println("      export VAULT_LICENSE_PATH='/path/to/vault.hclic'")
+				fmt.Println("      or re-run interactively and paste it when prompted.")
 				return
 			}
+			license = strings.TrimSpace(license)
 
 			// Store in environment for container injection
 			os.Setenv("VAULT_LICENSE", license)
@@ -96,6 +229,13 @@ var deployCmd = &cobra.Command{
 		// --vault-image overrides the per-edition image name entirely
 		if vaultImage != "" {
 			imageRepo = vaultImage
+		}
+
+		// Production mode diverges entirely: real server -config, Raft storage,
+		// TLS, and auto init+unseal. See prod.go.
+		if vaultMode == "prod" {
+			runVaultProd(engine, fmt.Sprintf("%s:%s", imageRepo, actualVersion), actualVersion)
+			return
 		}
 
 		ui.LogoStart("vault", 4)
@@ -245,6 +385,10 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	cmd.Flags().StringVarP(&vaultVersion, "vault-tag", "v", defaultVaultTag, "Vault container image tag")
 	cmd.Flags().StringVar(&vaultImage, "vault-image", "", "Vault container image name (overrides per-edition default: hashicorp/vault or hashicorp/vault-enterprise)")
 	cmd.Flags().StringVarP(&vaultEdition, "edition", "e", defaultVaultEdition, "Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise)")
+	cmd.Flags().StringVar(&vaultMode, "mode", defaultVaultMode, "Deployment mode: 'dev' (in-memory, auto-unsealed, HTTP) or 'prod' (persistent single-node Raft, TLS, initialized+unsealed; implies --edition ent)")
+	cmd.Flags().IntVar(&vaultKeyShares, "key-shares", defaultVaultKeyShares, "[prod] Number of unseal key shares to generate at operator init")
+	cmd.Flags().IntVar(&vaultKeyThreshold, "key-threshold", defaultVaultKeyThreshold, "[prod] Number of unseal key shares required to unseal")
+	cmd.Flags().StringVar(&vaultProdNodeID, "node-id", defaultVaultProdNodeID, "[prod] Raft node identifier for the single-node cluster")
 	cmd.Flags().StringVar(&vaultHelperImage, "vault-helper-image", defaultVaultHelperImage, "Helper container image name for one-shot setup tasks during Vault deploy")
 	cmd.Flags().StringVar(&vaultHelperTag, "vault-helper-tag", defaultVaultHelperTag, "Helper container image tag for one-shot setup tasks during Vault deploy")
 	if includeUpdate {

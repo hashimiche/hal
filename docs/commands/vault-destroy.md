@@ -21,6 +21,9 @@ Destroy local Vault instance and associated integration resources.
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.
+- Removes the Vault container, its volumes, and the ecosystem containers.
+- For a production instance, also removes `~/.hal/vault-prod/` (config, TLS certs,
+  and `init.json`) so the saved unseal key / root token are never stranded.
 
 ## Example
 ```bash

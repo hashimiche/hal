@@ -114,15 +114,34 @@ Tears down all HAL-managed resources. **Destructive — prompts for confirmation
 **Product lifecycle**
 
 ```bash
-hal vault create                          # provision Vault with defaults
+hal vault create                          # provision Vault with defaults (dev mode)
 hal vault create --vault-tag 2.0          # pin the image tag
 hal vault create --vault-image myregistry.local/vault --vault-tag 2.0  # custom image
-hal vault create --edition ent            # use Vault Enterprise image
+hal vault create --edition ent            # use Vault Enterprise image (still dev mode)
 hal vault create --join-consul            # tether to the local Consul instance
 hal vault update                          # reconcile config changes
 hal vault status                          # health + seal/init state
 hal vault delete                          # remove Vault container and volumes
 ```
+
+**Production-mode Vault Enterprise** (`--mode prod`) — a single-node, persistent,
+TLS-enabled Enterprise instance, the Vault analog to `hal terraform create`:
+
+```bash
+export VAULT_LICENSE='...'                # or VAULT_LICENSE_PATH=/path/vault.hclic
+hal vault create --mode prod              # real `server -config`, integrated Raft, HTTPS, auto init+unseal
+```
+
+- Boots `vault server -config` with **integrated Raft** storage on a persistent
+  volume (survives restarts — unlike dev mode's in-memory storage).
+- Serves **HTTPS at `https://vault.localhost:8200`** with a HAL-forged self-signed
+  cert under `~/.hal/vault-prod/certs/` (dev mode stays plaintext HTTP).
+- Auto-runs `operator init` (default `--key-shares 1 --key-threshold 1`) and
+  unseals. The generated **unseal key + root token are saved to
+  `~/.hal/vault-prod/init.json` (mode `0600`)** — retrieve them anytime with
+  `hal vault status` or `hal creds status`.
+- `--mode prod` implies `--edition ent`; requires a valid `VAULT_LICENSE`.
+- `hal vault delete` removes the container, Raft volume, **and** `~/.hal/vault-prod/`.
 
 **Feature subcommands** — `enable` / `update` / `disable`
 
@@ -461,7 +480,8 @@ HAL uses environment variables and Docker/Podman networking — there is no conf
 
 | Service | URL |
 |---|---|
-| Vault | http://vault.localhost:8200 |
+| Vault (dev) | http://vault.localhost:8200 |
+| Vault Enterprise (`--mode prod`) | https://vault.localhost:8200 |
 | Consul | http://consul.localhost:8500 |
 | Boundary | http://boundary.localhost:9200 |
 | Terraform Enterprise | https://tfe.localhost:8443 |
@@ -483,6 +503,7 @@ HAL uses environment variables and Docker/Podman networking — there is no conf
 - **`hal nomad` and `hal boundary ssh`** require Multipass. The Ubuntu VM is provisioned and torn down as part of the lifecycle.
 - **`hal delete`** (global teardown) removes all HAL-managed containers, volumes, VMs, and the `hal-net` Docker network. There is a confirmation prompt but the action is not reversible. If `hal-net` cannot be removed (non-HAL containers still attached), the command exits with an error listing the blockers.
 - **TFE requires a valid license.** `hal terraform create` expects a Terraform Enterprise license to be in place. The stack will start but TFE itself will not activate without one.
+- **Vault Enterprise prod mode requires a license.** `hal vault create --mode prod` needs `VAULT_LICENSE` (or `VAULT_LICENSE_PATH`) and will not boot without one. It serves HTTPS with a self-signed cert — accept the browser warning, or set `VAULT_CACERT=~/.hal/vault-prod/certs/cert.pem` for the CLI. The saved unseal key + root token in `~/.hal/vault-prod/init.json` are the **only** copy; losing that file leaves a sealed, unrecoverable Vault. Feature integrations that embed URLs into Vault (OIDC callbacks, PKI AIA/CRL, the OS plugin register) are currently validated against **dev mode**; enabling them against a prod (TLS) instance may need manual URL adjustment.
 - **CSI mode for `hal vault k8s`** requires a Vault Enterprise binary. HAL will detect the edition at runtime and fall back to native mode automatically.
 - **Image and tag overrides are opt-in.** Every `create` / `enable` command exposes `--<component>-image` (registry + name) and `--<component>-tag` (version) flags independently. Use them to pull from a private mirror, pin a specific version, or test a custom build.
 - **`--network-subnet`** (global flag) pins the subnet when `hal-net` is created for the first time (e.g. `hal --network-subnet 10.89.3.0/24 tf create --enable`). Useful on Rancher Desktop or any engine that assigns an unexpected default subnet that conflicts with static proxy IPs.

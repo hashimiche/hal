@@ -3,16 +3,51 @@ package vault
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+
+	"hal/internal/global"
 
 	vault "github.com/hashicorp/vault/api"
 )
+
+// vaultProdCertPath returns the host path to the prod TLS cert, or "" if the
+// home directory is unavailable.
+func vaultProdCertPath() string {
+	dir := global.VaultProdStateDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, vaultProdCertsDirName, vaultProdCertFileName)
+}
+
+// vaultProdActive reports whether a production-mode instance has been stood up,
+// detected by the presence of its forged TLS certificate. Host-side clients use
+// this to pick the HTTPS scheme + CA and the cached root token.
+func vaultProdActive() bool {
+	certPath := vaultProdCertPath()
+	if certPath == "" {
+		return false
+	}
+	_, err := os.Stat(certPath)
+	return err == nil
+}
 
 // GetHealthyClient initializes the Vault client, sets the token,
 // and acts as a load-balancer style pre-flight check.
 func GetHealthyClient() (*vault.Client, error) {
 	config := vault.DefaultConfig()
+	prod := vaultProdActive()
+
 	if os.Getenv("VAULT_ADDR") == "" {
-		config.Address = vaultLocalAPIURL
+		if prod {
+			config.Address = vaultProdLocalAPIURL
+			// Trust the forged self-signed cert for the prod HTTPS listener.
+			if certPath := vaultProdCertPath(); certPath != "" {
+				_ = config.ConfigureTLS(&vault.TLSConfig{CACert: certPath})
+			}
+		} else {
+			config.Address = vaultLocalAPIURL
+		}
 	}
 
 	client, err := vault.NewClient(config)
@@ -21,7 +56,13 @@ func GetHealthyClient() (*vault.Client, error) {
 	}
 
 	if os.Getenv("VAULT_TOKEN") == "" {
-		client.SetToken(vaultRootToken)
+		token := vaultRootToken
+		if prod {
+			if vi, err := global.LoadCachedVaultInit(); err == nil && vi.RootToken != "" {
+				token = vi.RootToken
+			}
+		}
+		client.SetToken(token)
 	}
 
 	// The LB-Style Pre-Flight Health Check

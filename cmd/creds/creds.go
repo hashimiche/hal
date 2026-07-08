@@ -35,13 +35,31 @@ var statusCmd = &cobra.Command{
 		vaultUp := global.CheckContainer(engine, "hal-vault")
 		if vaultUp {
 			printed = true
-			fmt.Println("🔐 Vault")
-			fmt.Println("   URL        : http://vault.localhost:8200")
-			fmt.Println("   Root token : root")
-			fmt.Println()
-			fmt.Println("   export VAULT_ADDR='http://vault.localhost:8200'")
-			fmt.Println("   export VAULT_TOKEN='root'")
-			fmt.Println()
+			// Production mode (hal vault create --mode prod) serves HTTPS and uses a
+			// generated root token cached at ~/.hal/vault-prod/init.json; dev mode is
+			// plaintext HTTP with the well-known 'root' token.
+			if vi, err := global.LoadCachedVaultInit(); err == nil && vi.RootToken != "" {
+				fmt.Println("🔐 Vault (Enterprise, prod)")
+				fmt.Println("   URL        : https://vault.localhost:8200")
+				fmt.Printf("   Root token : %s\n", vi.RootToken)
+				if len(vi.UnsealKeysB64) > 0 {
+					fmt.Printf("   Unseal key : %s\n", vi.UnsealKeysB64[0])
+				}
+				fmt.Printf("   Saved to   : %s (mode 0600)\n", global.VaultInitCachePath())
+				fmt.Println()
+				fmt.Println("   export VAULT_ADDR='https://vault.localhost:8200'")
+				fmt.Printf("   export VAULT_TOKEN='%s'\n", vi.RootToken)
+				fmt.Printf("   export VAULT_CACERT='%s'\n", global.VaultProdCertPath())
+				fmt.Println()
+			} else {
+				fmt.Println("🔐 Vault")
+				fmt.Println("   URL        : http://vault.localhost:8200")
+				fmt.Println("   Root token : root")
+				fmt.Println()
+				fmt.Println("   export VAULT_ADDR='http://vault.localhost:8200'")
+				fmt.Println("   export VAULT_TOKEN='root'")
+				fmt.Println()
+			}
 		}
 
 		// ── Vault OIDC + Authentik ────────────────────────────────────────────
@@ -193,16 +211,34 @@ func CollectActiveCredentials() (ActiveCredentials, error) {
 
 	vaultUp := global.CheckContainer(engine, "hal-vault")
 	if vaultUp {
-		services = append(services, ServiceCredentials{
-			Service: "vault",
-			Label:   "Vault",
-			URL:     "http://vault.localhost:8200",
-			Entries: []CredentialEntry{{Name: "Root token", Secret: "root"}},
-			Commands: []string{
-				"export VAULT_ADDR='http://vault.localhost:8200'",
-				"export VAULT_TOKEN='root'",
-			},
-		})
+		if vi, err := global.LoadCachedVaultInit(); err == nil && vi.RootToken != "" {
+			// Production mode: the live root token is withheld from this structured
+			// (MCP-facing) surface, mirroring how the live TFE API token is handled;
+			// operators retrieve it locally via `hal creds status`.
+			services = append(services, ServiceCredentials{
+				Service: "vault",
+				Label:   "Vault (Enterprise, prod)",
+				URL:     "https://vault.localhost:8200",
+				Entries: []CredentialEntry{
+					{Name: "Root token", Note: "run `hal creds status` to retrieve (saved in ~/.hal/vault-prod/init.json)"},
+				},
+				Commands: []string{
+					"export VAULT_ADDR='https://vault.localhost:8200'",
+					"export VAULT_CACERT='" + global.VaultProdCertPath() + "'",
+				},
+			})
+		} else {
+			services = append(services, ServiceCredentials{
+				Service: "vault",
+				Label:   "Vault",
+				URL:     "http://vault.localhost:8200",
+				Entries: []CredentialEntry{{Name: "Root token", Secret: "root"}},
+				Commands: []string{
+					"export VAULT_ADDR='http://vault.localhost:8200'",
+					"export VAULT_TOKEN='root'",
+				},
+			})
+		}
 	}
 
 	oidcConsumers := global.GetSharedServiceConsumers(integrations.AuthentikSharedServiceKey)

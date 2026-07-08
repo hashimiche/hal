@@ -40,7 +40,11 @@ var vaultStatusCmd = &cobra.Command{
 			fmt.Println("\n💡 Tip: Deploy the core Vault instance first to see API health.")
 			return
 		} else if vaultStatus == "running" {
-			fmt.Println("  🟢 hal-vault          : Up   (vault.localhost:8200)")
+			if vaultProdActive() {
+				fmt.Println("  🟢 hal-vault          : Up   (https://vault.localhost:8200, prod/Raft)")
+			} else {
+				fmt.Println("  🟢 hal-vault          : Up   (vault.localhost:8200)")
+			}
 		} else {
 			fmt.Printf("  🟡 hal-vault          : %s\n", strings.ToUpper(vaultStatus))
 			fmt.Println("\n  📜 Fetching recent crash logs...")
@@ -140,8 +144,14 @@ var vaultStatusCmd = &cobra.Command{
 		// 2. CORE APP LAYER (API Health)
 		// ==========================================
 		fmt.Println("\n  [ Vault API Health ]")
+		healthURL := vaultLocalAPIURL + "/v1/sys/health"
 		client := http.Client{Timeout: 2 * time.Second}
-		resp, err := client.Get(vaultLocalAPIURL + "/v1/sys/health")
+		if vaultProdActive() {
+			// Prod serves HTTPS with a self-signed cert; probe over TLS.
+			healthURL = vaultProdHealthURL
+			client = prodHTTPClient()
+		}
+		resp, err := client.Get(healthURL)
 
 		if err != nil {
 			fmt.Println("  🟡 API is unreachable (Vault might still be booting up).")
@@ -156,6 +166,12 @@ var vaultStatusCmd = &cobra.Command{
 			fmt.Printf("  Version     : %v\n", health["version"])
 			fmt.Printf("  Initialized : %v\n", health["initialized"])
 			fmt.Printf("  Sealed      : %v\n", health["sealed"])
+
+			if vaultProdActive() {
+				if _, err := global.LoadCachedVaultInit(); err == nil {
+					fmt.Printf("  🔑 Root token + unseal key: %s  (hal creds status)\n", global.VaultInitCachePath())
+				}
+			}
 
 			if health["sealed"] == false {
 				isUnsealed = true
@@ -219,6 +235,11 @@ var vaultStatusCmd = &cobra.Command{
 			}
 		} else {
 			fmt.Println("\n  ⚪ Vault is sealed. Run 'vault operator unseal' to check internal configurations.")
+			if vaultProdActive() {
+				if vi, err := global.LoadCachedVaultInit(); err == nil && len(vi.UnsealKeysB64) > 0 {
+					fmt.Printf("     💡 Unseal key is saved in %s (see 'hal creds status').\n", global.VaultInitCachePath())
+				}
+			}
 		}
 
 		fmt.Println("\n💡 Tip: Run 'hal vault <feature>' for a detailed micro-status check.")

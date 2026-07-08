@@ -65,3 +65,20 @@ Assistant:
     export VAULT_LICENSE='your_license_string'
     hal vault create --edition ent --update
     hal vault status
+
+## Example 7: Deploy Production Vault Enterprise (persistent, TLS)
+
+User: Stand up a real Vault Enterprise instance, not dev mode.
+
+Assistant:
+
+    export VAULT_LICENSE='your_license_string'
+    hal vault create --mode prod
+    hal vault status
+
+Assistant: This boots a single-node production Vault Enterprise with integrated Raft
+storage (persistent) and TLS at `https://vault.localhost:8200`. HAL auto-runs
+`operator init` + `unseal` and saves the root token + unseal key to
+`~/.hal/vault-prod/init.json` (mode 0600). Retrieve them with `hal creds status`,
+and set `export VAULT_CACERT=~/.hal/vault-prod/certs/cert.pem` for the local CLI.
+This file is the only copy of the unseal key — back it up.

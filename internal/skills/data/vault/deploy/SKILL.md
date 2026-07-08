@@ -17,7 +17,15 @@ Handle hal vault create requests with a stable lifecycle pattern.
 
 - Default deploy is Vault CE in dev mode.
 - Dev mode root token is `root`.
-- Enterprise deploy requires `hal vault create --edition ent` and `VAULT_LICENSE` exported.
+- Enterprise deploy requires `hal vault create --edition ent` and `VAULT_LICENSE` exported (this is still dev mode, just the Enterprise image).
+
+## Production Mode (`--mode prod`)
+
+- `hal vault create --mode prod` stands up a single-node **production** Vault Enterprise: real `vault server -config` with integrated Raft storage on a persistent volume, TLS at `https://vault.localhost:8200` (self-signed cert), and automatic init + unseal.
+- Implies `--edition ent`; requires `VAULT_LICENSE` / `VAULT_LICENSE_PATH`. `--edition ce --mode prod` is rejected.
+- Init material (root token + unseal key) is saved to `~/.hal/vault-prod/init.json` (mode `0600`). Tell the user to retrieve it with `hal vault status` or `hal creds status`, set `VAULT_CACERT=~/.hal/vault-prod/certs/cert.pem` for the CLI, and that this file is the only copy of the unseal key.
+- Prod-only flags: `--key-shares` (default 1), `--key-threshold` (default 1), `--node-id`.
+- Feature integrations that embed URLs into Vault (OIDC callbacks, PKI AIA/CRL, OS plugin register) are validated against dev mode today; prefer dev mode when demoing those specific features.
 
 ## Validation
 
