@@ -33,6 +33,39 @@ const (
 	vaultPublicURL   = "http://vault.localhost:8200"
 	vaultHealthURL   = "http://vault.localhost:8200/v1/sys/health"
 
+	// --- Production mode (--mode prod): single-node Raft Vault Enterprise ---
+	// Dev mode boots `server -dev` (plaintext HTTP, in-memory, throwaway root
+	// token). Prod mode boots a real `server -config` with integrated Raft
+	// storage on a persistent volume, TLS on localhost, and auto init+unseal.
+	// The generated unseal key + root token are cached via internal/global
+	// (VaultInitCachePath) at ~/.hal/vault-prod/init.json (mode 0600).
+	defaultVaultMode         = "dev"
+	defaultVaultKeyShares    = 1
+	defaultVaultKeyThreshold = 1
+	defaultVaultProdNodeID   = "hal-vault-node-1"
+
+	// Prod HTTPS endpoints (self-signed cert forged into ~/.hal/vault-prod/certs).
+	vaultProdPublicURL   = "https://vault.localhost:8200"
+	vaultProdLocalAPIURL = "https://127.0.0.1:8200"
+	vaultProdHealthURL   = "https://vault.localhost:8200/v1/sys/health"
+
+	// Prod on-disk layout (host side, under internal/global.VaultProdStateDir()).
+	vaultProdConfigFileName = "vault.hcl"
+	vaultProdCertsDirName   = "certs"
+	vaultProdCertFileName   = "cert.pem"
+	vaultProdKeyFileName    = "key.pem"
+
+	// Prod in-container mount targets + cluster port.
+	// NOTE: the official Vault image entrypoint auto-injects `-config=/vault/config`
+	// whenever the command starts with `server`. We therefore mount our config
+	// OUTSIDE /vault/config (which stays empty) and pass a single explicit
+	// -config, so the listener is never loaded twice (a double load makes the
+	// second bind of :8200 fail with "address already in use").
+	vaultProdConfigMount = "/vault/hal/vault.hcl"
+	vaultProdTLSMount    = "/vault/tls"
+	vaultProdRaftMount   = "/vault/data"
+	vaultProdClusterPort = 8201
+
 	// --- Backend DB (MariaDB) ---
 	vaultMariaDBHostAlias    = "mariadb.localhost"
 	vaultMariaDBPort         = 3306
