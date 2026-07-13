@@ -145,7 +145,7 @@ func printVaultFeatureStatus(engine string) {
 		{name: "jwt", status: boolState(checkContainer(engine, "hal-gitlab"))},
 		{name: "ldap", status: boolState(checkContainer(engine, "hal-openldap"))},
 		{name: "database", status: ""},
-		{name: "oidc", status: boolState(checkContainer(engine, "hal-keycloak"))},
+		{name: "oidc", status: boolState(checkContainer(engine, "hal-authentik-server"))},
 	}
 
 	for _, f := range featureStates {

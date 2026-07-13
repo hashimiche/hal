@@ -121,7 +121,8 @@ var vaultJwtCmd = &cobra.Command{
 		// ==========================================
 		if jwtDisable || jwtUpdate {
 			if global.DryRun {
-				fmt.Println("[DRY RUN] Would execute: docker rm -f hal-gitlab hal-gitlab-runner")
+				fmt.Println("[DRY RUN] Would remove hal-gitlab-runner and deregister the vault-jwt consumer")
+				fmt.Println("[DRY RUN] hal-gitlab would stop only if no other consumer or TFE runtime needs it")
 				fmt.Println("[DRY RUN] Would call API to disable: auth/jwt and kv-jwt")
 			} else {
 				if jwtDisable {
@@ -137,9 +138,8 @@ var vaultJwtCmd = &cobra.Command{
 					// We don't delete the root identity as it might be used by other things.
 				}
 
-				_ = exec.Command(engine, "rm", "-f", gitlabContainer, gitlabRunnerContainer).Run()
-				_ = global.ClearSharedService("gitlab")
-				fmt.Println("✅ GitLab containers removed and Vault API cleaned up.")
+				teardownSharedGitLab(engine)
+				fmt.Println("✅ Vault JWT API cleaned up.")
 				global.RefreshHalHealth(engine)
 			}
 
@@ -664,6 +664,54 @@ func gitLabHasActiveRunnerByDescription(token, desc string) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// tfeRuntimeContainers are the shared Terraform Enterprise core containers that
+// consume the shared GitLab service. While any is running, GitLab is preserved
+// even when no consumer is registered (defensive against a stale registry).
+var tfeRuntimeContainers = []string{"hal-tfe", "hal-tfe-bis"}
+
+func isTFERuntimeRunning(engine string) bool {
+	for _, c := range tfeRuntimeContainers {
+		if global.IsContainerRunning(engine, c) {
+			return true
+		}
+	}
+	return false
+}
+
+// teardownSharedGitLab deregisters the vault-jwt consumer from the shared GitLab
+// service and removes the shared hal-gitlab container only when no other consumer
+// is registered and no Terraform Enterprise runtime is still running — mirroring
+// 'hal tf vcs-workflow disable'. The vault-jwt-specific runner is always removed
+// because Terraform never uses it.
+func teardownSharedGitLab(engine string) {
+	// The GitLab Runner belongs to the vault-jwt lab (TF does not use it), so it
+	// is always removed regardless of shared GitLab ownership.
+	_ = exec.Command(engine, "rm", "-f", gitlabRunnerContainer).Run()
+
+	remaining, err := global.RemoveSharedServiceConsumer("gitlab", "vault-jwt")
+	if err != nil {
+		fmt.Printf("⚠️  Could not update shared GitLab registry: %v\n", err)
+	}
+
+	if len(remaining) > 0 {
+		fmt.Printf("  ℹ️  Shared GitLab left running (still used by: %s)\n", strings.Join(remaining, ", "))
+		return
+	}
+	if isTFERuntimeRunning(engine) {
+		fmt.Println("  ℹ️  Shared GitLab left running (a Terraform Enterprise runtime is still active)")
+		return
+	}
+
+	if global.IsContainerRunning(engine, gitlabContainer) {
+		if out, rmErr := exec.Command(engine, "rm", "-f", gitlabContainer).CombinedOutput(); rmErr != nil {
+			fmt.Printf("⚠️  Failed to remove shared GitLab: %s\n", strings.TrimSpace(string(out)))
+		} else {
+			fmt.Println("  🧹 Stopped shared GitLab (no remaining consumers).")
+		}
+	}
+	_ = global.ClearSharedService("gitlab")
 }
 
 func init() {

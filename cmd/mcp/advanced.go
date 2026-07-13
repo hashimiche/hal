@@ -163,7 +163,7 @@ func validateCommand(proposed string) map[string]interface{} {
 		return result
 	}
 
-	alias := map[string]string{"tf": "terraform", "observability": "obs"}
+	alias := map[string]string{"tf": "terraform", "tfe": "terraform", "observability": "obs"}
 	if normalized, ok := alias[parts[1]]; ok {
 		parts[1] = normalized
 	}

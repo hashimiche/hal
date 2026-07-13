@@ -28,7 +28,7 @@
   - Spec: [vault-audit.md](vault-audit.md)
 
 - `hal vault oidc`
-  - Deploy and configure OIDC flow (Keycloak integration)
+  - Deploy and configure OIDC flow (Authentik integration)
   - Spec: [vault-oidc.md](vault-oidc.md)
 
 - `hal vault jwt`

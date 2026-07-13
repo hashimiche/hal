@@ -1,6 +1,14 @@
 {
   "flags": [
     {
+      "description": "Authentik container image (default \"ghcr.io/goauthentik/server\")",
+      "name": "--authentik-image string"
+    },
+    {
+      "description": "Authentik image tag (default \"2026.2.3\")",
+      "name": "--authentik-tag string"
+    },
+    {
       "description": "Enable debug output",
       "name": "--debug"
     },
@@ -9,20 +17,12 @@
       "name": "--dry-run"
     },
     {
-      "description": "Version of the Keycloak container image to deploy (default \"24.0.4\")",
-      "name": "--keycloak-version string"
+      "description": "[Vault Enterprise] Also configure SCIM provisioning from Authentik",
+      "name": "--scim"
     },
     {
-      "description": "Remove Keycloak and strip the OIDC configuration from Vault",
-      "name": "-d, --disable"
-    },
-    {
-      "description": "Deploy Keycloak and fully configure Vault OIDC auth",
-      "name": "-e, --enable"
-    },
-    {
-      "description": "Force a clean redeployment of the OIDC environment",
-      "name": "-f, --force"
+      "description": "With --scim: re-push all group membership to Vault without full re-provision",
+      "name": "--sync"
     },
     {
       "description": "help for oidc",

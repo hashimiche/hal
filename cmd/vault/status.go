@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/integrations"
 
 	"github.com/spf13/cobra"
 )
@@ -72,7 +73,7 @@ var vaultStatusCmd = &cobra.Command{
 			Container string
 			Command   string
 		}{
-			{"OIDC (Keycloak)", keycloakContainer, "oidc"},
+			{"OIDC (Authentik)", integrations.AuthentikServerContainer, "oidc"},
 			{"JWT (GitLab)", gitlabContainer, "jwt"},
 			{"LDAP (OpenLDAP)", openLDAPContainer, "ldap"},
 			{"Database", vaultMariaDBContainer, "database"},
