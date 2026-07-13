@@ -16,7 +16,6 @@ const (
 	phpLDAPAdminContainer = "hal-phpldapadmin"
 	// Feature/demo containers spun up by individual auth-method commands
 	// (referenced by status, delete, jwt, oidc and pki — kept here so they cannot drift).
-	keycloakContainer     = "hal-keycloak"
 	gitlabContainer       = "hal-gitlab"
 	gitlabRunnerContainer = "hal-gitlab-runner"
 	acmeDNSContainer      = "hal-acme-dns"

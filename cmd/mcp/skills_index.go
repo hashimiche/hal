@@ -188,7 +188,7 @@ func normalizeDisplayCommand(cmd string) string {
 	if parts[0] != "hal" {
 		return ""
 	}
-	if len(parts) > 1 && parts[1] == "tf" {
+	if len(parts) > 1 && (parts[1] == "tf" || parts[1] == "tfe") {
 		parts[1] = "terraform"
 	}
 	if len(parts) > 1 && parts[1] == "observability" {

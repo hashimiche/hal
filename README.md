@@ -260,7 +260,7 @@ hal nomad obs delete
 
 ---
 
-### Terraform Enterprise (`hal terraform` / `hal tf`)
+### Terraform Enterprise (`hal terraform` / `hal tf` / `hal tfe`)
 
 **Primary TFE instance**
 

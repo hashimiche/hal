@@ -3,6 +3,7 @@ package vault
 import (
 	"fmt"
 	"hal/internal/global"
+	"hal/internal/integrations"
 	"os/exec"
 	"strings"
 
@@ -11,11 +12,12 @@ import (
 
 // The "Known Universe" of Vault infrastructure.
 // As you build new Vault features that require Docker containers, just add them here!
+// NOTE: GitLab (hal-gitlab / hal-gitlab-runner) is intentionally NOT listed here.
+// It is a shared service (also used by 'hal tf vcs-workflow'), so it is torn down
+// via teardownSharedGitLab() with a consumer/TFE-runtime check instead of being
+// force-removed unconditionally.
 var vaultEcosystem = []string{
 	vaultContainer,
-	keycloakContainer,
-	gitlabContainer,
-	gitlabRunnerContainer,
 	openLDAPContainer,
 	phpLDAPAdminContainer,
 	vaultMariaDBContainer,
@@ -30,7 +32,7 @@ var vaultVolumes = []string{
 
 var vaultDestroyCmd = &cobra.Command{
 	Use:   "delete",
-	Short: "Delete the local Vault instance and associated extensions (like Keycloak)",
+	Short: "Delete the local Vault instance and associated extensions (like Authentik OIDC and GitLab)",
 	Run: func(cmd *cobra.Command, args []string) {
 		engine, err := global.DetectEngine()
 		if err != nil {
@@ -64,6 +66,38 @@ var vaultDestroyCmd = &cobra.Command{
 					fmt.Printf("  ✅ Destroyed container: %s\n", container)
 				}
 			}
+		}
+
+		// 1b. Authentik is a shared IdP (also used by 'hal tf saml'), so it is
+		// deregistered and only torn down when no other product still depends on
+		// it — mirroring the GitLab shared-service model rather than force-removing
+		// a container another lab may be using.
+		if global.DryRun {
+			fmt.Println("[DRY RUN] Would deregister vault-oidc from the Authentik shared service and stop the stack if unused")
+		} else {
+			remaining, regErr := global.RemoveSharedServiceConsumer(integrations.AuthentikSharedServiceKey, oidcSharedServiceKey)
+			if regErr != nil {
+				fmt.Printf("⚠️  Could not update shared service registry: %v\n", regErr)
+			}
+			if len(remaining) == 0 {
+				if err := integrations.StopAuthentikStack(engine, true); err != nil {
+					fmt.Printf("⚠️  Warning during Authentik teardown: %v\n", err)
+				} else {
+					fmt.Println("  ✅ Authentik stack stopped (no other products depend on it)")
+				}
+			} else {
+				fmt.Printf("  ℹ️  Authentik still in use by: %s — stack left running\n", strings.Join(remaining, ", "))
+			}
+		}
+
+		// 1c. GitLab is a shared service (also used by 'hal tf vcs-workflow'), so
+		// it is deregistered and only removed when no other product depends on it
+		// and no Terraform Enterprise runtime is running. The vault-jwt runner is
+		// always removed.
+		if global.DryRun {
+			fmt.Println("[DRY RUN] Would remove hal-gitlab-runner and deregister vault-jwt; hal-gitlab stops only if unused by TF")
+		} else {
+			teardownSharedGitLab(engine)
 		}
 
 		// 2. Destroy all associated volumes
