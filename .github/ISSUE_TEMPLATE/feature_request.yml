@@ -1,0 +1,42 @@
+name: Feature request
+description: Propose a new capability or an enhancement to existing HAL behavior.
+title: "feat: <short description>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Before filing, please skim the
+        [CLI lifecycle model](https://github.com/hashimiche/hal/blob/main/docs/cli-lifecycle-model.md) and
+        [CONTRIBUTING.md](https://github.com/hashimiche/hal/blob/main/CONTRIBUTING.md) so the proposal fits
+        HAL's two-tier command conventions.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what's getting in the way today?
+      placeholder: "I'm always frustrated when ..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: >
+        Describe the behavior you'd like. If it adds or changes a command,
+        sketch the command surface (e.g. `hal <product> <action>`).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you weighed and why you set them aside.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else — related issues, prior art, mockups.
+    validations:
+      required: false

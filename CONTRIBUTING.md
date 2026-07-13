@@ -5,6 +5,23 @@ change. The deeper design context lives elsewhere (see
 [Sources of truth](#sources-of-truth)) — this file is the short version you need
 before opening a pull request.
 
+## Filing issues
+
+Before writing code, open an issue so the change can be discussed. Use the
+templates in the issue chooser — blank issues are disabled to keep reports
+actionable:
+
+- **Bug report** — for defects in command behavior, output, or lifecycle
+  handling. Include the exact commands you ran, expected vs. actual behavior,
+  your `hal version`, and your OS / container engine.
+- **Feature request** — for new capabilities or enhancements. Describe the
+  problem first, then a proposed command surface that fits the two-tier CLI
+  conventions below.
+
+Search existing issues before opening a new one, and keep each issue scoped to a
+single bug or request. Don't worry about labels — maintainers apply and triage
+them.
+
 ## Quick start
 
 ```bash

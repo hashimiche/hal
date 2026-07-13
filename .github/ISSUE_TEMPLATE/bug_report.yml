@@ -1,0 +1,78 @@
+name: Bug report
+description: Report a defect in HAL command behavior, output, or lifecycle handling.
+title: "bug: <short description>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please fill out the sections
+        below so we can reproduce and fix it quickly. For contribution
+        conventions, see [CONTRIBUTING.md](https://github.com/hashimiche/hal/blob/main/CONTRIBUTING.md).
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands you ran, in order.
+      placeholder: |
+        1. Run `hal vault create ...`
+        2. Run `hal vault oidc enable`
+        3. See error
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected HAL to do.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened. Include the full command output or error.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: HAL version
+      description: Output of `hal version` (or the commit SHA if built from source).
+      placeholder: "e.g. v0.5.2 or commit d82d83d"
+    validations:
+      required: true
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Container engine
+      description: Which runtime were you using, if relevant?
+      options:
+        - Docker
+        - Podman
+        - Not applicable
+        - Other (note in description)
+    validations:
+      required: false
+  - type: input
+    id: os
+    attributes:
+      label: OS / platform
+      placeholder: "e.g. macOS 15.3 (arm64), Ubuntu 24.04 (amd64)"
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Logs, screenshots, or anything else that helps.
+    validations:
+      required: false
