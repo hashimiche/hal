@@ -137,7 +137,7 @@ var vaultAAPCmd = &cobra.Command{
 			}
 
 			fmt.Println("🛑 Tearing down AAP environment...")
-	
+
 			if global.IsContainerRunning(engine, "hal-aap") {
 				aapClient, aapClientErr := newAAPAPIClient(engine, vaultAAPAAPUsername, vaultAAPAAPPassword)
 				if aapClientErr == nil {
@@ -156,7 +156,7 @@ var vaultAAPCmd = &cobra.Command{
 					fmt.Printf("⚠️  AAP API unavailable; skipped AAP resource cleanup: %v\n", aapClientErr)
 				}
 			}
-	
+
 			if vaultErr == nil && client != nil {
 				if err := disableVaultSSHEngine(client); err != nil {
 					fmt.Printf("⚠️  Failed to disable Vault SSH engine: %v\n", err)
@@ -171,13 +171,13 @@ var vaultAAPCmd = &cobra.Command{
 			} else {
 				fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
 			}
-	
+
 			fmt.Printf("⚙️  Removing %s container...\n", aapSSHTargetContainer)
 			_ = exec.Command(engine, "rm", "-f", aapSSHTargetContainer).Run()
-	
+
 			fmt.Println("⚙️  Removing hal-aap container...")
 			_ = exec.Command(engine, "rm", "-f", "hal-aap").Run()
-	
+
 			fmt.Println("✅ AAP environment destroyed successfully!")
 			global.RefreshHalHealth(engine)
 			return
@@ -573,14 +573,14 @@ func ensureVaultSSHJWTRoles(client *vault.Client, devOrg, prodOrg string) error 
 
 func ensureVaultSSHSignerRole(client *vault.Client) error {
 	_, err := client.Logical().Write(vaultAAPSSHMountPath+"/roles/"+vaultAAPSSHSignerRoleName, map[string]interface{}{
-		"key_type":               "ca",
-		"algorithm_signer":       "rsa-sha2-256",
+		"key_type":                "ca",
+		"algorithm_signer":        "rsa-sha2-256",
 		"allow_user_certificates": true,
 		"allow_host_certificates": true,
-		"allowed_users":          "rhel",
-		"default_user":           "rhel",
-		"ttl":                    "30m",
-		"max_ttl":                "1h",
+		"allowed_users":           "rhel",
+		"default_user":            "rhel",
+		"ttl":                     "30m",
+		"max_ttl":                 "1h",
 	})
 	return err
 }

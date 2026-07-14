@@ -1,0 +1,103 @@
+name: CI
+
+# Runs the checklist automatically so build/test/vet/lint are enforced, not
+# trusted. Push-triggered (not pull_request) so a contributor sees failures on
+# their own branch before opening a PR, and so there is no wasteful double-run
+# per PR. Scoped to the repo branch-prefix convention (+ main) and NOT tags —
+# release.yml owns v* tags. Mis-prefixed branches never run CI; when these jobs
+# are required status checks in branch protection, that also blocks them from
+# merging.
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+      - 'bugfix/**'
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same branch to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: build / vet / test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: go build ./...
+        run: go build ./...
+
+      - name: go vet ./...
+        run: go vet ./...
+
+      - name: go test ./...
+        run: go test ./...
+
+  lint:
+    name: gofmt / golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so golangci-lint can diff against main
+
+      - name: Make main available as a diff base
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: gofmt (fail on unformatted files)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-formatted:"
+            echo "$unformatted"
+            echo "Run: gofmt -w ."
+            exit 1
+          fi
+
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+
+      # Only fails on issues introduced relative to main; pre-existing debt is
+      # tracked separately and does not block. Remove --new-from-merge-base once
+      # the backlog is cleared to enforce repo-wide.
+      - name: golangci-lint (new issues only)
+        run: golangci-lint run --new-from-merge-base=origin/main ./...
+
+  vuln:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    # Informational for now: the codebase has known call-reachable vulnerabilities
+    # (dependency bumps pending). Flip to blocking (remove continue-on-error) once
+    # the backlog is cleared.
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: govulncheck ./...
+        run: govulncheck ./...

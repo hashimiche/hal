@@ -60,6 +60,21 @@ func TestRequiredOpsToolsRegistered(t *testing.T) {
 }
 
 func TestOpsResponsesContainContractFields(t *testing.T) {
+	// Status tools shell out to a real `hal` binary via runHAL, which is absent
+	// in CI. Substitute a deterministic successful execution so this test
+	// validates success-path envelope construction hermetically, everywhere —
+	// rather than silently exercising only the "hal not found" error path.
+	restore := runHAL
+	runHAL = func(args ...string) toolExecution {
+		return toolExecution{
+			Command:   "hal " + strings.Join(args, " "),
+			ExitCode:  0,
+			Output:    "status: ok",
+			Timestamp: "2026-01-01T00:00:00Z",
+		}
+	}
+	defer func() { runHAL = restore }()
+
 	invocations := []toolInvocation{
 		{name: "get_runtime_status", args: map[string]interface{}{}},
 		{name: "get_vault_status", args: map[string]interface{}{}},
@@ -116,7 +131,61 @@ func TestOpsResponsesContainContractFields(t *testing.T) {
 	}
 }
 
+// TestStatusToolEnvelopeSuccessAndError verifies that a runHAL-backed status
+// tool maps a clean execution to a success envelope and a failed execution to
+// an error envelope. Using the runHAL seam makes this deterministic and
+// independent of whether a hal binary is installed.
+func TestStatusToolEnvelopeSuccessAndError(t *testing.T) {
+	restore := runHAL
+	defer func() { runHAL = restore }()
+
+	decodeStatus := func(res mcpToolCallResult) string {
+		t.Helper()
+		if len(res.Content) == 0 {
+			t.Fatal("tool returned no content")
+		}
+		var env map[string]interface{}
+		if err := json.Unmarshal([]byte(res.Content[0].Text), &env); err != nil {
+			t.Fatalf("invalid json content: %v", err)
+		}
+		status, _ := env["status"].(string)
+		return status
+	}
+
+	// Clean execution -> success envelope.
+	runHAL = func(args ...string) toolExecution {
+		return toolExecution{Command: "hal " + strings.Join(args, " "), ExitCode: 0, Output: "vault: up", Timestamp: "2026-01-01T00:00:00Z"}
+	}
+	res, handled := handleOpsTool("get_vault_status", map[string]interface{}{})
+	if !handled {
+		t.Fatal("get_vault_status not handled")
+	}
+	if got := decodeStatus(res); got != statusSuccess {
+		t.Errorf("clean execution: status = %q, want %q", got, statusSuccess)
+	}
+
+	// Failed execution -> error envelope.
+	runHAL = func(args ...string) toolExecution {
+		return toolExecution{Command: "hal " + strings.Join(args, " "), ExitCode: 1, Output: "vault unreachable", Timestamp: "2026-01-01T00:00:00Z"}
+	}
+	res, _ = handleOpsTool("get_vault_status", map[string]interface{}{})
+	if got := decodeStatus(res); got != statusError {
+		t.Errorf("failed execution: status = %q, want %q", got, statusError)
+	}
+}
+
 func TestRecommendedCommandsAreExecutableSyntax(t *testing.T) {
+	restore := runHAL
+	runHAL = func(args ...string) toolExecution {
+		return toolExecution{
+			Command:   "hal " + strings.Join(args, " "),
+			ExitCode:  0,
+			Output:    "status: ok",
+			Timestamp: "2026-01-01T00:00:00Z",
+		}
+	}
+	defer func() { runHAL = restore }()
+
 	invocations := []toolInvocation{
 		{name: "get_runtime_status", args: map[string]interface{}{}},
 		{name: "get_vault_status", args: map[string]interface{}{}},

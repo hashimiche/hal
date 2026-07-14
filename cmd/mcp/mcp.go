@@ -990,7 +990,10 @@ func ensureOnlyKeys(args map[string]interface{}, allowed map[string]bool) error 
 	return nil
 }
 
-func runHAL(args ...string) toolExecution {
+// runHAL executes a hal subcommand and captures its combined output. It is a
+// package var (not a plain func) so tests can substitute a deterministic fake
+// instead of shelling out to a real hal binary, which is absent in CI.
+var runHAL = func(args ...string) toolExecution {
 	exePath, err := os.Executable()
 	if err != nil {
 		return toolExecution{Command: "hal " + strings.Join(args, " "), ExitCode: 1, Output: fmt.Sprintf("cannot resolve hal executable: %v", err), Timestamp: time.Now().UTC().Format(time.RFC3339)}
@@ -998,9 +1001,20 @@ func runHAL(args ...string) toolExecution {
 	commandPath := exePath
 	base := strings.ToLower(filepath.Base(exePath))
 	if strings.Contains(base, ".test") || strings.Contains(base, "hal-mcp") {
-		if halPath, lookErr := exec.LookPath("hal"); lookErr == nil {
-			commandPath = halPath
+		// Never fall back to executing our own binary (the test harness or the
+		// hal-mcp server): doing so recursively re-invokes this process, which
+		// under `go test` spawns the whole suite again and hangs. Require a real
+		// hal CLI on PATH; if it is absent, fail fast with a structured result.
+		halPath, lookErr := exec.LookPath("hal")
+		if lookErr != nil {
+			return toolExecution{
+				Command:   "hal " + strings.Join(args, " "),
+				ExitCode:  1,
+				Output:    "hal executable not found on PATH",
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+			}
 		}
+		commandPath = halPath
 	}
 	cmd := exec.Command(commandPath, args...)
 	cmd.Env = os.Environ()
