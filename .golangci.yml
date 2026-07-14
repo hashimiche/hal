@@ -1,0 +1,11 @@
+version: "2"
+
+# golangci-lint is being adopted on an existing codebase. The standard linter
+# set (errcheck, govet, ineffassign, staticcheck, unused) is enabled, but CI
+# only fails on issues introduced relative to the merge-base with main
+# (see the workflow's --new-from-merge-base flag). Pre-existing findings are
+# tracked as debt to burn down; new code is held to the full standard.
+linters:
+  default: standard
+  enable:
+    - misspell
