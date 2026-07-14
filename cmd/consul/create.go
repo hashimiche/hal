@@ -78,7 +78,7 @@ var deployCmd = &cobra.Command{
 		ui.Success("Standalone Consul server is up!")
 		ui.Section("Access")
 		ui.Field("UI", consulBaseURL)
-		ui.Hint("Test the KV store / API. For real workloads: hal nomad create --with-consul")
+		ui.Hint("Test the KV store / API. For real workloads: hal nomad create --join-consul")
 	},
 }
 
