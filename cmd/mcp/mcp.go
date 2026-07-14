@@ -990,7 +990,10 @@ func ensureOnlyKeys(args map[string]interface{}, allowed map[string]bool) error 
 	return nil
 }
 
-func runHAL(args ...string) toolExecution {
+// runHAL executes a hal subcommand and captures its combined output. It is a
+// package var (not a plain func) so tests can substitute a deterministic fake
+// instead of shelling out to a real hal binary, which is absent in CI.
+var runHAL = func(args ...string) toolExecution {
 	exePath, err := os.Executable()
 	if err != nil {
 		return toolExecution{Command: "hal " + strings.Join(args, " "), ExitCode: 1, Output: fmt.Sprintf("cannot resolve hal executable: %v", err), Timestamp: time.Now().UTC().Format(time.RFC3339)}
