@@ -1,9 +1,12 @@
 name: CI
 
-# Runs the PR checklist automatically so build/test/vet are enforced,
-# not trusted. Triggers on pull requests only.
+# Runs the checklist automatically so build/test/vet are enforced, not trusted.
+# Triggers on every branch push (not tags — release.yml owns v* tags) so a
+# contributor sees failures on their own branch before opening a PR.
 on:
-  pull_request:
+  push:
+    branches:
+      - '**'
 
 permissions:
   contents: read
