@@ -998,9 +998,20 @@ func runHAL(args ...string) toolExecution {
 	commandPath := exePath
 	base := strings.ToLower(filepath.Base(exePath))
 	if strings.Contains(base, ".test") || strings.Contains(base, "hal-mcp") {
-		if halPath, lookErr := exec.LookPath("hal"); lookErr == nil {
-			commandPath = halPath
+		// Never fall back to executing our own binary (the test harness or the
+		// hal-mcp server): doing so recursively re-invokes this process, which
+		// under `go test` spawns the whole suite again and hangs. Require a real
+		// hal CLI on PATH; if it is absent, fail fast with a structured result.
+		halPath, lookErr := exec.LookPath("hal")
+		if lookErr != nil {
+			return toolExecution{
+				Command:   "hal " + strings.Join(args, " "),
+				ExitCode:  1,
+				Output:    "hal executable not found on PATH",
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+			}
 		}
+		commandPath = halPath
 	}
 	cmd := exec.Command(commandPath, args...)
 	cmd.Env = os.Environ()
