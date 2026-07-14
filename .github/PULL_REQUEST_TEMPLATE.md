@@ -16,10 +16,9 @@ See CONTRIBUTING.md for branch naming, the doc-sync rule, and conventions.
 ## Checklist
 
 - [ ] Branch follows `feature/<desc>` or `bugfix/<desc>` naming
-- [ ] `go build ./...` passes
-- [ ] `go test ./...` passes
-- [ ] `go vet ./...` is clean
 - [ ] Change is scoped to one logical concern (repo squash-merges PRs)
+
+> `go build`, `go vet`, and `go test` run automatically on every PR via the CI workflow — no need to self-certify them here.
 
 ## Doc-sync (required when command behavior/flags/lifecycle change)
 
