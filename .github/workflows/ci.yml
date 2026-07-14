@@ -1,12 +1,17 @@
 name: CI
 
 # Runs the checklist automatically so build/test/vet are enforced, not trusted.
-# Triggers on every branch push (not tags — release.yml owns v* tags) so a
-# contributor sees failures on their own branch before opening a PR.
+# Push-triggered (not pull_request) so a contributor sees failures on their own
+# branch before opening a PR, and so there is no wasteful double-run per PR.
+# Scoped to the repo branch-prefix convention (+ main) and NOT tags — release.yml
+# owns v* tags. Mis-prefixed branches never run CI; when `build / vet / test` is a
+# required status check in branch protection, that also blocks them from merging.
 on:
   push:
     branches:
-      - '**'
+      - main
+      - 'feature/**'
+      - 'bugfix/**'
 
 permissions:
   contents: read
