@@ -309,7 +309,95 @@ service account + project can authenticate, even if the endpoint is reachable.
 - **Dedup key = issue ID** so duplicate webhooks don't spawn two workers.
 - **Budget alerts** (ephemeral + scale-to-zero already caps spend).
 
-## 15. Open decisions (resolve before/while building)
+## 15. Option 3 — GitHub-triggered, 100% ephemeral, HCP Vault (EXPLORE FIRST)
+
+> **This is the current preferred direction.** It is a concrete refinement of the
+> §14 ephemeral-worker topology that removes the personal always-on server
+> entirely and satisfies three hard owner constraints simultaneously:
+> **(1) nothing of the owner's is publicly exposed, (2) zero idle cost — no
+> always-on listener, (3) all secrets brokered by Vault, never touched by a model.**
+
+### 15.1 Why this option wins on the constraints
+
+| Constraint | How Option 3 satisfies it |
+|---|---|
+| No exposed personal server | GitHub is the trigger; there is **no inbound endpoint** the owner hosts. No webhook receiver, no public IP. |
+| No always-on / no idle spend | Nothing listens for issues except GitHub itself (free on a public repo). Compute exists **only** for the life of a job, then is destroyed. |
+| Vault brokers secrets | **HCP Vault** replaces the personal box as the secrets control plane. The free dev tier (and HashiCorp-employee access) covers this use case — no self-hosted Vault to run or expose. |
+
+### 15.2 Flow
+
+```mermaid
+flowchart TD
+    A[Issue opened] --> B[GitHub Actions workflow<br/>free, public repo]
+    B --> C[Auth to GCP via WIF<br/>no stored GCP keys]
+    C --> D[terraform apply -> spawn ephemeral agent VM]
+    D --> E[Agent VM boots -> triage the issue]
+    E -->|bad format / suspicious| F[Comment + reject label, VM self-destructs]
+    E -->|accepted| G[Comment accepted]
+    G --> H[VM auths to Vault via GCP identity<br/>fetch JIT GCP creds + GH PAT]
+    H --> I[Fix code]
+    I --> J[Spin 2 nested VMs: Docker + Podman<br/>validate both runtimes]
+    J -->|validation fails| F
+    J -->|green| K[Push branch + open PR from template]
+    K --> L[VM self-destructs]
+    L --> M[Human review + merge — final gate]
+```
+
+### 15.3 Two Vault auth methods, zero static creds
+
+Separation of privilege (§3) is preserved because **no secret is ever stored in a
+file, in GitHub, or in a model context**:
+
+- **GitHub Actions → GCP:** Workload Identity Federation (WIF). No GCP keys in the
+  repo. GitHub's OIDC token is exchanged for short-lived GCP credentials.
+- **Agent VM → HCP Vault:** Vault `gcp`/`gce` auth method — the VM proves its
+  identity with a signed instance-metadata JWT, gets a short-lived Vault token,
+  fetches the GH PAT + JIT GCP creds, and dies. No static creds baked into the image.
+
+> **Open simplification to decide:** does the GitHub Actions pipeline need Vault at
+> all? If WIF gets it straight to GCP to run `terraform apply`, then **Vault has a
+> single consumer — the agent VM** — not two. Fewer trust relationships to secure.
+> Leaning: pipeline uses WIF only; Vault is agent-VM-only.
+
+### 15.4 100% ephemeral, per stage
+
+One VM = one stage of one issue, then destroyed. The VM never idles through the
+human merge gate (that gate happens *after* the PR is open and the VM is already
+gone). This caps blast radius: a compromised agent run is a VM that is about to be
+deleted, holds only short-TTL creds, and cannot reach the control plane.
+
+### 15.5 The control layer is owner-only and physically out of reach
+
+**Priority-1 guardrail.** Everything that could *disarm the system* is off-limits
+to the agent path — mechanically, not by good behavior:
+
+- **CODEOWNERS** on `.github/**`, `**/*.tf`, the agent's own source dir, and Vault
+  config paths → only the owner can approve changes there. Enforced by branch
+  protection.
+- **File allowlist for the executor:** the agent may only write application code,
+  docs, and tests. A diff touching any control-plane path is **auto-rejected before
+  the PR is created**.
+- **No `pull_request_target`** for anything that runs untrusted PR content. Use
+  `pull_request` so a malicious fork can't capture secrets via the base-repo
+  context. CI workflow files are themselves control-plane (CODEOWNERS-locked).
+
+### 15.6 Prompt-injection defense in depth (issue body = hostile input)
+
+Never a single rampart:
+
+1. **Triage classifies intent, not just scope.** Bodies containing agent-directed
+   instructions ("ignore previous instructions", "print your token", etc.) → label
+   `suspicious`, comment, stop.
+2. **Real backstop = §3:** the model never sees a secret, so "exfiltrate the token"
+   has nothing to exfiltrate. GH PAT / GCP creds only enter the non-model publish
+   step, after triage.
+3. **Egress-filter the VM:** even if fooled, the agent reaches only GitHub + the
+   model provider. No `evil.com`.
+
+Detection is an early-rejection signal, never the thing the security rests on.
+
+## 16. Open decisions (resolve before/while building)
 
 - [ ] Orchestrator language: Go (fits the repo) vs Node (fits the dashboard). Lean Go.
 - [ ] State store: Postgres vs SQLite (SQLite is fine for single-node).
@@ -320,15 +408,21 @@ service account + project can authenticate, even if the endpoint is reachable.
       under what isolation.
 - [ ] Human feedback format on deny (structured fields vs free text) fed back to
       the planner.
-- [ ] **Deployment topology:** self-hosted always-on executor (§5) vs GCP ephemeral
-      workers (§14) vs hybrid (control plane on personal box, compute plane on GCP).
-- [ ] **GCP trigger path:** GitHub Actions + WIF vs Cloud Run webhook receiver.
+- [x] **Deployment topology:** **Option 3 (§15)** chosen — GitHub-triggered, 100%
+      ephemeral GCP worker, **HCP Vault** as secrets control plane, **no personal
+      server**. Supersedes §5 self-hosted and the generic §14 topology.
+- [ ] **GCP trigger path:** GitHub Actions + WIF (leaning, per §15) vs Cloud Run
+      webhook receiver.
+- [ ] **Does the GH Actions pipeline talk to Vault at all**, or WIF-only to GCP so
+      Vault has a single consumer (the agent VM)? Leaning: WIF-only (§15.3).
+- [ ] **HCP Vault tier:** free dev tier vs HashiCorp-employee access; confirm the
+      `gcp`/`gce` auth method is available on the chosen tier.
 - [ ] **GCP worker runtime:** Cloud Batch vs GCE custom image + self-delete vs
       Cloud Run Jobs (depends on whether it must run containers).
 - [ ] **Worker -> Vault reachability:** Tailscale/WireGuard mesh vs Cloud NAT static
       IP allowlist.
 
-## 16. How to resume (note to the next session)
+## 17. How to resume (note to the next session)
 
 1. Read this doc + `LLM_CONTEXT.md` + `.github/copilot-instructions.md`.
 2. Confirm the working branch first (repo rule: named branch per change; use
@@ -336,6 +430,7 @@ service account + project can authenticate, even if the endpoint is reachable.
 3. Start at the current Phase (see §13). If nothing exists yet, begin Phase 1
    scaffolding: the label-gated trigger + scope classifier + plan step, keeping the
    separation-of-privilege principle (§3) intact from the first commit.
-4. Pick a deployment topology (§5 self-hosted vs §14 GCP ephemeral vs hybrid) as
-   part of resolving §15 open decisions.
-5. Keep this doc updated as decisions in §15 are resolved.
+4. **Deployment topology is decided: Option 3 (§15)** — GitHub-triggered, 100%
+   ephemeral GCP worker, HCP Vault. Build toward it; §5 and §14 remain as recorded
+   alternatives/context only.
+5. Keep this doc updated as decisions in §16 are resolved.
