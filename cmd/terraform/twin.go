@@ -203,6 +203,15 @@ var twinCmd = &cobra.Command{
 
 		tfeArgs = append(tfeArgs, "-v", fmt.Sprintf("%s:/etc/ssl/tfe:Z", layout.CertDir))
 
+		// Bind-mount a task-worker config template with the /tmp/terraform disk cache made writable so
+		// twin TFE renders the run config with a writable cache from the very first boot (see the
+		// primary create flow for the full rationale). Falls back to the stock template on failure.
+		if writableTmpl, tmplErr := writableTaskWorkerTemplatePath(engine, fmt.Sprintf("%s:%s", tfeTwinImage, tfeTwinVersion), layout.CertDir); tmplErr != nil {
+			fmt.Printf("⚠️  Could not prepare writable twin task-worker cache template (remote runs may fail downloading Terraform): %v\n", tmplErr)
+		} else {
+			tfeArgs = append(tfeArgs, "-v", writableTmpl+":/etc/task-worker/config.hcl.tmpl:ro")
+		}
+
 		tfeArgs = append(tfeArgs,
 			"-e", "TFE_OPERATIONAL_MODE=external",
 			"-e", fmt.Sprintf("TFE_HOSTNAME=%s", tfeTwinHostname),
@@ -262,19 +271,6 @@ var twinCmd = &cobra.Command{
 			"cp /etc/ssl/tfe/cert.pem /usr/local/share/ca-certificates/tfe-twin-localhost.crt && update-ca-certificates >/dev/null 2>&1 && supervisorctl restart tfe:archivist >/dev/null 2>&1",
 		).CombinedOutput(); trustErr != nil {
 			fmt.Printf("⚠️  Could not refresh twin TFE trust store automatically: %s\n", strings.TrimSpace(string(trustOut)))
-		}
-
-		if taskWorkerOut, taskWorkerErr := exec.Command(
-			engine,
-			"exec",
-			"--user",
-			"0",
-			layout.CoreContainer,
-			"sh",
-			"-lc",
-			"sed -i 's/readonly = \"true\"/readonly = \"false\"/' /run/terraform-enterprise/task-worker/config.hcl && supervisorctl restart tfe:task-worker >/dev/null 2>&1",
-		).CombinedOutput(); taskWorkerErr != nil {
-			fmt.Printf("⚠️  Could not patch twin TFE task-worker cache mount automatically: %s\n", strings.TrimSpace(string(taskWorkerOut)))
 		}
 
 		fmt.Println("⚙️  Deploying twin TFE Ingress Proxy...")
