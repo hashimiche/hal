@@ -43,4 +43,4 @@ Handle hal terraform create requests with a stable lifecycle pattern.
 
 ## Runtime Notes
 
-- TFE task-worker `agent-run` must keep `/tmp/terraform` writable; read-only cache mounts cause remote plan/apply failures when downloading Terraform binaries.
+- TFE task-worker `agent-run` must keep `/tmp/terraform` writable; the read-only mount is TFE's required disk cache (`TFE_DISK_CACHE_VOLUME_NAME`, cannot be removed) and causes remote plan/apply failures ("read-only file system") when downloading Terraform binaries. TFE renders the run config from `/etc/task-worker/config.hcl.tmpl` ~40ms into boot, so HAL **bind-mounts** a patched template (extracted from the exact image, `readonly` flipped to `false`) over that path at container creation — a post-start patch cannot win the race and this image has no supervisord to restart the task-worker.

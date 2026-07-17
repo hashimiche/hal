@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -197,6 +198,38 @@ func tfeCoreContainerForBaseURL(baseURL string) (string, error) {
 	}
 
 	return tfeCoreContainer, nil
+}
+
+// taskWorkerConfigTemplatePath is the in-container path of the task-worker config template that TFE
+// renders into /run/terraform-enterprise/task-worker/config.hcl at boot.
+const taskWorkerConfigTemplatePath = "/etc/task-worker/config.hcl.tmpl"
+
+// writableTaskWorkerTemplatePath prepares a task-worker config template with the shared disk-cache
+// mount (/tmp/terraform) flipped from read-only to writable and returns a host path to bind-mount
+// over taskWorkerConfigTemplatePath inside the TFE container.
+//
+// Why a bind mount instead of an in-container patch: TFE renders the task-worker run config
+// (/run/terraform-enterprise/task-worker/config.hcl) from this template within ~40ms of container
+// start — far too early to win a post-start `exec` sed race — and this image has no supervisord to
+// restart the task-worker so it could reload a late patch (PID 1 is the terraform-enterprise process
+// manager; killing the task-worker does not respawn it, and supervisorctl has no socket). Delivering
+// the patched template as a mount present at container-creation time is the only reliable fix.
+//
+// The template is extracted from the exact image tag being deployed, so it never drifts from the TFE
+// version — only the readonly flag is changed. The disk cache itself cannot be removed:
+// TFE_DISK_CACHE_VOLUME_NAME / TFE_DISK_CACHE_PATH are required for the Docker run pipeline.
+func writableTaskWorkerTemplatePath(engine, image, hostDir string) (string, error) {
+	raw, err := exec.Command(engine, "run", "--rm", "--entrypoint", "cat", image, taskWorkerConfigTemplatePath).Output()
+	if err != nil {
+		return "", fmt.Errorf("extract task-worker template from %s: %w", image, err)
+	}
+
+	patched := strings.ReplaceAll(string(raw), `readonly = "true"`, `readonly = "false"`)
+	dst := filepath.Join(hostDir, "task-worker-config.hcl.tmpl")
+	if err := os.WriteFile(dst, []byte(patched), 0o644); err != nil {
+		return "", fmt.Errorf("write patched task-worker template: %w", err)
+	}
+	return dst, nil
 }
 
 func extractAtlasUserToken(raw string) string {

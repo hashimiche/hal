@@ -199,6 +199,17 @@ var deployCmd = &cobra.Command{
 
 		tfeArgs = append(tfeArgs, "-v", fmt.Sprintf("%s:/etc/ssl/tfe:Z", certDir))
 
+		// Bind-mount a task-worker config template with the /tmp/terraform disk cache made writable so
+		// TFE renders the run config with a writable cache from the very first boot. This must be a
+		// mount present at container creation — TFE renders that config ~40ms into boot, too early for
+		// any post-start patch, and this image has no supervisord to restart the task-worker. Falls
+		// back to the stock (read-only) template if extraction fails.
+		if writableTmpl, tmplErr := writableTaskWorkerTemplatePath(engine, fmt.Sprintf("%s:%s", tfeImage, tfeVersion), certDir); tmplErr != nil {
+			warnings = append(warnings, fmt.Sprintf("⚠️  Could not prepare writable task-worker cache template (remote runs may fail downloading Terraform): %v", tmplErr))
+		} else {
+			tfeArgs = append(tfeArgs, "-v", writableTmpl+":/etc/task-worker/config.hcl.tmpl:ro")
+		}
+
 		tfeArgs = append(tfeArgs,
 			"-e", "TFE_OPERATIONAL_MODE=external",
 			"-e", fmt.Sprintf("TFE_HOSTNAME=%s", tfeHostname),
@@ -268,22 +279,6 @@ var deployCmd = &cobra.Command{
 			"cp /etc/ssl/tfe/cert.pem /usr/local/share/ca-certificates/tfe-localhost.crt && update-ca-certificates 2>&1",
 		).CombinedOutput(); trustErr != nil {
 			warnings = append(warnings, fmt.Sprintf("⚠️  Could not refresh TFE trust store automatically: %s", strings.TrimSpace(string(trustOut))))
-		}
-
-		// TFE 1.2.0 on this local Podman flow generates an agent-run task-worker config that
-		// mounts /tmp/terraform read-only, but the remote agent still downloads the Terraform
-		// binary into that path. Make the cache mount writable so remote runs can start.
-		if taskWorkerOut, taskWorkerErr := exec.Command(
-			engine,
-			"exec",
-			"--user",
-			"0",
-			tfeCoreContainer,
-			"sh",
-			"-lc",
-			"test -f /run/terraform-enterprise/task-worker/config.hcl && sed -i 's/readonly = \"true\"/readonly = \"false\"/' /run/terraform-enterprise/task-worker/config.hcl 2>&1 || true",
-		).CombinedOutput(); taskWorkerErr != nil {
-			warnings = append(warnings, fmt.Sprintf("⚠️  Could not patch TFE task-worker cache mount automatically: %s", strings.TrimSpace(string(taskWorkerOut))))
 		}
 
 		// 8.5 Deploy the Magic Redirect Fixer (AFTER TFE BOOTS!)
