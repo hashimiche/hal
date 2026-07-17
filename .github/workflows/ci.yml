@@ -3,14 +3,15 @@ name: CI
 # Runs the checklist automatically so build/test/vet/lint are enforced, not
 # trusted. Push-triggered (not pull_request) so a contributor sees failures on
 # their own branch before opening a PR, and so there is no wasteful double-run
-# per PR. Scoped to the repo branch-prefix convention (+ main) and NOT tags —
-# release.yml owns v* tags. Mis-prefixed branches never run CI; when these jobs
+# per PR. Scoped to the repo branch-prefix convention and NOT tags —
+# release.yml owns v* tags. main is intentionally excluded: work is validated on
+# its feature/bugfix branch before merge, so re-running the checklist on the
+# merge commit is redundant. Mis-prefixed branches never run CI; when these jobs
 # are required status checks in branch protection, that also blocks them from
 # merging.
 on:
   push:
     branches:
-      - main
       - 'feature/**'
       - 'bugfix/**'
 
