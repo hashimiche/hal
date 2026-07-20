@@ -59,7 +59,7 @@ func enableDatabaseVSO(engine string, client *vault.Client, backend, roleName st
 			fmt.Printf("❌ Failed to prepare KinD config: %v\n", cfgErr)
 			return
 		}
-		defer os.Remove(kindConfigPath)
+		defer func() { _ = os.Remove(kindConfigPath) }()
 
 		startCmd := exec.Command("kind", "create", "cluster", "--config", kindConfigPath)
 		if strings.TrimSpace(dbVSOKindNodeImage) != "" {
