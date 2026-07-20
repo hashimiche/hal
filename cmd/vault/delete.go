@@ -100,7 +100,25 @@ var vaultDestroyCmd = &cobra.Command{
 			teardownSharedGitLab(engine)
 		}
 
-		// 2. Destroy all associated volumes
+		// 2. Destroy KinD cluster if one is running — all three --k8s Vault
+		//    features (hal vault k8s, hal vault database --k8s, hal vault pki
+		//    --k8s/--acme) share a single cluster that is exclusively owned by
+		//    the Vault ecosystem, so hal vault delete always removes it.
+		if global.DryRun {
+			fmt.Println("[DRY RUN] Would execute: kind delete cluster (if running)")
+		} else {
+			clusterOut, _ := exec.Command("kind", "get", "clusters").Output()
+			if strings.Contains(string(clusterOut), "kind") {
+				fmt.Println("⚙️  Destroying KinD cluster...")
+				if err := exec.Command("kind", "delete", "cluster").Run(); err != nil {
+					fmt.Printf("⚠️  Could not remove KinD cluster: %v\n", err)
+				} else {
+					fmt.Println("  ✅ Destroyed KinD cluster")
+				}
+			}
+		}
+
+		// 3. Destroy all associated volumes
 		for _, volume := range vaultVolumes {
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would execute: %s volume rm -f %s\n", engine, volume)
@@ -119,7 +137,7 @@ var vaultDestroyCmd = &cobra.Command{
 			fmt.Printf("⚠️  Could not remove prod Vault state (%s): %v\n", global.VaultProdStateDir(), err)
 		}
 
-		// 4. Attempt to clean the network (Only deletes hal-net if NO containers are using it)
+		// 5. Attempt to clean the network (Only deletes hal-net if NO containers are using it)
 		global.CleanNetworkIfEmpty(engine)
 
 		if err := global.RemoveObsPromTargetFile("vault"); err != nil {

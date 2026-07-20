@@ -225,8 +225,31 @@ var vaultK8sCmd = &cobra.Command{
 					fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
 				}
 
-				fmt.Println("⚙️  Destroying KinD Cluster...")
-				_ = exec.Command("kind", "delete", "cluster").Run()
+				// Conditionally delete KinD cluster — preserve it if any
+				// co-tenant feature is still active on the same cluster.
+				coTenants := []struct {
+					ns      string
+					feature string
+				}{
+					{"db-app", "hal vault database --k8s"},
+					{"pki-demo", "hal vault pki --k8s"},
+					{"pki-acme-demo", "hal vault pki --acme"},
+				}
+				clusterPreserved := false
+				for _, t := range coTenants {
+					out, _ := exec.Command("kubectl", "get", "namespace", t.ns,
+						"--ignore-not-found", "-o", "name").Output()
+					if strings.TrimSpace(string(out)) != "" {
+						fmt.Printf("ℹ️  KinD cluster preserved (%s is still active).\n", t.feature)
+						fmt.Printf("   Run '%s disable' to remove it when done.\n", t.feature)
+						clusterPreserved = true
+						break
+					}
+				}
+				if !clusterPreserved {
+					fmt.Println("⚙️  Destroying KinD Cluster...")
+					_ = exec.Command("kind", "delete", "cluster").Run()
+				}
 
 				fmt.Println("✅ Kubernetes environment destroyed successfully!")
 				global.RefreshHalHealth(engine)
