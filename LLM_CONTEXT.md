@@ -216,6 +216,13 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 - Vault k8s demo (`hal vault k8s`) now supports two explicit demo modes behind the same nginx endpoint (`http://web.localhost:8088`):
     - Native mode: `VaultStaticSecret` sync to Kubernetes secret, injected as env var, HTML rendered in-pod.
     - CSI mode (`--csi`, Enterprise): `CSISecrets` projection via `csi.vso.hashicorp.com`, HTML rendered from mounted file.
+- `hal vault database enable --k8s` extends the database secrets workflow into a full KinD + VSO demo using `VaultDynamicSecret`:
+    - After the database secrets engine is configured (MariaDB or Oracle), `--k8s` boots a KinD cluster (port `30084→8091`), installs VSO, and applies a `VaultDynamicSecret` CRD that mints and rotates real Vault database credentials into a Kubernetes Secret every ~15 seconds.
+    - The demo app (2-replica httpd + nginx proxy) reads `DB_USERNAME`/`DB_PASSWORD` from the Secret as env vars and renders them on a live HTML page at `http://db.localhost:8091`.
+    - The page includes a **Copy login command** button that assembles the current `mysql` (or `sqlplus` for Oracle) CLI command with the live JIT credentials.
+    - Key difference from `hal vault k8s`: uses `VaultDynamicSecret` (database creds, new user per rotation) not `VaultStaticSecret` (static KV value). TTL `default_ttl=max_ttl=15s` makes leases non-renewable, forcing VSO to mint fresh credentials each cycle.
+    - `--k8s` shares the same KinD cluster and `writeHALKindConfig()` port map as `hal vault k8s` and `hal vault pki --k8s` (port 30084→8091 added alongside existing 30080→8088, 30082→8089, 30083→8090).
+    - `hal vault database disable --k8s` and `hal vault database update --k8s` also tear down the KinD cluster and clean up Vault kubernetes auth + policy.
 - `hal vault pki` manages a two-tier Vault PKI CA chain (Root CA `pki-root` + Intermediate CA `pki-int`, RSA-4096) and two optional K8s demo modes:
     - `--k8s`: deploys Jetstack cert-manager to a shared KinD cluster, configures a dedicated `kubernetes-pki/` Vault auth mount (always independent of `kubernetes/`), creates `ClusterIssuer vault-pki-issuer`, issues cert `hal-web-pki-cert`, exposes nginx web pod at `https://pki.localhost:8089` (NodePort 30082). The nginx pod installs openssl at startup to decode the cert into the page.
     - `--acme`: enables Vault's built-in ACME endpoint (`pki-int/config/acme`), creates role `acme-demo` with short TTL (default `5m`), deploys a Caddy pod that obtains its cert via ACME directly from Vault (no cert-manager), exposes a live web page at `https://acme.localhost:8090` (NodePort 30083) showing a countdown to cert expiry and a renewal badge when Caddy auto-renews.

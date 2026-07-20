@@ -27,6 +27,7 @@ You are an expert HashiCorp Vault, Terraform, and DevOps assistant. Your primary
 - Keep global behavior wired through `internal/global.Debug` and `internal/global.DryRun`.
 - Reuse the shared `hal-net` network and `hal-...` resource names.
 - Be careful with command names: the observability namespace is `obs`, not `observability`.
+- **Shared KinD cluster:** when a `--k8s` feature enables Vault Kubernetes auth, it must use a dedicated auth mount (never `kubernetes/` unless it is `hal vault k8s` itself). See `docs/cli-lifecycle-model.md` Shared KinD Cluster Convention for the full mount registry and co-tenant teardown rules.
 
 ## CLI Lifecycle Governance
 

@@ -1129,7 +1129,8 @@ func componentContext(component string) (map[string]interface{}, []string, error
 			"component":  "vault_database",
 			"status_cmd": "hal vault database",
 			"notes":      "Use command without flags for smart status and next-step guidance",
-		}, []string{"hal vault database", "hal vault database enable", "hal vault database disable"}, nil
+			"k8s_mode":   "add --k8s to enable + KinD + VSO with VaultDynamicSecret (http://db.localhost:8091)",
+		}, []string{"hal vault database", "hal vault database enable", "hal vault database enable --k8s", "hal vault database disable"}, nil
 	case "terraform":
 		return map[string]interface{}{
 			"component": component,
