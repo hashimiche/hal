@@ -28,6 +28,15 @@ var (
 	oracleFreeTag       string
 	oraclePluginVersion string
 	oraclePluginPath    string
+
+	// --k8s: extend database enable to also deploy VSO and a VaultDynamicSecret.
+	dbVSOEnabled       bool
+	dbVSOKindNodeImage string
+	dbVSOChartVersion  string
+	dbVSOBackendImage  string
+	dbVSOBackendTag    string
+	dbVSOProxyImage    string
+	dbVSOProxyTag      string
 )
 
 var vaultDatabaseCmd = &cobra.Command{
@@ -176,6 +185,10 @@ var vaultDatabaseCmd = &cobra.Command{
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would execute: %s rm -f %s\n", engine, containerName)
 				fmt.Println("[DRY RUN] Would call API to force-revoke leases and unmount 'database/'")
+				if dbVSOEnabled {
+					fmt.Println("[DRY RUN] Would execute: kind delete cluster (db-vso cluster)")
+					fmt.Println("[DRY RUN] Would call API to clean up kubernetes auth and policy for database VSO")
+				}
 			} else {
 				if databaseDisable {
 					fmt.Printf("🛑 Tearing down %s environment...\n", backendLabel)
@@ -197,12 +210,20 @@ var vaultDatabaseCmd = &cobra.Command{
 					if backend == "oracle" {
 						_, _ = client.Logical().Delete("sys/plugins/catalog/database/vault-plugin-database-oracle")
 					}
+
+					if dbVSOEnabled {
+						disableDatabaseVSOVault(client)
+					}
 				} else {
 					fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
 				}
 
 				fmt.Printf("⚙️  Removing %s container...\n", backendLabel)
 				_ = exec.Command(engine, "rm", "-f", containerName).Run()
+
+				if dbVSOEnabled {
+					disableDatabaseVSOCluster()
+				}
 
 				if databaseDisable {
 					fmt.Printf("✅ %s environment destroyed successfully!\n", backendLabel)
@@ -365,11 +386,27 @@ EOF`, vaultOracleSysPass, vaultOraclePDB, strings.TrimSpace(grantSQL))
 				"creation_statements":   createStmt,
 				"revocation_statements": revokeStmt,
 				"default_ttl":           "2m",
-				"max_ttl":               "2h",
+				// When --k8s is active, max_ttl matches default_ttl so the
+				// lease is non-renewable.  VSO is then forced to call
+				// database/creds/<role> fresh on every cycle, which means a
+				// genuinely new username + password each time rather than just
+				// extending the same lease.  Without --k8s keep the generous
+				// 2h window so manual renewals still work.
+				// The --k8s TTL is deliberately short (15s) for demo purposes
+				// so credential rotation is visible within seconds.
+				"max_ttl": "2h",
+			}
+			if dbVSOEnabled {
+				roleData["default_ttl"] = "15s"
+				roleData["max_ttl"] = "15s"
 			}
 			if backend == "oracle" {
 				roleData["default_ttl"] = "1h"
 				roleData["max_ttl"] = "24h"
+				if dbVSOEnabled {
+					roleData["default_ttl"] = "15s"
+					roleData["max_ttl"] = "15s"
+				}
 			}
 
 			_, err = client.Logical().Write("database/roles/"+roleName, roleData)
@@ -413,6 +450,11 @@ EOF`, vaultOracleSysPass, vaultOraclePDB, strings.TrimSpace(grantSQL))
 				fmt.Println("   5. This user has DBA privileges and will self-destruct in 1 hour.")
 			}
 			fmt.Println("---------------------------------------------------------")
+
+			// --k8s: spin up KinD + VSO and surface live dynamic DB creds in the app.
+			if dbVSOEnabled {
+				enableDatabaseVSO(engine, client, backend, roleName)
+			}
 		}
 	},
 }
@@ -790,6 +832,15 @@ func init() {
 	vaultDatabaseCmd.Flags().StringVar(&oracleFreeTag, "oracle-tag", defaultOracleFreeTag, "Oracle Database Free container image tag")
 	vaultDatabaseCmd.Flags().StringVar(&oraclePluginVersion, "oracle-plugin-version", defaultOraclePluginVer, "Version string to register with Vault (must match binary)")
 	vaultDatabaseCmd.Flags().StringVar(&oraclePluginPath, "oracle-plugin-path", "", "Path to vault-plugin-database-oracle binary (required for --backend oracle)")
+
+	// --k8s and related flags
+	vaultDatabaseCmd.Flags().BoolVar(&dbVSOEnabled, "k8s", false, "Also deploy KinD + VSO and sync dynamic DB credentials into a demo app via VaultDynamicSecret")
+	vaultDatabaseCmd.Flags().StringVar(&dbVSOKindNodeImage, "db-kind-node-image", "kindest/node:v1.31.1", "KinD node image used when creating the database VSO cluster")
+	vaultDatabaseCmd.Flags().StringVar(&dbVSOChartVersion, "db-vso-chart-version", "", "Helm chart version for vault-secrets-operator (empty uses latest)")
+	vaultDatabaseCmd.Flags().StringVar(&dbVSOBackendImage, "db-app-image", "httpd", "Demo app container image name")
+	vaultDatabaseCmd.Flags().StringVar(&dbVSOBackendTag, "db-app-tag", "2.4-alpine", "Demo app container image tag")
+	vaultDatabaseCmd.Flags().StringVar(&dbVSOProxyImage, "db-proxy-image", "nginx", "Demo proxy container image name")
+	vaultDatabaseCmd.Flags().StringVar(&dbVSOProxyTag, "db-proxy-tag", "alpine", "Demo proxy container image tag")
 
 	Cmd.AddCommand(vaultDatabaseCmd)
 }

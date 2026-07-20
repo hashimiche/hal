@@ -114,4 +114,29 @@ const (
 
 	defaultInstantClientVerARM64 = "23.26.2.0.0"
 	defaultInstantClientDirARM64 = "instantclient_23_26"
+
+	// --- Database VSO (hal vault database enable --k8s) ---
+	// KinD + VSO port mapping for the database credential demo.
+	// Port 30084 → 8091 is reserved so it does not collide with the
+	// existing k8s (30080→8088) or pki (30082→8089, 30083→8090) demos.
+	dbVSONodePort = 30084
+	dbVSOHostPort = 8091
+
+	// Kubernetes namespace and service-account used by the database VSO demo.
+	dbVSONS         = "db-app"
+	dbVSOSAName     = "db-app-sa"
+	dbVSOAppName    = "hal-db-app"
+	dbVSOProxyName  = "hal-db-proxy"
+	dbVSOPolicyName = "db-app-read"
+
+	// Dedicated Vault Kubernetes auth mount for the database VSO demo.
+	// Using a separate mount from "kubernetes/" (used by hal vault k8s) means
+	// each command owns its auth lifecycle independently — disable is safe
+	// regardless of what else is running on the shared KinD cluster.
+	dbVSOAuthMount = "kubernetes-db"
+
+	// VaultDynamicSecret mounts + role names mirroring the database enable path.
+	dbVSOMariaDBRole = "dba-role"
+	dbVSOOracleRole  = "oracle-dba-role"
+	dbVSOSecretName  = "hal-db-creds"
 )
