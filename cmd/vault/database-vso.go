@@ -574,6 +574,8 @@ func disableDatabaseVSOVault(client *vault.Client) {
 //
 // This mirrors the guard in hal vault pki disable (pki.go) and means any
 // combination of --k8s features can coexist safely on the same cluster.
+// When the cluster is preserved, the db-app namespace is still removed so the
+// other features' guards never see this demo as active after its disable.
 func disableDatabaseVSOCluster() {
 	// Check each co-tenant namespace.
 	coTenants := []struct {
@@ -589,6 +591,13 @@ func disableDatabaseVSOCluster() {
 		out, _ := exec.Command("kubectl", "get", "namespace", t.ns,
 			"--ignore-not-found", "-o", "name").Output()
 		if strings.TrimSpace(string(out)) != "" {
+			// Remove our own namespace (VaultDynamicSecret, synced Secret,
+			// demo app, proxy) before preserving the cluster. If db-app were
+			// left behind, the other features' co-tenant guards would keep
+			// reporting this demo as active and no disable path could ever
+			// remove the cluster.
+			fmt.Printf("⚙️  Removing namespace '%s' (demo app + VSO resources)...\n", dbVSONS)
+			_ = exec.Command("kubectl", "delete", "namespace", dbVSONS, "--ignore-not-found").Run()
 			fmt.Printf("ℹ️  KinD cluster preserved (%s is still active).\n", t.feature)
 			fmt.Printf("   Run '%s disable' to remove it when done.\n", t.feature)
 			return

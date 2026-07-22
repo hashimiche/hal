@@ -246,7 +246,14 @@ var vaultK8sCmd = &cobra.Command{
 						break
 					}
 				}
-				if !clusterPreserved {
+				if clusterPreserved {
+					// Remove our own namespace before leaving the cluster
+					// behind. If app1 were left in place, the other features'
+					// co-tenant guards would keep reporting hal vault k8s as
+					// active and no disable path could ever remove the cluster.
+					fmt.Println("⚙️  Removing namespace 'app1'...")
+					_ = exec.Command("kubectl", "delete", "namespace", "app1", "--ignore-not-found").Run()
+				} else {
 					fmt.Println("⚙️  Destroying KinD Cluster...")
 					_ = exec.Command("kind", "delete", "cluster").Run()
 				}

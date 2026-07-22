@@ -188,6 +188,11 @@ are. The canonical namespace list to check:
 | `pki-demo` | `hal vault pki --k8s` |
 | `pki-acme-demo` | `hal vault pki --acme` |
 
+When the guard preserves the cluster, the `disable` path must still delete its
+**own** namespace(s) before returning. A feature that leaves its namespace
+behind after disable would be reported as "still active" by every other
+feature's guard, and no disable path could ever remove the cluster.
+
 `hal vault delete` is exempt — it is a full ecosystem teardown and always
 removes the cluster unconditionally.
 
