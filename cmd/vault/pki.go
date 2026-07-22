@@ -39,6 +39,9 @@ var (
 	pkiCaddyImage         string
 	pkiCaddyTag           string
 	pkiACMECertTTL        string
+
+	// --hsm: SoftHSM2-backed managed-key PKI (vars live in softhsm.go)
+	// pkiHSM bool  — declared in softhsm.go
 )
 
 var vaultPKICmd = &cobra.Command{
@@ -76,6 +79,11 @@ var vaultPKICmd = &cobra.Command{
 			mounts, _ := client.Sys().ListMounts()
 			rootMounted := mounts != nil && mounts[pkiRootMount+"/"] != nil
 			intMounted := mounts != nil && mounts[pkiIntMount+"/"] != nil
+
+			// HSM managed-key status line
+			if hsmManagedKeyActive(client) {
+				fmt.Printf("  ✅ Managed key   : sys/managed-keys/pkcs11/%s (SoftHSM2)\n", softHSMManagedKey)
+			}
 
 			if rootMounted {
 				fmt.Printf("  ✅ %-14s : Mounted\n", pkiRootMount)
@@ -346,7 +354,11 @@ var vaultPKICmd = &cobra.Command{
 			}
 
 			// enable, plain update, or update --force: full CA rebuild.
-			runVaultPKISetup(client, pkiUpdate)
+			if pkiHSM {
+				runVaultPKIHSMSetup(client, engine, pkiUpdate)
+			} else {
+				runVaultPKISetup(client, pkiUpdate)
+			}
 
 			if pkiK8s {
 				runPKIK8sEnable(client, engine, isPodman, pkiIntMount)
@@ -1586,6 +1598,18 @@ func init() {
 	vaultPKICmd.Flags().StringVar(&pkiCaddyImage, "vault-pki-caddy-image", "caddy", "Caddy container image name (ACME/--acme demo)")
 	vaultPKICmd.Flags().StringVar(&pkiCaddyTag, "vault-pki-caddy-tag", "alpine", "Caddy container image tag (ACME/--acme demo)")
 	vaultPKICmd.Flags().StringVar(&pkiACMECertTTL, "acme-cert-ttl", "5m", "TTL for certs issued to Caddy via ACME (short = visible auto-renewal in the web page)")
+
+	// SoftHSM2 / managed-key PKI flags
+	vaultPKICmd.Flags().BoolVar(&pkiHSM, "hsm", false, "Use SoftHSM2 PKCS#11 managed keys for Root CA + Intermediate CA (requires Vault Enterprise HSM build)")
+	vaultPKICmd.Flags().StringVar(&softHSMVaultTag, "vault-hsm-tag", defaultVaultEntHSMTag, "hashicorp/vault-enterprise image tag for the HSM build (must end in \"-ent.hsm\", e.g. 2.0.3-ent.hsm)")
+	vaultPKICmd.Flags().StringVar(&softHSMBaseImage, "softhsm-base-image", defaultSoftHSMBaseImage, "Base image for the SoftHSM runtime build (must be glibc-based)")
+	vaultPKICmd.Flags().StringVar(&softHSMBaseTag, "softhsm-base-tag", defaultSoftHSMBaseTag, "Base image tag for the SoftHSM runtime build")
+	vaultPKICmd.Flags().StringVar(&softHSMLabel, "softhsm-token-label", defaultSoftHSMLabel, "SoftHSM2 token label used during --init-token")
+	vaultPKICmd.Flags().StringVar(&softHSMPin, "softhsm-pin", defaultSoftHSMPin, "SoftHSM2 user PIN")
+	vaultPKICmd.Flags().StringVar(&softHSMSOPin, "softhsm-so-pin", defaultSoftHSMSOPin, "SoftHSM2 SO (security officer) PIN")
+	vaultPKICmd.Flags().StringVar(&softHSMManagedKey, "softhsm-managed-key", defaultSoftHSMManagedKeyName, "Vault managed-key name registered at sys/managed-keys/pkcs11/<name>")
+	vaultPKICmd.Flags().StringVar(&softHSMKeyLabel, "softhsm-key-label", defaultSoftHSMKeyLabel, "PKCS#11 key label for the CA signing key")
+	vaultPKICmd.Flags().StringVar(&softHSMHMACLabel, "softhsm-hmac-label", defaultSoftHSMHMACLabel, "PKCS#11 key label for the HMAC key")
 
 	Cmd.AddCommand(vaultPKICmd)
 }
