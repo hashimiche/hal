@@ -135,7 +135,9 @@ ENTRYPOINT ["/bin/vault"]
 	if err != nil {
 		return fmt.Errorf("temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+	}()
 
 	if err := os.WriteFile(tmpDir+"/Dockerfile", []byte(dockerfile), 0644); err != nil {
 		return fmt.Errorf("write Dockerfile: %w", err)
@@ -354,7 +356,7 @@ func runVaultPKIHSMSetup(client *vault.Client, engine string, isUpdate bool) {
 		Type:   "pki",
 		Config: vault.MountConfigInput{MaxLeaseTTL: pkiRootTTL},
 	}); err != nil {
-		_ = client.Sys().TuneMount(pkiRootMount, vault.MountConfigInput{MaxLeaseTTL: pkiRootTTL})
+		_ = client.Sys().TuneMountAllowNil(pkiRootMount, vault.TuneMountConfigInput{MaxLeaseTTL: &pkiRootTTL})
 	}
 
 	// Allow the PKI mount to use the managed key.
@@ -384,7 +386,7 @@ func runVaultPKIHSMSetup(client *vault.Client, engine string, isUpdate bool) {
 		Type:   "pki",
 		Config: vault.MountConfigInput{MaxLeaseTTL: pkiIntTTL},
 	}); err != nil {
-		_ = client.Sys().TuneMount(pkiIntMount, vault.MountConfigInput{MaxLeaseTTL: pkiIntTTL})
+		_ = client.Sys().TuneMountAllowNil(pkiIntMount, vault.TuneMountConfigInput{MaxLeaseTTL: &pkiIntTTL})
 	}
 
 	_, _ = client.Logical().Write("sys/mounts/"+pkiIntMount+"/tune", map[string]interface{}{

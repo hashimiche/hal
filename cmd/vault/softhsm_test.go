@@ -55,7 +55,7 @@ func TestIsVaultHSMBuild(t *testing.T) {
 		t.Run(tc.version, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprintf(w, `{"initialized":true,"sealed":false,"version":%q}`, tc.version)
+				_, _ = fmt.Fprintf(w, `{"initialized":true,"sealed":false,"version":%q}`, tc.version)
 			}))
 			defer server.Close()
 

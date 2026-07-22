@@ -64,7 +64,7 @@ var vaultPKICmd = &cobra.Command{
 		client, vaultErr := GetHealthyClient()
 		hsmDetected := vaultErr == nil && isVaultHSMBuild(client)
 		hsmMode := hsmDetected && !pkiNoHSM
-		fullPKIChange := pkiEnable || (pkiUpdate && !((pkiK8s || pkiACME) && !pkiForce))
+		fullPKIChange := pkiEnable || (pkiUpdate && ((!pkiK8s && !pkiACME) || pkiForce))
 
 		// Validate HSM intent and runtime before teardown. In particular, an
 		// invalid `pki update --hsm` must not unmount a working PKI deployment
