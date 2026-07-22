@@ -1,10 +1,16 @@
 # HAL Issue-Resolver Agent — Architecture & Design
 
-> **Status:** Design (not yet implemented) · **Date:** 2026-07-16 · **Owner:** repo maintainer
+> **Status:** Design (not yet implemented) · **Date:** 2026-07-17 · **Owner:** repo maintainer
 >
 > **Purpose of this doc:** a self-contained design so the work can be resumed in a
 > later session by any human or LLM. It captures the *why*, the architecture, the
 > security model, and the open decisions. Read it top-to-bottom before writing code.
+>
+> **Current direction:** **Option 4 — Kubernetes Operator on GKE (§16)**. It keeps
+> the security wins of Option 3 but adds the property the owner values most:
+> **portability** — the system is pure Kubernetes, so it runs on the free GKE cluster
+> today and any conformant cluster tomorrow, with **Vault OSS in-cluster**. It
+> supersedes Option 3 (§15) and §5/§14, which remain as recorded context.
 
 ---
 
@@ -24,10 +30,14 @@ prompt-injection defense, model tiering, an eval harness, and success metrics.
 - **Paid, reliable model access.** GitHub Copilot Pro is being removed (employer
   decision). The agent's "brain" must be a **metered model API key funded
   directly** (Anthropic recommended), *not* a free tier. Pay-as-you-go, budget-capped.
-- **Self-hosted.** Runs on an owned cloud Linux server with a real public IP.
+- **Self-hosted, but portable.** Runs on infrastructure the owner controls. The
+  chosen home is a **GKE cluster** (free access via HashiCorp), but the design is
+  Kubernetes-native so it stays portable to any conformant cluster — the value is
+  *not* being locked to GCP.
 - **HashiCorp Vault** stores all secrets (GitHub credentials, model API keys,
-  webhook HMAC secret). The maintainer already knows Vault deeply — this repo is a
-  HashiCorp lab tool.
+  webhook HMAC secret). Runs as **Vault OSS in-cluster** (a pod), brokered to
+  workloads via the **Kubernetes auth method**. The maintainer already knows Vault
+  deeply — this repo is a HashiCorp lab tool.
 - **Public repo.** Issue text is **untrusted, attacker-influenced input**. This
   drives the entire security model.
 - **Compute note:** because `hal` is a *public* GitHub repo, GitHub Actions
@@ -45,6 +55,18 @@ context that holds credentials.** This single rule shapes every component:
   approval.
 - Code execution influenced by issue text happens in a **disposable, egress-
   restricted sandbox** with no Vault access.
+
+In the Kubernetes topology (§16) this principle takes concrete form:
+
+- **No secret ever lives in a CR.** Custom resources sit in etcd and are readable by
+  anyone with RBAC `get` — the `spec`/`status` describe *what to do*, never *with
+  which keys*. Secrets stay in Vault, fetched by the Job via the **Kubernetes auth
+  method**, never by the controller.
+- **Egress restriction = a NetworkPolicy** pinning the executor Job to GitHub + the
+  model endpoint only.
+- **Sandbox isolation = Sysbox** (`runtimeClassName: sysbox-runc`) — Docker/KinD run
+  inside the Job pod *without* `--privileged`, so a compromised run cannot escape to
+  the node or the Vault pod.
 
 ## 4. High-level loop
 
@@ -66,6 +88,12 @@ Two human gates: **(1) plan approval** on the dashboard, **(2) PR approval** on
 GitHub. Never auto-merge.
 
 ## 5. Components (what runs on the server)
+
+> **Superseded by Option 4 (§16).** This table describes the original single-server
+> topology and is kept as context. In the chosen Kubernetes topology the
+> orchestrator becomes an **operator/controller**, the disposable workers become
+> **Jobs**, and the durable store becomes the **CRD state in etcd**. See §16 for the
+> current mapping.
 
 Split into an **always-on orchestrator** (the watcher/brain) and **disposable
 workers** (code execution). Never run model-driven code execution on the host.
@@ -112,6 +140,13 @@ rejected  (out of scope → human-only)
   don't double-process.
 - **Loop caps:** hard ceilings on design iterations *and* fix iterations per issue
   (cost + runaway protection). Budget alerts.
+
+In the Kubernetes topology (§16) this state machine lives in **`status.phase`** of
+the `IssueResolution` custom resource, persisted in etcd. The controller is
+**level-triggered**: it reads observed `status`, takes the smallest step toward the
+desired state, and requeues — so a controller restart resumes cleanly. **One CR per
+issue (named by issue ID)** is the concurrency lock: etcd rejects a duplicate name,
+so duplicate webhooks cannot double-process.
 
 ## 8. Security model (public IP + secrets + code execution)
 
@@ -206,9 +241,10 @@ produce PRs that violate contribution discipline. Feed it:
     MCP client.
 - **Phase 1 — guardrail scaffolding:** label-gated trigger, plan-comment step,
   scoped token, CI-results-in-PR-body, scope classifier.
-- **Phase 2 — autonomous, self-hosted:** the full design in this doc — orchestrator
-  + Vault + sandboxed executor + dashboard + eval harness. This is the portfolio
-  piece.
+- **Phase 2 — autonomous, on Kubernetes (Option 4, §16):** the full design — an
+  **operator** (controller + `IssueResolution` CRD) driving **Jobs** for triage and
+  fix/test/push, **Vault OSS in-cluster**, a **Sysbox**-isolated executor, a
+  dashboard for the plan gate, and the eval harness. This is the portfolio piece.
 
 ## 14. Alternative deployment topology: GCP ephemeral workers
 
@@ -309,13 +345,17 @@ service account + project can authenticate, even if the endpoint is reachable.
 - **Dedup key = issue ID** so duplicate webhooks don't spawn two workers.
 - **Budget alerts** (ephemeral + scale-to-zero already caps spend).
 
-## 15. Option 3 — GitHub-triggered, 100% ephemeral, HCP Vault (EXPLORE FIRST)
+## 15. Option 3 — GitHub-triggered, 100% ephemeral, HCP Vault (SUPERSEDED)
 
-> **This is the current preferred direction.** It is a concrete refinement of the
-> §14 ephemeral-worker topology that removes the personal always-on server
-> entirely and satisfies three hard owner constraints simultaneously:
-> **(1) nothing of the owner's is publicly exposed, (2) zero idle cost — no
-> always-on listener, (3) all secrets brokered by Vault, never touched by a model.**
+> **Superseded by Option 4 (§16).** Kept as recorded context. This was the previous
+> preferred direction: a concrete refinement of the §14 ephemeral-worker topology
+> that removes the personal always-on server entirely and satisfies three hard owner
+> constraints simultaneously: **(1) nothing of the owner's is publicly exposed,
+> (2) zero idle cost — no always-on listener, (3) all secrets brokered by Vault,
+> never touched by a model.** Option 4 keeps these same three wins but trades
+> GCP-specific ephemeral VMs + HCP Vault for a **portable Kubernetes operator +
+> Vault OSS in-cluster**, and can additionally run HAL's container/KinD validation
+> in-cluster via Sysbox.
 
 ### 15.1 Why this option wins on the constraints
 
@@ -397,32 +437,216 @@ Never a single rampart:
 
 Detection is an early-rejection signal, never the thing the security rests on.
 
-## 16. Open decisions (resolve before/while building)
+## 16. Option 4 — Kubernetes Operator on GKE (CURRENT PREFERRED)
 
-- [ ] Orchestrator language: Go (fits the repo) vs Node (fits the dashboard). Lean Go.
-- [ ] State store: Postgres vs SQLite (SQLite is fine for single-node).
-- [ ] Dashboard exposure: Tailscale/WireGuard (recommended) vs public + auth.
+> **This is the chosen direction.** It keeps the three wins of Option 3 (nothing of
+> the owner's publicly exposed, no idle spend beyond the cluster, secrets brokered by
+> Vault and never touched by a model) and adds the property the owner cares about
+> most: **portability**. The whole system is Kubernetes-native, so it runs on the
+> free GKE cluster today and any conformant cluster tomorrow — no GCP lock-in. Vault
+> runs **OSS in-cluster**, not HCP.
+
+### 16.1 Why this option wins
+
+| Constraint | How Option 4 satisfies it |
+|---|---|
+| Portable, no cloud lock-in | Pure Kubernetes objects (CRD, controller, Jobs, NetworkPolicy, RuntimeClass). GKE is just the current host. |
+| Vault brokers secrets | **Vault OSS pod** + **Kubernetes auth method**: a Job's ServiceAccount JWT proves identity → short-lived Vault token → fetch secret → done. No static creds anywhere. |
+| Model never touches secrets | The controller and CRs hold no secrets; only the non-model publish step in the fix Job receives a JIT GitHub token (§16.5). |
+| Runs HAL's own validation | Sysbox lets the executor Job run Docker + KinD **without `--privileged`** to validate container/K8s HAL flows (§16.6). |
+
+### 16.2 The operator model — one CRD, a state machine in `status`
+
+The instinct "three roles" is right, but they are **three execution phases of one
+workflow**, not three CRDs. Model it as a **single CRD `IssueResolution`** whose
+controller reconciles a state machine held in `status.phase`, spawning a **Job** per
+phase. (More CRDs only earn their keep if a phase ever needs an independent
+lifecycle — not the case at POC.)
+
+```yaml
+apiVersion: hal.dev/v1alpha1
+kind: IssueResolution
+metadata:
+  name: issue-1234          # = issue ID → dedup lock (etcd rejects duplicates)
+spec:
+  issueNumber: 1234
+  approved: false           # the human plan gate, flipped by dashboard/kubectl
+status:
+  phase: Triage             # Triage → PlanReview → Execute → PROpen → Done | Rejected
+  triage: { inScope: true, suspicious: false }
+  prURL: ""
+  observedGeneration: 3
+```
+
+`status.phase` is the §7 state machine, now persisted in etcd. The controller is
+**level-triggered** (reconcile toward desired state, idempotent, requeue) — not
+"on event do X". Pods/Jobs **never spawn other pods**: a Job does work, writes its
+result to `status`, and the **controller** decides the next phase. That decoupling
+is what buys crash-recovery and the concurrency lock for free.
+
+### 16.3 Components (Kubernetes-native mapping of §5)
+
+| §5 component | Kubernetes form | Holds secrets? |
+|---|---|---|
+| Webhook receiver | small **Deployment** + Service (HMAC-validate, create the CR) | no |
+| Orchestrator / "watcher" | **controller** (`controller-runtime`), watches `IssueResolution` | no |
+| Durable store | the **CRD `status`** in etcd (no external DB needed) | no |
+| Triage step | **Job** (cheap model / Ollama): classify + label/comment → `status.triage` | no |
+| Fix step | **Job** under **Sysbox**: fix + test + push + PR (§16.6) | JIT only, publish step |
+| Dashboard (plan gate) | Deployment serving React/Vite; flips `spec.approved` | no |
+| Vault | **Vault OSS pod** + Kubernetes auth method | the vault |
+| Optional Ollama | in-cluster pod for cheap triage | no |
+
+> The "watcher" is **not** a CR — it is the controller plus the webhook-receiver
+> Deployment. The human approval gate is **not** a step — it is `spec.approved`,
+> desired state a human sets.
+
+### 16.4 Flow
+
+```mermaid
+flowchart TD
+    GH[Issue opened] --> WR[Webhook receiver Deployment<br/>HMAC validate]
+    WR -->|create CR issue-1234| CR[IssueResolution]
+    CTRL[Controller reconcile loop] -.observe status.phase.-> CR
+    CTRL -->|phase=Triage| J1[Job: triage - cheap model]
+    J1 -->|suspicious / out of scope| REJ[phase=Rejected, label + comment]
+    J1 -->|in scope| GATE{spec.approved ?}
+    GATE -->|false, requeue - no idle pod| GATE
+    GATE -->|true| J2[Job: fix under Sysbox]
+    J2 --> PR[phase=PROpen, status.prURL]
+    PR --> HUMAN[Human review + merge — final gate]
+```
+
+The plan gate cannot idle a pod: when `spec.approved == false` the controller simply
+**returns and requeues** — no worker waits. (This is what §14's "one worker per
+stage" wanted; on Kubernetes it is native.)
+
+### 16.5 Separation of privilege inside the fix Job
+
+Even in one pod, the two phases are separated **in time** so the GitHub token never
+exists while the model runs:
+
+1. **Model phase:** Vault k8s auth → fetch the **LLM key only** → `ProposeDiff` →
+   apply diff → validate. Egress (NetworkPolicy) = model endpoint + GitHub read. The
+   GitHub push token **does not exist in memory yet** — a prompt-injected "print your
+   token" has nothing to print (§15.6 backstop, preserved).
+2. **File-allowlist gate:** a diff touching `.github/**`, `**/*.tf`, the agent's own
+   source, or Vault config is **auto-rejected before any PR** (§15.5, still enforced
+   by CODEOWNERS + branch protection).
+3. **Publish phase (non-model):** Vault mints a **JIT GitHub install token**, the Job
+   does `git push` + opens the PR, then terminates. Model logic is already done.
+
+### 16.6 The fix Job: Sysbox + a pluggable LLM
+
+- **Isolation:** `runtimeClassName: sysbox-runc` — Docker/Podman + KinD run *inside*
+  the Job pod with **no `--privileged`** and no host `docker.sock`. Requires a **GKE
+  Standard node pool** with the `sysbox-deploy-k8s` DaemonSet; **Autopilot cannot do
+  this** (no custom RuntimeClass).
+- **LLM behind an interface, never hardcoded.** A Go `CodeFixProvider` contract with
+  swappable backends (`bob`/IBM watsonx-Granite, `anthropic`, `ollama`) selected by
+  env. Aim for an **OpenAI-compatible API shape** as the common denominator so a
+  single client covers most providers — "Bob" is then just a `base_url` + model, and
+  is disposable if it underperforms. Endpoint + key come from Vault, into the **model
+  phase only**.
+
+### 16.7 The one hard limit: Multipass stays out
+
+HAL has three runtime tiers: **containers** (Docker/Podman — most flows), **KinD**
+(`hal vault k8s`, `hal vault pki --k8s/--acme`), and **Multipass VMs** (`hal nomad`,
+`hal boundary ssh`). Sysbox covers the first two in-cluster. Multipass needs
+`/dev/kvm` / nested virtualization, which a GKE pod does not provide → those flows
+remain **`human-only`** (§11) or are validated on a separate KVM-capable VM. This
+does not affect portability of the operator itself.
+
+### 16.8 Dashboard (plan-gate UI)
+
+The dashboard is a **separate component, not part of the controller**. In the
+operator pattern the **source of truth is the CRs in etcd**, so the dashboard and
+the controller never talk to each other directly — they communicate **only through
+the `IssueResolution` CRs**. The controller *writes* `status`; the dashboard *reads*
+`status` and *writes* `spec.approved`.
+
+Everything the UI shows is derived from the CRs — the dashboard is essentially a
+prettier `kubectl get issueresolutions`:
+
+- **Issues in progress** = `list IssueResolution` (one per issue, §16.2).
+- **Status** = `status.phase` (`Triage → PlanReview → Execute → PROpen → Done | Rejected`).
+- **Waiting for human** = `phase == PlanReview && spec.approved == false`.
+- **PR link** = `status.prURL`.
+
+```mermaid
+flowchart LR
+    subgraph etcd
+      CR[(IssueResolution CRs)]
+    end
+    CTRL[Controller] -->|writes status.phase| CR
+    CR -->|watch / list status| DASH[Dashboard BFF]
+    DASH -->|SSE / WebSocket| UI[Browser: list + statuses]
+    UI -->|click Approve| DASH
+    DASH -->|patch spec.approved=true| CR
+    CR -.controller sees it next reconcile.-> CTRL
+```
+
+**Backend:** a small **BFF** (Go, `client-go`) with a **minimal-RBAC ServiceAccount**
+— it may only read the CRs and flip the approval, nothing else:
+
+```yaml
+rules:
+  - apiGroups: ["hal.dev"]
+    resources: ["issueresolutions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["hal.dev"]
+    resources: ["issueresolutions"]      # patch limited to spec.approved
+    verbs: ["patch", "update"]
+```
+
+Security + UX notes:
+
+- **No access to Secrets, Jobs, or Vault** in this RBAC. The dashboard sees only CRs
+  — which, per §3, contain no secrets.
+- **Human auth in front** (Ingress + OIDC, or Tailscale): approving a plan is a
+  privileged action — it *is* human gate #1.
+- **Live updates** via a Kubernetes `watch` on the BFF → SSE/WebSocket to the
+  browser, no polling.
+- The controller's only UI-facing job is to keep a rich, readable `status`
+  (`status.conditions` like `Triaged`, `AwaitingApproval`, `PROpen`, `Failed` with a
+  message). Add **`additionalPrinterColumns`** to the CRD so `kubectl get` shows
+  Phase / Approved / PR too — handy for debugging without the dashboard.
+
+## 17. Open decisions (resolve before/while building)
+
+- [ ] Orchestrator/controller language: **Go** (fits the repo + `controller-runtime`)
+      — effectively decided.
+- [x] **State store:** the **CRD `status` in etcd** (§16.2) — no external
+      Postgres/SQLite needed.
+- [ ] Dashboard exposure: Tailscale/WireGuard (recommended) vs Ingress + auth.
 - [ ] Which Opus/Sonnet model versions; budget cap value.
-- [ ] Sandbox tech: rootless Podman (matches HAL's ethos) vs Docker; egress policy.
-- [ ] Whether to allow the sandbox to run HAL's container-runtime validation, and
-      under what isolation.
+- [x] **Executor sandbox:** **Sysbox** (`sysbox-runc`, no `--privileged`) runs Docker
+      + KinD in-Job; egress locked by NetworkPolicy.
+- [x] **Sandbox runs HAL's container-runtime validation?** Yes for containers + KinD
+      via Sysbox; **no for Multipass** (`nomad`, `boundary ssh`) — those stay
+      `human-only` (§16.7).
 - [ ] Human feedback format on deny (structured fields vs free text) fed back to
       the planner.
-- [x] **Deployment topology:** **Option 3 (§15)** chosen — GitHub-triggered, 100%
-      ephemeral GCP worker, **HCP Vault** as secrets control plane, **no personal
-      server**. Supersedes §5 self-hosted and the generic §14 topology.
-- [ ] **GCP trigger path:** GitHub Actions + WIF (leaning, per §15) vs Cloud Run
-      webhook receiver.
-- [ ] **Does the GH Actions pipeline talk to Vault at all**, or WIF-only to GCP so
-      Vault has a single consumer (the agent VM)? Leaning: WIF-only (§15.3).
-- [ ] **HCP Vault tier:** free dev tier vs HashiCorp-employee access; confirm the
-      `gcp`/`gce` auth method is available on the chosen tier.
-- [ ] **GCP worker runtime:** Cloud Batch vs GCE custom image + self-delete vs
-      Cloud Run Jobs (depends on whether it must run containers).
-- [ ] **Worker -> Vault reachability:** Tailscale/WireGuard mesh vs Cloud NAT static
-      IP allowlist.
+- [x] **Deployment topology:** **Option 4 (§16)** chosen — **Kubernetes operator on
+      GKE** (portable to any cluster), **Vault OSS in-cluster** via k8s auth,
+      Sysbox-isolated executor. Supersedes Option 3 (§15, HCP Vault + ephemeral GCE
+      VMs), §5 self-hosted, and the generic §14 topology.
+- [x] **Vault deployment:** **Vault OSS in-cluster** (pod) with the **Kubernetes auth
+      method** — replaces the HCP Vault / `gcp`-auth plan of Option 3.
+- [ ] **Trigger into the cluster:** in-cluster **webhook receiver** (needs an Ingress
+      + HMAC validation) vs **GitHub Actions** creating the `IssueResolution` CR via
+      `kubectl` (no public endpoint, GitHub is the trusted trigger). Leaning: Actions.
+- [ ] **Operator scaffolding:** Kubebuilder vs Operator SDK for the CRD +
+      `controller-runtime` reconciler. Lean Kubebuilder.
+- [ ] **Node pool:** GKE **Standard** pool + `sysbox-deploy-k8s` DaemonSet (required
+      for the fix Job); confirm Autopilot is not viable for the executor.
+- [ ] **LLM provider for the fix Job:** `bob` (IBM watsonx/Granite) vs `anthropic`
+      (Sonnet, per §6) vs `ollama` (local, free) — all behind the `CodeFixProvider`
+      interface, chosen by env.
+- [ ] **Vault OSS durability:** single dev-mode pod (POC) vs HA + Raft storage.
 
-## 17. How to resume (note to the next session)
+## 18. How to resume (note to the next session)
 
 1. Read this doc + `LLM_CONTEXT.md` + `.github/copilot-instructions.md`.
 2. Confirm the working branch first (repo rule: named branch per change; use
@@ -430,7 +654,8 @@ Detection is an early-rejection signal, never the thing the security rests on.
 3. Start at the current Phase (see §13). If nothing exists yet, begin Phase 1
    scaffolding: the label-gated trigger + scope classifier + plan step, keeping the
    separation-of-privilege principle (§3) intact from the first commit.
-4. **Deployment topology is decided: Option 3 (§15)** — GitHub-triggered, 100%
-   ephemeral GCP worker, HCP Vault. Build toward it; §5 and §14 remain as recorded
-   alternatives/context only.
-5. Keep this doc updated as decisions in §16 are resolved.
+4. **Deployment topology is decided: Option 4 (§16)** — a **Kubernetes operator on
+   GKE** (single `IssueResolution` CRD + state machine in `status`, controller-driven
+   Jobs, **Vault OSS in-cluster**, **Sysbox** executor). Build toward it; Option 3
+   (§15), §5, and §14 remain as recorded alternatives/context only.
+5. Keep this doc updated as decisions in §17 are resolved.
