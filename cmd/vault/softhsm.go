@@ -1,25 +1,23 @@
 package vault
 
-// softhsm.go implements the SoftHSM2-backed Vault managed-key PKI path,
-// enabled via `hal vault pki enable --hsm`.
+// softhsm.go implements the SoftHSM2-backed Vault managed-key PKI runtime and
+// CA setup. The runtime image is selected and built by `hal vault create
+// --edition ent-hsm --mode prod`; `hal vault pki enable` detects that running
+// HSM build and configures its managed-key-backed CA chain automatically.
 //
 // Flow:
-//   1. Build a custom hal-vault-softhsm:latest image (debian:12-slim + SoftHSM2
-//      + Vault binary extracted from the official image) — skipped when the
-//      image is already present unless --update was passed.
-//   2. Restart the running hal-vault container using the new image.
-//   3. Inside the container, run `softhsm2-util --init-token` and parse the
+//   1. Create builds hal-vault-softhsm:latest and boots it with kms_library.
+//   2. PKI enable runs `softhsm2-util --init-token` and parses the
 //      reassigned slot number from stdout.
-//   4. Register a Vault managed key at sys/managed-keys/pkcs11/<name> using
+//   3. Register a Vault managed key at sys/managed-keys/pkcs11/<name> using
 //      the detected slot, library path, PIN, and key labels.
-//   5. Generate the Root CA and Intermediate CA using the /kms generate path
+//   4. Generate the Root CA and Intermediate CA using the /kms generate path
 //      so Vault delegates all private-key operations to the PKCS#11 token.
 //
 // Teardown (pki disable / update, via teardownSoftHSMLayer) reverses the
-// above: managed key deleted after the PKI unmounts, token data wiped from
-// the volume, container restored onto the stock Enterprise image with the
-// plain prod config, and the runtime image removed. update --hsm keeps the
-// runtime and only re-registers the key.
+// PKI-owned state: the managed key is deleted after the PKI unmounts and token
+// data is wiped unless an HSM-backed update immediately follows. The runtime
+// container and image remain create/delete-owned.
 //
 // The SoftHSM token data directory is stored in the hal-vault-data volume at
 // /vault/data/softhsm/tokens so it survives a container restart.  Ownership
@@ -29,13 +27,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
-	"time"
-
-	"hal/internal/global"
 
 	vault "github.com/hashicorp/vault/api"
 )
@@ -76,9 +70,9 @@ var showSlotsLabelRe = regexp.MustCompile(`Label:\s+(\S+)`)
 
 var (
 	pkiHSM            bool
+	pkiNoHSM          bool
 	softHSMBaseImage  string
 	softHSMBaseTag    string
-	softHSMVaultTag   string // tag for the hashicorp/vault-enterprise source image (must be *-ent.hsm)
 	softHSMLabel      string
 	softHSMPin        string
 	softHSMSOPin      string
@@ -87,13 +81,6 @@ var (
 	softHSMHMACLabel  string
 )
 
-// hsmImageRef returns the fully-qualified source image reference for the
-// HSM-enabled Vault binary.  It always uses hashicorp/vault-enterprise with
-// the HSM-specific tag so the Dockerfile COPY pulls a PKCS#11-capable binary.
-func hsmImageRef() string {
-	return defaultVaultImageEnt + ":" + softHSMVaultTag
-}
-
 // isHSMTag reports whether a tag string is an HSM-enabled Vault Enterprise tag.
 // HashiCorp publishes HSM builds exclusively with the "-ent.hsm" suffix, e.g.
 // "2.0.3-ent.hsm".  A plain "-ent" tag does not include the PKCS#11 subsystem.
@@ -101,12 +88,17 @@ func isHSMTag(tag string) bool {
 	return strings.HasSuffix(tag, ".hsm")
 }
 
-// buildSoftHSMImage builds the hal-vault-softhsm:latest image from a
-// dynamically generated multi-stage Dockerfile.  The Vault binary is always
-// pulled from the HSM-enabled Enterprise image (softHSMVaultTag, e.g.
-// "2.0.3-ent.hsm") so the resulting container is guaranteed to include PKCS#11
-// support; SoftHSM2 is installed from the Debian package repository.
-func buildSoftHSMImage(engine string) error {
+// isVaultHSMBuild reports whether the running server is an Enterprise HSM
+// build. Vault exposes versions such as "2.0.3+ent.hsm" via sys/health.
+func isVaultHSMBuild(client *vault.Client) bool {
+	health, err := client.Sys().Health()
+	return err == nil && health != nil && strings.Contains(health.Version, "ent.hsm")
+}
+
+// buildSoftHSMImage builds hal-vault-softhsm:latest from a generated
+// multi-stage Dockerfile. srcRef supplies the HSM-enabled Vault binary and
+// baseRef supplies the glibc SoftHSM2 runtime.
+func buildSoftHSMImage(engine, srcRef, baseRef string) error {
 	arch := runtime.GOARCH
 	var platform string
 	switch arch {
@@ -117,9 +109,6 @@ func buildSoftHSMImage(engine string) error {
 	}
 
 	imageRef := vaultSoftHSMRuntimeImage + ":" + vaultSoftHSMRuntimeTag
-	baseRef := softHSMBaseImage + ":" + softHSMBaseTag
-	srcRef := hsmImageRef()
-
 	dockerfile := fmt.Sprintf(`FROM --platform=%s %s AS vault-src
 
 FROM --platform=%s %s
@@ -172,113 +161,6 @@ kms_library "pkcs11" {
 }
 `, softHSMLibPath)
 	return base + hsmBlock
-}
-
-// relaunchProdVault rewrites vault.hcl with the given config, replaces the
-// hal-vault container with imageRef (reusing the prod TLS certs, Raft volume,
-// and the license from the outgoing container), waits for it to listen, and
-// unseals it with the cached init keys. Shared by the SoftHSM restart and the
-// teardown restore, which differ only in image, config, and extra env.
-func relaunchProdVault(engine, imageRef, configHCL string, extraEnv []string) error {
-	stateDir := global.VaultProdStateDir()
-	if stateDir == "" {
-		return fmt.Errorf("could not resolve ~/.hal/vault-prod state directory")
-	}
-	certDir := filepath.Join(stateDir, vaultProdCertsDirName)
-	configPath := filepath.Join(stateDir, vaultProdConfigFileName)
-
-	isPodman := strings.Contains(engine, "podman")
-
-	if err := os.WriteFile(configPath, []byte(configHCL), 0o644); err != nil {
-		return fmt.Errorf("write vault.hcl: %w", err)
-	}
-
-	// Load the cached unseal keys produced by the original `hal vault create
-	// --mode prod` run. We need them to unseal after the container restarts —
-	// prod Vault always boots sealed.
-	initData, err := global.LoadCachedVaultInit()
-	if err != nil {
-		return fmt.Errorf("could not load unseal keys from %s: %w\n   Run 'hal vault create --mode prod' first", global.VaultInitCachePath(), err)
-	}
-
-	// Must run before the container is removed — the license is read back
-	// from the outgoing container's environment.
-	license := extractVaultLicense(engine)
-	_ = exec.Command(engine, "rm", "-f", vaultContainer).Run()
-
-	mountOpts := "ro"
-	if isPodman {
-		mountOpts = "ro,Z"
-	}
-
-	vaultArgs := []string{
-		"run", "-d",
-		"--name", vaultContainer,
-		"--network", global.HalNetName,
-		"--cap-add", "IPC_LOCK",
-		"-p", fmt.Sprintf("%d:%d", vaultHTTPPort, vaultHTTPPort),
-		"-v", vaultDataVolume + ":" + vaultProdRaftMount,
-		"-v", fmt.Sprintf("%s:%s:%s", configPath, vaultProdConfigMount, mountOpts),
-		"-v", fmt.Sprintf("%s:%s:%s", certDir, vaultProdTLSMount, mountOpts),
-		"-e", "SKIP_SETCAP=true",
-	}
-
-	for _, env := range extraEnv {
-		vaultArgs = append(vaultArgs, "-e", env)
-	}
-
-	if license != "" {
-		vaultArgs = append(vaultArgs, "-e", "VAULT_LICENSE="+license)
-	}
-
-	vaultArgs = append(vaultArgs,
-		imageRef,
-		"server", "-config="+vaultProdConfigMount,
-	)
-
-	out, err := exec.Command(engine, vaultArgs...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
-	}
-
-	// Wait for the server process to start listening (sealed is fine at this point).
-	if err := waitForVaultResponding(vaultProdHealthURL, 30); err != nil {
-		return fmt.Errorf("vault did not start listening after restart: %w", err)
-	}
-
-	// Unseal using the cached keys from the original init.
-	fmt.Println("🔓 Unsealing Vault (using cached unseal key)...")
-	if err := vaultOperatorUnseal(engine, initData.UnsealKeysB64); err != nil {
-		return fmt.Errorf("unseal failed: %w", err)
-	}
-
-	return nil
-}
-
-// restartVaultWithSoftHSM stops the running hal-vault container and starts a
-// fresh one using the hal-vault-softhsm image in production mode (server
-// -config).  Dev mode (server -dev) does not load a config file at all, so
-// the kms_library block would be silently ignored — prod mode is mandatory
-// for managed-key PKI.
-//
-// The function reuses the TLS certs and state already present in
-// ~/.hal/vault-prod/ (written by the original hal vault create --mode prod
-// run), and overwrites vault.hcl with the HSM-augmented config.
-func restartVaultWithSoftHSM(engine string) error {
-	return relaunchProdVault(engine,
-		vaultSoftHSMRuntimeImage+":"+vaultSoftHSMRuntimeTag,
-		vaultHSMProdConfigHCL(),
-		[]string{"SOFTHSM2_CONF=" + softHSMConf},
-	)
-}
-
-// restoreVaultWithoutSoftHSM is the teardown counterpart of
-// restartVaultWithSoftHSM: it rewrites vault.hcl without the kms_library block
-// and replaces the hal-vault container with the stock Vault Enterprise HSM
-// image — the same image the SoftHSM runtime was built from, and the one the
-// --hsm prerequisites instruct the user to deploy with.
-func restoreVaultWithoutSoftHSM(engine string) error {
-	return relaunchProdVault(engine, hsmImageRef(), vaultProdConfigHCL(), nil)
 }
 
 // vaultOnSoftHSMImage reports whether the hal-vault container is currently
@@ -424,85 +306,28 @@ func configureSoftHSMManagedKey(client *vault.Client, slot string) error {
 // the Root CA and Intermediate CA using the /kms path so all key operations are
 // delegated to the SoftHSM PKCS#11 token.
 func runVaultPKIHSMSetup(client *vault.Client, engine string, isUpdate bool) {
-	// ---- Prod-mode gate ----
-	// server -dev does not load a config file, so the kms_library block would
-	// be silently ignored and every sys/managed-keys write would fail with
-	// "Vault is not built with HSM support".  Prod mode is required.
+	// The HSM runtime must be selected during create. Dev-mode HSM binaries and
+	// old stock ent.hsm prod deployments do not include the SoftHSM utilities or
+	// the boot-time kms_library configuration required below.
 	if !vaultProdActive() {
-		fmt.Println("❌ --hsm requires Vault to be running in production mode.")
-		fmt.Printf("   Deploy with: hal vault create --mode prod --vault-tag %s\n", defaultVaultEntHSMTag)
-		fmt.Println("   (prod mode writes a vault.hcl config that includes the kms_library block)")
+		fmt.Println("❌ HSM-backed PKI requires Vault to be running in production mode.")
+		fmt.Println("   Deploy with: hal vault create --edition ent-hsm --mode prod")
+		return
+	}
+	if !vaultOnSoftHSMImage(engine) {
+		fmt.Println("❌ Vault is an HSM build, but the running container does not include the HAL SoftHSM2 runtime.")
+		fmt.Println("   Redeploy with: hal vault create --edition ent-hsm --mode prod --update")
+		fmt.Println("   Or force software-backed CAs with: hal vault pki enable --no-hsm")
 		return
 	}
 
-	// ---- Tag validation ----
-	// Vault PKCS#11 support is compiled in only for the "-ent.hsm" image variant.
-	// Catch a misconfigured --vault-hsm-tag early with a clear, actionable error
-	// before we spend time building the image or restarting Vault.
-	if !isHSMTag(softHSMVaultTag) {
-		fmt.Printf("❌ --vault-hsm-tag %q does not look like an HSM-enabled tag.\n", softHSMVaultTag)
-		fmt.Println("   HashiCorp publishes PKCS#11-capable builds with the \"-ent.hsm\" suffix.")
-		fmt.Printf("   Example: --vault-hsm-tag %s\n", defaultVaultEntHSMTag)
-		return
-	}
-
-	// ---- Enterprise + PKCS#11 gate ----
-	// sys/license/status is Enterprise-only; a 200 confirms the binary is
-	// Enterprise.  But a plain "-ent" binary accepts the call yet still rejects
-	// sys/managed-keys writes with "Vault is not built with HSM support".
-	// The tag check above is the primary guard; this API call is a belt-and-
-	// suspenders reachability check that also surfaces a clear message when
-	// Vault is not yet deployed.
+	// Confirm the licensed Enterprise APIs are reachable before token work.
 	licResp, licErr := client.Logical().Read("sys/license/status")
 	if licErr != nil || licResp == nil {
-		fmt.Println("❌ --hsm requires Vault Enterprise (sys/managed-keys is an Enterprise-only API).")
-		fmt.Printf("   Deploy with: hal vault create --mode prod --vault-tag %s\n", defaultVaultEntHSMTag)
+		fmt.Println("❌ HSM-backed PKI requires a reachable Vault Enterprise license endpoint.")
+		fmt.Println("   Check the license, or redeploy with: hal vault create --edition ent-hsm --mode prod --update")
 		return
 	}
-
-	runtimeRef := vaultSoftHSMRuntimeImage + ":" + vaultSoftHSMRuntimeTag
-	runtimeBuilt := exec.Command(engine, "image", "inspect", runtimeRef).Run() == nil
-
-	if pkiUpdate || !runtimeBuilt {
-		fmt.Printf("🔨 Building SoftHSM runtime image %s (source: %s)...\n", runtimeRef, hsmImageRef())
-		if err := buildSoftHSMImage(engine); err != nil {
-			fmt.Printf("❌ Failed to build SoftHSM image: %v\n", err)
-			return
-		}
-		fmt.Printf("  ✅ Runtime image %s built.\n", runtimeRef)
-	} else {
-		fmt.Printf("⚡ Runtime image %s already present — skipping build.\n", runtimeRef)
-	}
-
-	// Restart Vault only when the container is not already running the SoftHSM image.
-	if !vaultOnSoftHSMImage(engine) {
-		fmt.Println("♻️  Restarting Vault with SoftHSM runtime image...")
-		if err := restartVaultWithSoftHSM(engine); err != nil {
-			fmt.Printf("❌ Failed to restart Vault: %v\n", err)
-			return
-		}
-		// Reconnect using the prod HTTPS endpoint + cached root token.
-		// restartVaultWithSoftHSM already waited for the server to respond and
-		// applied the unseal keys, so Vault should be active by this point.
-		fmt.Println("⏳ Waiting for Vault to become active...")
-		if err := waitForVaultHealthy(vaultProdHealthURL, 30); err != nil {
-			fmt.Println("❌ Vault did not become active after unseal.")
-			fmt.Printf("   Unseal key is in: %s\n", global.VaultInitCachePath())
-			return
-		}
-		newClient, vaultErr := GetHealthyClient()
-		if vaultErr != nil {
-			fmt.Printf("❌ Vault unhealthy after restart: %v\n", vaultErr)
-			return
-		}
-		client = newClient
-		fmt.Println("  ✅ Vault restarted, unsealed, and ready.")
-	} else {
-		fmt.Println("⚡ Vault already running with SoftHSM runtime image.")
-	}
-
-	// Brief pause to let the Vault process finish its startup sequence.
-	time.Sleep(2 * time.Second)
 
 	// Initialise the SoftHSM token and capture the slot number.
 	fmt.Printf("🔑 Initialising SoftHSM token '%s'...\n", softHSMLabel)
@@ -661,18 +486,15 @@ func hsmManagedKeyActive(client *vault.Client) bool {
 // AFTER the PKI mounts are unmounted — Vault refuses to delete a managed key
 // while a mount still references it.
 //
-// keepRuntime is set when an --hsm rebuild follows immediately (update --hsm):
-// the managed key is still deleted so the rebuild re-registers it cleanly, but
-// the SoftHSM container, token data, and runtime image are kept for reuse.
+// keepToken is set when an HSM rebuild follows immediately: the managed key is
+// deleted so it can be registered cleanly, while the token data is reused.
 // Everything here is best-effort — a partial failure warns and continues so a
 // broken HSM layer can never make disable un-runnable.
-func teardownSoftHSMLayer(client *vault.Client, engine string, keepRuntime bool) {
-	runtimeRef := vaultSoftHSMRuntimeImage + ":" + vaultSoftHSMRuntimeTag
+func teardownSoftHSMLayer(client *vault.Client, engine string, keepToken bool) {
 	keyActive := client != nil && hsmManagedKeyActive(client)
-	onSoftHSM := vaultOnSoftHSMImage(engine)
-	imagePresent := exec.Command(engine, "image", "inspect", runtimeRef).Run() == nil
+	tokenPresent := exec.Command(engine, "exec", vaultContainer, "test", "-d", "/vault/data/softhsm").Run() == nil
 
-	if !keyActive && !onSoftHSM && !imagePresent {
+	if !keyActive && !tokenPresent {
 		return // no HSM layer deployed — nothing to do
 	}
 
@@ -686,43 +508,17 @@ func teardownSoftHSMLayer(client *vault.Client, engine string, keepRuntime bool)
 		}
 	}
 
-	if keepRuntime {
-		fmt.Println("  ℹ️  SoftHSM runtime and token kept for the upcoming --hsm rebuild.")
+	if keepToken {
+		fmt.Println("  ℹ️  SoftHSM token kept for the upcoming HSM-backed PKI rebuild.")
 		return
 	}
 
-	// Wipe the token store + softhsm2.conf from the persistent Raft volume.
-	// Runs while the outgoing container still mounts /vault/data; the managed
-	// key is already gone, so nothing holds the token open.
-	softHSMDataDir := strings.TrimSuffix(softHSMConf, "/softhsm2.conf")
-	if out, err := exec.Command(engine, "exec", vaultContainer,
-		"rm", "-rf", softHSMDataDir).CombinedOutput(); err == nil {
-		fmt.Println("  ✅ SoftHSM token data removed from volume.")
-	} else {
-		fmt.Printf("  ⚠️  Could not remove SoftHSM token data: %v (%s)\n", err, strings.TrimSpace(string(out)))
-	}
-
-	if onSoftHSM {
-		fmt.Println("♻️  Restoring Vault to the stock Enterprise image (kms_library block removed)...")
-		if err := restoreVaultWithoutSoftHSM(engine); err != nil {
-			fmt.Printf("  ⚠️  Could not restore Vault container: %v\n", err)
-			fmt.Printf("     Restore manually with: hal vault delete && hal vault create --mode prod --vault-tag %s\n", defaultVaultEntHSMTag)
-			// Keep the runtime image — the failed/old container may still need it.
-			return
-		}
-		if err := waitForVaultHealthy(vaultProdHealthURL, 30); err != nil {
-			fmt.Println("  ⚠️  Vault restored but not yet active after unseal.")
-			fmt.Printf("     Unseal key is in: %s\n", global.VaultInitCachePath())
+	if tokenPresent {
+		if out, err := exec.Command(engine, "exec", vaultContainer,
+			"rm", "-rf", "/vault/data/softhsm").CombinedOutput(); err == nil {
+			fmt.Println("  ✅ SoftHSM token data removed from volume.")
 		} else {
-			fmt.Println("  ✅ Vault restored on stock image, unsealed, and ready.")
-		}
-	}
-
-	if imagePresent {
-		if err := exec.Command(engine, "image", "rm", "-f", runtimeRef).Run(); err == nil {
-			fmt.Printf("  ✅ Runtime image %s removed.\n", runtimeRef)
-		} else {
-			fmt.Printf("  ⚠️  Could not remove image %s (still in use?).\n", runtimeRef)
+			fmt.Printf("  ⚠️  Could not remove SoftHSM token data: %v (%s)\n", err, strings.TrimSpace(string(out)))
 		}
 	}
 }

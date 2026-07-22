@@ -13,12 +13,15 @@ PKI is a Vault feature, not a standalone product. It lives under `hal vault pki`
 - Vault must be running: `hal vault create`
 - KinD cluster (shared with or independent of `hal vault k8s`): used only when `--k8s` is passed
 - `--acme` flag: enables Vault's built-in ACME endpoint, deploys Caddy on KinD, live cert-renewal web page
-- `--hsm` flag: backs the CA keys with a SoftHSM2 PKCS#11 token via a Vault managed key (requires Vault Enterprise HSM build, prod mode)
+- HSM-backed PKI is auto-selected on an `ent-hsm` deployment; `--hsm` asserts
+  that mode is available and `--no-hsm` opts out.
 
 ## Prerequisites
 - HAL CLI is available in your local environment.
 - `hal vault create` has been run and Vault is healthy at `http://127.0.0.1:8200`.
 - For `--k8s`: `kind`, `kubectl`, and `helm` must be installed and in PATH.
+- For HSM-backed CAs: deploy first with
+  `hal vault create --edition ent-hsm --mode prod`.
 
 ---
 
@@ -40,7 +43,8 @@ Enables two Vault PKI secrets engines and builds a two-tier CA chain:
 | 10 | Write policy `hal-pki-issuer` (allows signing/issuing via `pki-int/sign/hal-role` and `pki-int/issue/hal-role`) |
 | 11 | Enable Vault ACME endpoint (`pki-int/config/acme`), set `max_ttl` = `acme-cert-ttl`, create role `acme-demo` (`allow_any_name`, `ttl`/`max_ttl` = `acme-cert-ttl`) |
 
-Private keys are **Vault-internal** — they never appear on disk.
+Private keys are Vault-internal by default. On a detected Enterprise HSM build,
+they are generated through a managed key in the SoftHSM2 PKCS#11 token instead.
 
 ### Flags
 ```text
@@ -58,10 +62,8 @@ Private keys are **Vault-internal** — they never appear on disk.
 --acme                     Deploy Vault ACME endpoint + Caddy demo on KinD (enable/update only)
 --acme-cert-ttl string     TTL for certs issued to Caddy via ACME (default "5m")
 --caddy-image string       Caddy container image (default "caddy:alpine")
---hsm                      Use SoftHSM2 PKCS#11 managed keys for both CAs (Vault Enterprise HSM build)
---vault-hsm-tag string     vault-enterprise tag for the HSM build (default "2.0.3-ent.hsm", must end in "-ent.hsm")
---softhsm-base-image       Base image for the SoftHSM runtime build (default "debian", must be glibc-based)
---softhsm-base-tag         Base image tag for the SoftHSM runtime build (default "12-slim")
+--hsm                      Require HSM-backed CAs; error if Vault is not an HSM build
+--no-hsm                   Force software-backed CAs even on an HSM build
 --softhsm-token-label      SoftHSM2 token label (default "hal-hsm-token")
 --softhsm-pin              SoftHSM2 user PIN (default "1234")
 --softhsm-so-pin           SoftHSM2 SO PIN (default "0000")
@@ -140,7 +142,10 @@ hal vault pki update --acme --force        # full CA rebuild + redeploy Caddy
 
 Unmounts `pki-root` and `pki-int`, removes the `hal-pki-issuer` policy, disables the `kubernetes-pki/` auth mount, and — if cert-manager was previously deployed — uninstalls it and removes the `pki-demo` namespace.
 
-If the `--hsm` layer is active, disable also deletes the managed key `sys/managed-keys/pkcs11/hal-kms-root` (after the mounts are gone — Vault refuses to delete a key still referenced by a mount), wipes the SoftHSM token data from the `hal-vault-data` volume, restores the stock `vault-enterprise` image with the plain prod `vault.hcl` (re-unsealing with the cached keys), and removes the local `hal-vault-softhsm` image.
+If the HSM layer is active, disable also deletes the managed key
+`sys/managed-keys/pkcs11/hal-kms-root` after the mounts are gone and wipes the
+SoftHSM token data from the `hal-vault-data` volume. The running HSM runtime is
+left untouched; it belongs to the Vault create/delete lifecycle.
 
 KinD cluster is only deleted if `hal vault k8s` is not active (checks for the `vault-secrets-operator` Helm release in the `vso` namespace).
 
@@ -154,7 +159,7 @@ hal vault pki disable
 - Deletes `hal-pki-issuer` policy
 - Checks for cert-manager — if found, also deletes `ClusterIssuer`, `pki-demo` namespace, `cert-manager` Helm release, and `cert-manager` namespace
 - Conditionally deletes KinD cluster (preserved if `hal vault k8s` is still active)
-- If the `--hsm` layer is active: deletes the managed key, wipes SoftHSM token data, restores the stock Vault Enterprise image + config, removes the `hal-vault-softhsm` image
+- If the HSM layer is active: deletes the managed key and wipes SoftHSM token data; the runtime container/image remain in place
 
 ---
 
@@ -265,28 +270,42 @@ kubectl logs -n pki-acme-demo deploy/hal-caddy-acme
 
 ---
 
-## `--hsm` flag (enable / update)
+## HSM auto-detection and overrides
 
-**Requires the Vault Enterprise HSM build** (image tag ending in `-ent.hsm` — the PKCS#11 subsystem is compiled in only for these tags) **running in prod mode** (`hal vault create --mode prod`; dev mode never loads the `kms_library` config block).
+Deploy the HSM-capable runtime with:
 
-When `--hsm` is passed, the CA chain is built with HSM-backed keys instead of Vault-internal keys:
+```bash
+hal vault create --edition ent-hsm --mode prod
+```
+
+The edition selects the Enterprise HSM source binary, builds
+`hal-vault-softhsm:latest`, and boots Vault with `kms_library` configured from
+the first start. PKI detects the running `+ent.hsm` version and uses HSM-backed
+CAs by default. `--hsm` is a hard assertion; `--no-hsm` forces software CAs.
+
+When HSM mode is selected, the CA chain uses managed keys instead of
+Vault-internal keys:
 
 | Step | What happens |
 |------|--------------|
-| 1 | Build local image `hal-vault-softhsm:latest` (debian:12-slim + SoftHSM2 + Vault binary from `hashicorp/vault-enterprise:<--vault-hsm-tag>`) — skipped if present unless `update` |
-| 2 | Rewrite `~/.hal/vault-prod/vault.hcl` with a `kms_library "pkcs11"` block pointing at `libsofthsm2.so`, restart `hal-vault` on the new image, unseal with cached keys |
-| 3 | Initialise SoftHSM2 token (`softhsm2-util --init-token`) under `/vault/data/softhsm/tokens` (persists in the `hal-vault-data` volume); reuse existing token if the label already exists |
-| 4 | Register Vault managed key `sys/managed-keys/pkcs11/hal-kms-root` (mechanism `0x0001` CKM_RSA_PKCS, 4096-bit, `allow_generate_key`) |
-| 5 | Mount `pki-root`/`pki-int` with `allowed_managed_keys`, generate Root CA via `/root/generate/kms` and Intermediate CA via `/intermediate/generate/kms` |
+| 1 | Confirm prod mode, the HAL SoftHSM runtime, and Enterprise license reachability |
+| 2 | Initialise SoftHSM2 token under `/vault/data/softhsm/tokens`; reuse it when the configured label exists |
+| 3 | Register Vault managed key `sys/managed-keys/pkcs11/hal-kms-root` (mechanism `0x0001` CKM_RSA_PKCS, 4096-bit, `allow_generate_key`) |
+| 4 | Mount `pki-root`/`pki-int` with `allowed_managed_keys`, generate Root CA via `/root/generate/kms` and Intermediate CA via `/intermediate/generate/kms` |
 
 All private-key operations for both CAs are delegated to the PKCS#11 token — the keys are generated on first use inside SoftHSM and never leave it.
 
-**Update/teardown semantics:** `update --hsm` deletes and re-registers the managed key but keeps the SoftHSM container, token, and runtime image for reuse. `disable` — or an `update` **without** `--hsm` — removes the whole layer and restores the stock Enterprise image and plain prod config (Vault is re-unsealed automatically from the cached keys).
+**Update/teardown semantics:** an HSM-backed `update` deletes and re-registers the
+managed key while reusing the token. `update --no-hsm` and `disable` delete the
+managed key and wipe token data. Neither command replaces the container or
+removes the runtime image; `hal vault delete` owns image reclamation.
 
 ```bash
 # HSM-backed CA chain (Vault Enterprise HSM build, prod mode)
-hal vault create --mode prod --vault-tag 2.0.3-ent.hsm
-hal vault pki enable --hsm
+hal vault create --edition ent-hsm --mode prod
+hal vault pki enable                  # auto-detected HSM mode
+hal vault pki enable --hsm            # same path, with a hard assertion
+hal vault pki enable --no-hsm         # explicit software-key opt-out
 
 # Inspect the managed key afterwards
 vault read sys/managed-keys/pkcs11/hal-kms-root
@@ -300,8 +319,8 @@ vault read sys/managed-keys/pkcs11/hal-kms-root
 - `--k8s`: enables dedicated `kubernetes-pki/` auth mount, deploys cert-manager, creates cluster-scoped `ClusterIssuer`.
 - `--k8s`: stores a K8s SA-bound token as a Kubernetes secret in `cert-manager` namespace.
 - `--acme`: enables `pki-int/config/acme`, creates `acme-demo` role, deploys Caddy pod in `pki-acme-demo` namespace.
-- `--hsm`: builds local image `hal-vault-softhsm:latest`, replaces the `hal-vault` container with it, rewrites `~/.hal/vault-prod/vault.hcl` (adds `kms_library` block), writes SoftHSM token data into the `hal-vault-data` volume, registers managed key `sys/managed-keys/pkcs11/hal-kms-root`.
-- `disable` tears down all of the above automatically, including the `--hsm` layer (managed key deleted, stock image/config restored, token data and `hal-vault-softhsm` image removed).
+- HSM mode writes SoftHSM token data into the `hal-vault-data` volume and registers managed key `sys/managed-keys/pkcs11/hal-kms-root`.
+- `disable` deletes the managed key and token data but leaves the create-owned runtime intact.
 
 ---
 
@@ -324,13 +343,9 @@ Flags (enable/update):
   --acme                      Deploy Vault ACME endpoint + Caddy demo on KinD
   --acme-cert-ttl string      TTL for ACME certs (default "5m", sets both config/acme max_ttl and role TTL)
   --caddy-image string        Caddy container image (default "caddy:alpine")
-  --hsm                       SoftHSM2 PKCS#11 managed keys for both CAs (Vault Enterprise HSM build, prod mode)
-  --vault-hsm-tag string      vault-enterprise tag for the HSM build (default "2.0.3-ent.hsm")
-  --softhsm-* flags           Token label / PINs / key labels / managed-key name / base image overrides
+  --hsm                       Require HSM-backed CAs; error if Vault is not an HSM build
+  --no-hsm                    Force software-backed CAs on an HSM build
+  --softhsm-* flags           Token label / PINs / key labels / managed-key name
 
 Global flags: --debug, --dry-run
 ```
- Vault PKI teardown complete.
-💡 Next Step: hal vault pki enable
-❌ Vault mount 'pki-int' not found. Run 'hal vault pki enable' first.
-   Use 'hal vault pki update --k8s --force' to rebuild everything from scratch.   

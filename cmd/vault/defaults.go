@@ -120,11 +120,10 @@ const (
 	defaultInstantClientVerARM64 = "23.26.2.0.0"
 	defaultInstantClientDirARM64 = "instantclient_23_26"
 
-	// --- SoftHSM / Managed-key PKI (hal vault pki enable --hsm) ---
-	// A custom image is built locally at enable-time: debian:12-slim base with
+	// --- SoftHSM / Managed-key PKI (hal vault create --edition ent-hsm) ---
+	// A custom image is built locally at create-time: debian:12-slim base with
 	// SoftHSM2 installed and the Vault binary extracted from the official image.
-	// The same skip-if-present / force-on-update guard used for the Oracle runtime
-	// image applies here.
+	// PKI enable detects the running HSM build and uses managed keys by default.
 	vaultSoftHSMRuntimeImage = "hal-vault-softhsm"
 	vaultSoftHSMRuntimeTag   = "latest"
 

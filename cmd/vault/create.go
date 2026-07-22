@@ -118,7 +118,7 @@ func stripBracketedPaste(b []byte) string {
 
 var (
 	vaultVersion     string
-	vaultEdition     string // ce or ent
+	vaultEdition     string // ce, ent, enterprise, or ent-hsm
 	vaultImage       string // optional override for the computed per-edition image name
 	vaultHelperImage string
 	vaultHelperTag   string
@@ -155,22 +155,63 @@ var deployCmd = &cobra.Command{
 		// ==========================================
 		// MODE RESOLUTION (dev vs prod)
 		// ==========================================
-		// Production mode is Enterprise-only. It implies --edition ent; an explicit
-		// --edition ce alongside --mode prod is a contradiction we reject early.
+		// Reject unknown editions before license prompting or image resolution.
+		if vaultEdition != "ce" && !isEnterpriseEdition(vaultEdition) {
+			fmt.Printf("❌ Error: unknown --edition %q (expected 'ce', 'ent', or 'ent-hsm').\n", vaultEdition)
+			return
+		}
+
+		isHSMEdition := vaultEdition == "ent-hsm"
+		if isHSMEdition && vaultMode != "prod" {
+			fmt.Println("❌ Error: --edition ent-hsm requires --mode prod.")
+			fmt.Println("   💡 Deploy with: hal vault create --edition ent-hsm --mode prod")
+			return
+		}
+
+		// Production mode is Enterprise-only. It implies --edition ent unless the
+		// caller selected the HSM-capable Enterprise runtime explicitly.
 		if vaultMode == "prod" {
-			if cmd.Flags().Changed("edition") && vaultEdition != "ent" && vaultEdition != "enterprise" {
+			if cmd.Flags().Changed("edition") && !isEnterpriseEdition(vaultEdition) {
 				fmt.Println("❌ Error: --mode prod requires Vault Enterprise; '--edition ce' is incompatible.")
 				fmt.Println("   💡 Drop --edition (prod implies Enterprise) or pass --edition ent.")
 				return
 			}
-			vaultEdition = "ent"
+			if !isHSMEdition {
+				vaultEdition = "ent"
+			}
 		} else if vaultMode != "" && vaultMode != "dev" {
 			fmt.Printf("❌ Error: unknown --mode %q (expected 'dev' or 'prod').\n", vaultMode)
 			return
 		}
 
+		// Determine the source image and version before the license gate so invalid
+		// HSM tags fail without prompting for a license.
+		imageRepo := defaultVaultImageCE
+		actualVersion := vaultVersion
+		if isEnterpriseEdition(vaultEdition) {
+			imageRepo = defaultVaultImageEnt
+			if isHSMEdition {
+				if !cmd.Flags().Changed("vault-tag") {
+					actualVersion = defaultVaultEntHSMTag
+				} else if !isHSMTag(actualVersion) {
+					fmt.Printf("❌ Error: --edition ent-hsm requires an HSM-enabled Vault tag; %q does not end in .hsm.\n", actualVersion)
+					return
+				}
+			} else if !cmd.Flags().Changed("vault-tag") {
+				actualVersion = defaultVaultEntTag
+			}
+		}
+		// --vault-image is the source repository. For ent-hsm, the Vault binary is
+		// extracted from this image into the local SoftHSM runtime image.
+		if vaultImage != "" {
+			imageRepo = vaultImage
+		}
+		if vaultMode == "prod" && !isHSMEdition && isEnterpriseEdition(vaultEdition) && isHSMTag(actualVersion) {
+			fmt.Println("ℹ️  HSM-enabled Vault tag detected; use --edition ent-hsm to include the SoftHSM2 runtime.")
+		}
+
 		// THE NEW LICENSE CHECK
-		if vaultEdition == "ent" || vaultEdition == "enterprise" {
+		if isEnterpriseEdition(vaultEdition) {
 			license := os.Getenv("VAULT_LICENSE")
 			licensePath := os.Getenv("VAULT_LICENSE_PATH")
 
@@ -214,27 +255,32 @@ var deployCmd = &cobra.Command{
 			_ = exec.Command(engine, "volume", "rm", "-f", vaultDataVolume).Run()
 		}
 
-		// Determine the Image Repository and Version based on Edition
-		imageRepo := defaultVaultImageCE
-		actualVersion := vaultVersion
-
-		if vaultEdition == "ent" || vaultEdition == "enterprise" {
-			imageRepo = defaultVaultImageEnt
-
-			// If the user didn't explicitly specify a tag, give them the Enterprise default
-			if !cmd.Flags().Changed("vault-tag") {
-				actualVersion = defaultVaultEntTag
-			}
-		}
-		// --vault-image overrides the per-edition image name entirely
-		if vaultImage != "" {
-			imageRepo = vaultImage
-		}
-
 		// Production mode diverges entirely: real server -config, Raft storage,
 		// TLS, and auto init+unseal. See prod.go.
 		if vaultMode == "prod" {
-			runVaultProd(engine, fmt.Sprintf("%s:%s", imageRepo, actualVersion), actualVersion)
+			imageRef := fmt.Sprintf("%s:%s", imageRepo, actualVersion)
+			if isHSMEdition {
+				runtimeRef := vaultSoftHSMRuntimeImage + ":" + vaultSoftHSMRuntimeTag
+				imagePresent := exec.Command(engine, "image", "inspect", runtimeRef).Run() == nil
+				shouldBuild := vaultUpdate || !imagePresent ||
+					cmd.Flags().Changed("vault-tag") || cmd.Flags().Changed("vault-image") ||
+					cmd.Flags().Changed("softhsm-base-image") || cmd.Flags().Changed("softhsm-base-tag")
+				if shouldBuild {
+					baseRef := softHSMBaseImage + ":" + softHSMBaseTag
+					if global.DryRun {
+						fmt.Printf("[DRY RUN] Would build SoftHSM runtime image %s (source: %s, base: %s)\n", runtimeRef, imageRef, baseRef)
+					} else {
+						fmt.Printf("🔨 Building SoftHSM runtime image %s (source: %s)...\n", runtimeRef, imageRef)
+						if err := buildSoftHSMImage(engine, imageRef, baseRef); err != nil {
+							fmt.Printf("❌ Failed to build SoftHSM image: %v\n", err)
+							return
+						}
+						fmt.Printf("  ✅ Runtime image %s built.\n", runtimeRef)
+					}
+				}
+				imageRef = runtimeRef
+			}
+			runVaultProd(engine, imageRef, actualVersion, isHSMEdition)
 			return
 		}
 
@@ -274,7 +320,7 @@ var deployCmd = &cobra.Command{
 		vaultArgs = append(vaultArgs, "-e", "VAULT_PLUGIN_DIR=/vault/plugins")
 
 		// Inject the Enterprise License (we already know it exists thanks to the pre-flight check)
-		if vaultEdition == "ent" || vaultEdition == "enterprise" {
+		if isEnterpriseEdition(vaultEdition) {
 			ui.LogoStep("Injecting VAULT_LICENSE into container")
 			vaultArgs = append(vaultArgs, "-e", fmt.Sprintf("VAULT_LICENSE=%s", os.Getenv("VAULT_LICENSE")))
 		}
@@ -383,18 +429,24 @@ var updateCmd = &cobra.Command{
 
 func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	cmd.Flags().StringVarP(&vaultVersion, "vault-tag", "v", defaultVaultTag, "Vault container image tag")
-	cmd.Flags().StringVar(&vaultImage, "vault-image", "", "Vault container image name (overrides per-edition default: hashicorp/vault or hashicorp/vault-enterprise)")
-	cmd.Flags().StringVarP(&vaultEdition, "edition", "e", defaultVaultEdition, "Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise)")
+	cmd.Flags().StringVar(&vaultImage, "vault-image", "", "Vault source image name (overrides per-edition default; ent-hsm extracts the Vault binary from it)")
+	cmd.Flags().StringVarP(&vaultEdition, "edition", "e", defaultVaultEdition, "Vault edition to deploy: 'ce', 'ent', or 'ent-hsm' (Enterprise HSM build + SoftHSM2 runtime; requires --mode prod)")
 	cmd.Flags().StringVar(&vaultMode, "mode", defaultVaultMode, "Deployment mode: 'dev' (in-memory, auto-unsealed, HTTP) or 'prod' (persistent single-node Raft, TLS, initialized+unsealed; implies --edition ent)")
 	cmd.Flags().IntVar(&vaultKeyShares, "key-shares", defaultVaultKeyShares, "[prod] Number of unseal key shares to generate at operator init")
 	cmd.Flags().IntVar(&vaultKeyThreshold, "key-threshold", defaultVaultKeyThreshold, "[prod] Number of unseal key shares required to unseal")
 	cmd.Flags().StringVar(&vaultProdNodeID, "node-id", defaultVaultProdNodeID, "[prod] Raft node identifier for the single-node cluster")
 	cmd.Flags().StringVar(&vaultHelperImage, "vault-helper-image", defaultVaultHelperImage, "Helper container image name for one-shot setup tasks during Vault deploy")
 	cmd.Flags().StringVar(&vaultHelperTag, "vault-helper-tag", defaultVaultHelperTag, "Helper container image tag for one-shot setup tasks during Vault deploy")
+	cmd.Flags().StringVar(&softHSMBaseImage, "softhsm-base-image", defaultSoftHSMBaseImage, "Base image for the SoftHSM runtime build (must be glibc-based)")
+	cmd.Flags().StringVar(&softHSMBaseTag, "softhsm-base-tag", defaultSoftHSMBaseTag, "Base image tag for the SoftHSM runtime build")
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&vaultUpdate, "update", "u", false, "Reconcile an existing Vault deployment in place")
 	}
 	cmd.Flags().BoolVarP(&vaultJoinConsul, "join-consul", "c", false, "Tether Vault to the global HAL Consul instance")
+}
+
+func isEnterpriseEdition(edition string) bool {
+	return edition == "ent" || edition == "enterprise" || edition == "ent-hsm"
 }
 
 func init() {
