@@ -71,10 +71,10 @@ const (
 	vaultMariaDBRootPassword = "vaultroot"
 
 	// --- Image / tag flag defaults ---
-	defaultVaultImageCE     = "hashicorp/vault"
-	defaultVaultImageEnt    = "hashicorp/vault-enterprise"
-	defaultVaultTag         = "2.0.1"
-	defaultVaultEntTag      = "2.0.1-ent"
+	defaultVaultImageCE  = "hashicorp/vault"
+	defaultVaultImageEnt = "hashicorp/vault-enterprise"
+	defaultVaultTag      = "2.0.1"
+	defaultVaultEntTag   = "2.0.1-ent"
 	// HSM-enabled Enterprise builds use the separate "-ent.hsm" tag variant.
 	// The PKCS#11 subsystem is compiled in only for these tags; a plain "-ent"
 	// binary will start but Vault will reject any sys/managed-keys write with
@@ -129,12 +129,19 @@ const (
 	vaultSoftHSMRuntimeTag   = "latest"
 
 	// SoftHSM token initialisation defaults — all overridable via flags.
-	defaultSoftHSMLabel         = "hal-hsm-token"
-	defaultSoftHSMPin           = "1234"
-	defaultSoftHSMSOPin         = "0000"
+	defaultSoftHSMLabel          = "hal-hsm-token"
+	defaultSoftHSMPin            = "1234"
+	defaultSoftHSMSOPin          = "0000"
 	defaultSoftHSMManagedKeyName = "hal-kms-root"
-	defaultSoftHSMKeyLabel      = "hal-pki-root-key"
-	defaultSoftHSMHMACLabel     = "hal-pki-root-hmac-key"
+	defaultSoftHSMKeyLabel       = "hal-pki-root-key"
+	defaultSoftHSMHMACLabel      = "hal-pki-root-hmac-key"
+
+	// Managed-key crypto parameters. sys/managed-keys/pkcs11 requires
+	// `mechanism`, and `key_bits` is required whenever allow_generate_key=true
+	// with an RSA mechanism. CKM_RSA_PKCS (0x0001) at 4096 bits mirrors the
+	// RSA-4096 CA chain built by the software (non-HSM) PKI path.
+	softHSMMechanismRSAPKCS = "0x0001"
+	softHSMKeyBits          = "4096"
 
 	// Base image for the SoftHSM runtime (must be glibc-based; musl/Alpine cannot
 	// run the SoftHSM2 Debian package).

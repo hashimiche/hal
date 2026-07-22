@@ -193,6 +193,7 @@ hal vault k8s disable
 hal vault pki enable
 hal vault pki enable --k8s              # also deploy cert-manager + web demo on KinD
 hal vault pki enable --acme             # also deploy Caddy ACME demo on KinD
+hal vault pki enable --hsm              # SoftHSM2 PKCS#11 managed-key CAs (Vault Enterprise HSM build, prod mode)
 hal vault pki update --k8s
 hal vault pki update --acme
 hal vault pki update --acme --acme-cert-ttl 2m  # shorten cert TTL for live renewal demo

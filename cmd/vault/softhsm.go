@@ -70,16 +70,16 @@ var showSlotsLabelRe = regexp.MustCompile(`Label:\s+(\S+)`)
 // --- flag variables (bound in pki.go init) ---
 
 var (
-	pkiHSM           bool
-	softHSMBaseImage string
-	softHSMBaseTag   string
-	softHSMVaultTag  string // tag for the hashicorp/vault-enterprise source image (must be *-ent.hsm)
-	softHSMLabel     string
-	softHSMPin       string
-	softHSMSOPin     string
+	pkiHSM            bool
+	softHSMBaseImage  string
+	softHSMBaseTag    string
+	softHSMVaultTag   string // tag for the hashicorp/vault-enterprise source image (must be *-ent.hsm)
+	softHSMLabel      string
+	softHSMPin        string
+	softHSMSOPin      string
 	softHSMManagedKey string
-	softHSMKeyLabel  string
-	softHSMHMACLabel string
+	softHSMKeyLabel   string
+	softHSMHMACLabel  string
 )
 
 // hsmImageRef returns the fully-qualified source image reference for the
@@ -352,21 +352,25 @@ func findExistingSoftHSMSlot(engine string) (string, bool) {
 func configureSoftHSMManagedKey(client *vault.Client, slot string) error {
 	// `library` must be the `name` value from the kms_library HCL block:
 	//   kms_library "pkcs11" { name = "softhsm" ... }  →  library = "softhsm"
-	// NOT the .so path — Vault resolves the registered provider by that name.
-	// `kms_library` is the block label ("pkcs11") which identifies the PKCS#11
-	// provider type. `generate_key` is intentionally omitted: Vault generates
-	// the key on first use (when /root/generate/kms is called), not at
-	// registration time — passing it here triggers an immediate generation
-	// attempt which fails with "cannot generate a key for mechanism 0".
+	// NOT the .so path and NOT the block label — the "pkcs11" provider type is
+	// carried by the API path (sys/managed-keys/pkcs11/<name>), it is not a
+	// request parameter.
+	// `mechanism` and `key_bits` are both mandatory here: with
+	// allow_generate_key=true Vault defers key creation until the first
+	// /root/generate/kms call, and without a mechanism that deferred
+	// generation fails with "cannot generate a key for mechanism 0".
+	// CKM_RSA_PKCS + 4096 mirrors the RSA-4096 chain built by the software
+	// (non-HSM) PKI path.
 	_, err := client.Logical().Write(
 		"sys/managed-keys/pkcs11/"+softHSMManagedKey,
 		map[string]interface{}{
-			"kms_library":        "pkcs11",
 			"library":            "softhsm",
 			"slot":               slot,
 			"pin":                softHSMPin,
 			"key_label":          softHSMKeyLabel,
 			"hmac_key_label":     softHSMHMACLabel,
+			"mechanism":          softHSMMechanismRSAPKCS,
+			"key_bits":           softHSMKeyBits,
 			"allow_generate_key": "true",
 			"allow_store_key":    "true",
 		},

@@ -1,11 +1,11 @@
 ---
 name: pki
-description: Deploy, verify, and troubleshoot the Vault PKI CA chain and demo scenarios in hal. Use this skill when the user asks to set up a Root CA or Intermediate CA, issue leaf certificates, deploy cert-manager K8s integration, run the Vault ACME + Caddy live auto-renewal demo, or reset PKI engines. Triggers include "vault pki", "Root CA", "Intermediate CA", "cert-manager", "ACME", "Caddy renewal", "PKI certificate", and "hal vault pki".
+description: Deploy, verify, and troubleshoot the Vault PKI CA chain and demo scenarios in hal. Use this skill when the user asks to set up a Root CA or Intermediate CA, issue leaf certificates, deploy cert-manager K8s integration, run the Vault ACME + Caddy live auto-renewal demo, set up HSM-backed CA keys via SoftHSM2 managed keys, or reset PKI engines. Triggers include "vault pki", "Root CA", "Intermediate CA", "cert-manager", "ACME", "Caddy renewal", "PKI certificate", "HSM", "SoftHSM", "managed key", "PKCS#11", and "hal vault pki".
 ---
 
 # Hal Vault PKI Configurator
 
-This skill covers the two-tier PKI CA chain and both K8s/ACME demo modes implemented by `hal vault pki`.
+This skill covers the two-tier PKI CA chain and the K8s, ACME, and HSM demo modes implemented by `hal vault pki`.
 
 ## Lab Assumptions
 
@@ -35,6 +35,15 @@ This skill covers the two-tier PKI CA chain and both K8s/ACME demo modes impleme
 - Certificate: `hal-web-pki-cert` in namespace `pki-demo`
 - nginx web pod with TLS cert mounted at `/tls`, page shows `openssl x509 -noout -text`
 - Access: `https://pki.localhost:8089`
+
+### `--hsm` mode (SoftHSM2 PKCS#11 managed keys — Vault Enterprise HSM build only)
+
+- Requires the `-ent.hsm` Vault Enterprise image variant **and** prod mode: `hal vault create --mode prod --vault-tag 2.0.3-ent.hsm`
+- Builds local image `hal-vault-softhsm:latest` (debian:12-slim + SoftHSM2 + Vault binary) and restarts `hal-vault` on it
+- SoftHSM2 token (label `hal-hsm-token`) stored in the `hal-vault-data` volume at `/vault/data/softhsm/tokens`
+- Vault managed key: `sys/managed-keys/pkcs11/hal-kms-root` (mechanism `0x0001` CKM_RSA_PKCS, 4096-bit)
+- Root/Intermediate CAs generated via `/root/generate/kms` and `/intermediate/generate/kms` — private keys live only in the PKCS#11 token
+- Verify with: `vault read sys/managed-keys/pkcs11/hal-kms-root`
 
 ### `--acme` mode (adds Caddy + ACME demo)
 
@@ -68,6 +77,9 @@ Then use the correct lifecycle command:
 
     # Both demos at once
     hal vault pki enable --k8s --acme
+
+    # HSM-backed CA keys (Vault Enterprise HSM build, prod mode)
+    hal vault pki enable --hsm
 
     # Reconcile ACME layer (PKI engines preserved, Caddy restarted)
     hal vault pki update --acme --acme-cert-ttl 2m
@@ -146,3 +158,5 @@ Confirm CA chain is built and which demo modes are active.
 5. **TTL still shows 12h after update:** Vault 2.x `config/acme max_ttl` defaults to `2160h` and caps all ACME certs on the mount regardless of role TTL. `update --acme` re-syncs both. Use `vault read pki-int/config/acme` to verify.
 6. **Old cert TTL after update:** `update --acme` automatically does `kubectl rollout restart` to clear the emptyDir cert cache. If the pod still shows the old cert, run the restart manually.
 7. **`allow_any_name` requirement:** The `acme-demo` role must have `allow_any_name=true` because Caddy requests a cert for `acme.localhost` which does not match the `hal.local` domain list. This is already set by the code.
+8. **`--hsm` fails with "Vault is not built with HSM support":** The running Vault binary is not the HSM variant. Only image tags ending in `-ent.hsm` include the PKCS#11 subsystem — redeploy with `hal vault create --mode prod --vault-tag 2.0.3-ent.hsm`. Dev mode also cannot work: it never loads the `kms_library` config block.
+9. **`--hsm` teardown caveat:** `hal vault pki disable` does not remove the managed key, SoftHSM token data, or the `hal-vault-softhsm` image — the Vault container keeps running on the SoftHSM image.
