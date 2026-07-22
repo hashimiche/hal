@@ -170,6 +170,12 @@ hal vault database enable --backend mariadb --vault-mariadb-tag 11.4
 hal vault database enable --backend oracle \
   --oracle-plugin-path /path/to/vault-plugin-database-oracle   # Enterprise only — see docs/vault-oracle-plugin-build.md
 
+# Database secrets engine + KinD + VSO (VaultDynamicSecret — credentials live-rotate in a real app)
+hal vault database enable --k8s                                 # MariaDB + KinD + VSO, 15s TTL rotation demo
+hal vault database enable --backend oracle --oracle-plugin-path /path/to/vault-plugin-database-oracle --k8s
+hal vault database update --k8s                                 # reconcile (re-creates KinD cluster if needed)
+hal vault database disable --k8s                                # tear down DB + KinD cluster
+
 # LDAP auth with pinned image versions
 hal vault ldap enable --openldap-version 1.5.0 --phpldapadmin-version 0.9.0
 

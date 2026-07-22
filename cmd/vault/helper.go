@@ -89,21 +89,7 @@ func writeHALKindConfig() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	config := `kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-  extraPortMappings:
-    - containerPort: 30080
-      hostPort: 8088
-      protocol: TCP
-    - containerPort: 30082
-      hostPort: 8089
-      protocol: TCP
-    - containerPort: 30083
-      hostPort: 8090
-      protocol: TCP
-`
+	config := "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes:\n- role: control-plane\n  extraPortMappings:\n    - containerPort: 30080\n      hostPort: 8088\n      protocol: TCP\n    - containerPort: 30082\n      hostPort: 8089\n      protocol: TCP\n    - containerPort: 30083\n      hostPort: 8090\n      protocol: TCP\n    - containerPort: 30084\n      hostPort: 8091\n      protocol: TCP\n"
 	if _, err := f.WriteString(config); err != nil {
 		_ = f.Close()
 		return "", err

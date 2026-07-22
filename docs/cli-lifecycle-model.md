@@ -59,7 +59,7 @@ Intent:
 | `hal vault oidc` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault jwt` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault aap` | `enabled` (preferred), plus `oidc` lifecycle `enable`, `update`, `disable`, `status` | Configure Vault JWT auth for local AAP OIDC integration. |
-| `hal vault database` | `enable`, `update`, `disable`, `status` | Same as above. |
+| `hal vault database` | `enable`, `update`, `disable`, `status` | Same as above. `--k8s` flag extends enable/update/disable onto the shared KinD cluster using a dedicated `kubernetes-db/` Vault auth mount. |
 | `hal vault audit` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal boundary mariadb` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |
 | `hal boundary ssh` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |
@@ -155,6 +155,61 @@ now applied across every product package — `terraform`, `vault`, `consul`,
 Docker network name is never written as a `"hal-net"` literal in a product
 package; it always comes from `global.HalNetName`. When adding a new product
 package, create its `defaults.go` first and wire every shared value through it.
+
+## Shared KinD Cluster Convention
+
+Several `hal vault` features can run simultaneously on the same KinD cluster.
+Each feature that uses `--k8s` must follow these rules:
+
+### Auth mount isolation
+Every `--k8s` feature owns a **dedicated** Vault Kubernetes auth mount. No two
+features share a mount. Sharing a mount means the second feature to `enable`
+overwrites the Kubernetes CA/token config for the first, and the first feature's
+`disable` tears down auth for the second.
+
+| Feature | Vault auth mount |
+|---------|-----------------|
+| `hal vault k8s` | `kubernetes/` |
+| `hal vault database --k8s` | `kubernetes-db/` |
+| `hal vault pki --k8s` | `kubernetes-pki/` |
+
+When adding a new `--k8s` feature, register a new mount path here and in
+`cmd/vault/defaults.go`. Never reuse an existing mount.
+
+### Co-tenant cluster teardown guard
+Before running `kind delete cluster`, every `disable` path must check whether
+the other features' namespaces are still active and preserve the cluster if any
+are. The canonical namespace list to check:
+
+| Namespace | Owned by |
+|-----------|---------|
+| `app1` | `hal vault k8s` |
+| `db-app` | `hal vault database --k8s` |
+| `pki-demo` | `hal vault pki --k8s` |
+| `pki-acme-demo` | `hal vault pki --acme` |
+
+When the guard preserves the cluster, the `disable` path must still delete its
+**own** namespace(s) before returning. A feature that leaves its namespace
+behind after disable would be reported as "still active" by every other
+feature's guard, and no disable path could ever remove the cluster.
+
+`hal vault delete` is exempt — it is a full ecosystem teardown and always
+removes the cluster unconditionally.
+
+### Port map
+All `--k8s` features share the same KinD cluster config (`writeHALKindConfig()`
+in `cmd/vault/helper.go`). All host port mappings are declared upfront:
+
+| Host port | KinD NodePort | Feature |
+|-----------|--------------|---------|
+| `8088` | `30080` | `hal vault k8s` |
+| `8089` | `30082` | `hal vault pki --k8s` |
+| `8090` | `30083` | `hal vault pki --acme` |
+| `8091` | `30084` | `hal vault database --k8s` |
+
+When adding a new `--k8s` feature, reserve the next available pair and add it
+to `writeHALKindConfig()` so the port is pre-mapped on any existing cluster.
+
 
 ## Migration Policy
 

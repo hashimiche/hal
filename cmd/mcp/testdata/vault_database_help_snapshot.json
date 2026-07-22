@@ -5,15 +5,67 @@
       "name": "--debug"
     },
     {
+      "description": "Demo app container image name (default \"httpd\")",
+      "name": "--db-app-image string"
+    },
+    {
+      "description": "Demo app container image tag (default \"2.4-alpine\")",
+      "name": "--db-app-tag string"
+    },
+    {
+      "description": "KinD node image used when creating the database VSO cluster (default \"kindest/node:v1.31.1\")",
+      "name": "--db-kind-node-image string"
+    },
+    {
+      "description": "Demo proxy container image name (default \"nginx\")",
+      "name": "--db-proxy-image string"
+    },
+    {
+      "description": "Demo proxy container image tag (default \"alpine\")",
+      "name": "--db-proxy-tag string"
+    },
+    {
+      "description": "Helm chart version for vault-secrets-operator (empty uses latest)",
+      "name": "--db-vso-chart-version string"
+    },
+    {
       "description": "Simulate the execution without changing state",
       "name": "--dry-run"
     },
     {
-      "description": "Version of the MariaDB container image to deploy (default \"11.4\")",
-      "name": "--mariadb-version string"
+      "description": "Also deploy KinD + VSO and sync dynamic DB credentials into a demo app via VaultDynamicSecret",
+      "name": "--k8s"
     },
     {
-      "description": "Database backend to use (mariadb; pgsql planned, postgres alias accepted) (default \"mariadb\")",
+      "description": "Oracle Database Free container image (default \"gvenzl/oracle-free\")",
+      "name": "--oracle-image string"
+    },
+    {
+      "description": "Path to vault-plugin-database-oracle binary (required for --backend oracle)",
+      "name": "--oracle-plugin-path string"
+    },
+    {
+      "description": "Version string to register with Vault (must match binary) (default \"0.14.1+ent\")",
+      "name": "--oracle-plugin-version string"
+    },
+    {
+      "description": "Oracle Database Free container image tag (default \"slim\")",
+      "name": "--oracle-tag string"
+    },
+    {
+      "description": "Prefix for dynamically generated database usernames (e.g. 'myapp' -> 'myapp-AbCdEfGhIj') (default \"v\")",
+      "name": "--username-prefix string"
+    },
+    {
+      "description": "MariaDB container image name (default \"mariadb\")",
+      "name": "--vault-mariadb-image string"
+    },
+    {
+      "description": "MariaDB container image tag (default \"11.4\")",
+      "name": "--vault-mariadb-tag string"
+    },
+    {
+      "description": "Database backend to use (mariadb, oracle; pgsql planned) (default \"mariadb\")",
       "name": "-b, --backend string"
     },
     {
@@ -25,16 +77,19 @@
       "name": "-e, --enable"
     },
     {
-      "description": "Force a clean redeployment of the selected backend",
-      "name": "-f, --force"
-    },
-    {
       "description": "help for database",
       "name": "-h, --help"
+    },
+    {
+      "description": "Reconcile selected backend and Vault database configuration",
+      "name": "-u, --update"
     }
   ],
   "recommended_commands": [
-    "hal vault database --help"
+    "hal vault database --help",
+    "hal vault database enable",
+    "hal vault database enable --k8s",
+    "hal vault database enable --backend oracle --oracle-plugin-path /path/to/vault-plugin-database-oracle"
   ],
   "topic": "vault database",
   "usage": ""
