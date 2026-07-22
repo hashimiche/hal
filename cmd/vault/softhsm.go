@@ -15,10 +15,15 @@ package vault
 //   5. Generate the Root CA and Intermediate CA using the /kms generate path
 //      so Vault delegates all private-key operations to the PKCS#11 token.
 //
+// Teardown (pki disable / update, via teardownSoftHSMLayer) reverses the
+// above: managed key deleted after the PKI unmounts, token data wiped from
+// the volume, container restored onto the stock Enterprise image with the
+// plain prod config, and the runtime image removed. update --hsm keeps the
+// runtime and only re-registers the key.
+//
 // The SoftHSM token data directory is stored in the hal-vault-data volume at
-// /vault/softhsm/tokens so it survives a container restart.  The tokens
-// directory ownership is fixed to vault (UID 100) by the helper container
-// before the main container starts.
+// /vault/data/softhsm/tokens so it survives a container restart.  Ownership
+// is fixed to vault (UID 100) when initSoftHSMToken creates the directory.
 
 import (
 	"fmt"
@@ -169,16 +174,12 @@ kms_library "pkcs11" {
 	return base + hsmBlock
 }
 
-// restartVaultWithSoftHSM stops the running hal-vault container and starts a
-// fresh one using the hal-vault-softhsm image in production mode (server
-// -config).  Dev mode (server -dev) does not load a config file at all, so
-// the kms_library block would be silently ignored — prod mode is mandatory
-// for managed-key PKI.
-//
-// The function reuses the TLS certs and state already present in
-// ~/.hal/vault-prod/ (written by the original hal vault create --mode prod
-// run), and overwrites vault.hcl with the HSM-augmented config.
-func restartVaultWithSoftHSM(engine string) error {
+// relaunchProdVault rewrites vault.hcl with the given config, replaces the
+// hal-vault container with imageRef (reusing the prod TLS certs, Raft volume,
+// and the license from the outgoing container), waits for it to listen, and
+// unseals it with the cached init keys. Shared by the SoftHSM restart and the
+// teardown restore, which differ only in image, config, and extra env.
+func relaunchProdVault(engine, imageRef, configHCL string, extraEnv []string) error {
 	stateDir := global.VaultProdStateDir()
 	if stateDir == "" {
 		return fmt.Errorf("could not resolve ~/.hal/vault-prod state directory")
@@ -188,9 +189,8 @@ func restartVaultWithSoftHSM(engine string) error {
 
 	isPodman := strings.Contains(engine, "podman")
 
-	// Overwrite vault.hcl with the HSM-augmented config.
-	if err := os.WriteFile(configPath, []byte(vaultHSMProdConfigHCL()), 0o644); err != nil {
-		return fmt.Errorf("write HSM vault.hcl: %w", err)
+	if err := os.WriteFile(configPath, []byte(configHCL), 0o644); err != nil {
+		return fmt.Errorf("write vault.hcl: %w", err)
 	}
 
 	// Load the cached unseal keys produced by the original `hal vault create
@@ -201,10 +201,11 @@ func restartVaultWithSoftHSM(engine string) error {
 		return fmt.Errorf("could not load unseal keys from %s: %w\n   Run 'hal vault create --mode prod' first", global.VaultInitCachePath(), err)
 	}
 
+	// Must run before the container is removed — the license is read back
+	// from the outgoing container's environment.
 	license := extractVaultLicense(engine)
 	_ = exec.Command(engine, "rm", "-f", vaultContainer).Run()
 
-	runtimeRef := vaultSoftHSMRuntimeImage + ":" + vaultSoftHSMRuntimeTag
 	mountOpts := "ro"
 	if isPodman {
 		mountOpts = "ro,Z"
@@ -220,7 +221,10 @@ func restartVaultWithSoftHSM(engine string) error {
 		"-v", fmt.Sprintf("%s:%s:%s", configPath, vaultProdConfigMount, mountOpts),
 		"-v", fmt.Sprintf("%s:%s:%s", certDir, vaultProdTLSMount, mountOpts),
 		"-e", "SKIP_SETCAP=true",
-		"-e", fmt.Sprintf("SOFTHSM2_CONF=%s", softHSMConf),
+	}
+
+	for _, env := range extraEnv {
+		vaultArgs = append(vaultArgs, "-e", env)
 	}
 
 	if license != "" {
@@ -228,7 +232,7 @@ func restartVaultWithSoftHSM(engine string) error {
 	}
 
 	vaultArgs = append(vaultArgs,
-		runtimeRef,
+		imageRef,
 		"server", "-config="+vaultProdConfigMount,
 	)
 
@@ -249,6 +253,40 @@ func restartVaultWithSoftHSM(engine string) error {
 	}
 
 	return nil
+}
+
+// restartVaultWithSoftHSM stops the running hal-vault container and starts a
+// fresh one using the hal-vault-softhsm image in production mode (server
+// -config).  Dev mode (server -dev) does not load a config file at all, so
+// the kms_library block would be silently ignored — prod mode is mandatory
+// for managed-key PKI.
+//
+// The function reuses the TLS certs and state already present in
+// ~/.hal/vault-prod/ (written by the original hal vault create --mode prod
+// run), and overwrites vault.hcl with the HSM-augmented config.
+func restartVaultWithSoftHSM(engine string) error {
+	return relaunchProdVault(engine,
+		vaultSoftHSMRuntimeImage+":"+vaultSoftHSMRuntimeTag,
+		vaultHSMProdConfigHCL(),
+		[]string{"SOFTHSM2_CONF=" + softHSMConf},
+	)
+}
+
+// restoreVaultWithoutSoftHSM is the teardown counterpart of
+// restartVaultWithSoftHSM: it rewrites vault.hcl without the kms_library block
+// and replaces the hal-vault container with the stock Vault Enterprise HSM
+// image — the same image the SoftHSM runtime was built from, and the one the
+// --hsm prerequisites instruct the user to deploy with.
+func restoreVaultWithoutSoftHSM(engine string) error {
+	return relaunchProdVault(engine, hsmImageRef(), vaultProdConfigHCL(), nil)
+}
+
+// vaultOnSoftHSMImage reports whether the hal-vault container is currently
+// running the locally built SoftHSM runtime image.
+func vaultOnSoftHSMImage(engine string) bool {
+	out, _ := exec.Command(engine, "inspect", vaultContainer,
+		"--format", "{{.Config.Image}}").Output()
+	return strings.Contains(strings.TrimSpace(string(out)), vaultSoftHSMRuntimeImage)
 }
 
 // initSoftHSMToken creates the token directory and softhsm2.conf inside the
@@ -437,9 +475,7 @@ func runVaultPKIHSMSetup(client *vault.Client, engine string, isUpdate bool) {
 	}
 
 	// Restart Vault only when the container is not already running the SoftHSM image.
-	currentImageOut, _ := exec.Command(engine, "inspect", vaultContainer,
-		"--format", "{{.Config.Image}}").Output()
-	if !strings.Contains(strings.TrimSpace(string(currentImageOut)), vaultSoftHSMRuntimeImage) {
+	if !vaultOnSoftHSMImage(engine) {
 		fmt.Println("♻️  Restarting Vault with SoftHSM runtime image...")
 		if err := restartVaultWithSoftHSM(engine); err != nil {
 			fmt.Printf("❌ Failed to restart Vault: %v\n", err)
@@ -618,4 +654,75 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 func hsmManagedKeyActive(client *vault.Client) bool {
 	resp, err := client.Logical().Read("sys/managed-keys/pkcs11/" + softHSMManagedKey)
 	return err == nil && resp != nil
+}
+
+// teardownSoftHSMLayer reverses everything runVaultPKIHSMSetup added on top of
+// the base prod deployment. Called from the pki disable/update teardown path
+// AFTER the PKI mounts are unmounted — Vault refuses to delete a managed key
+// while a mount still references it.
+//
+// keepRuntime is set when an --hsm rebuild follows immediately (update --hsm):
+// the managed key is still deleted so the rebuild re-registers it cleanly, but
+// the SoftHSM container, token data, and runtime image are kept for reuse.
+// Everything here is best-effort — a partial failure warns and continues so a
+// broken HSM layer can never make disable un-runnable.
+func teardownSoftHSMLayer(client *vault.Client, engine string, keepRuntime bool) {
+	runtimeRef := vaultSoftHSMRuntimeImage + ":" + vaultSoftHSMRuntimeTag
+	keyActive := client != nil && hsmManagedKeyActive(client)
+	onSoftHSM := vaultOnSoftHSMImage(engine)
+	imagePresent := exec.Command(engine, "image", "inspect", runtimeRef).Run() == nil
+
+	if !keyActive && !onSoftHSM && !imagePresent {
+		return // no HSM layer deployed — nothing to do
+	}
+
+	fmt.Println("⚙️  Removing SoftHSM managed-key layer...")
+
+	if keyActive {
+		if _, err := client.Logical().Delete("sys/managed-keys/pkcs11/" + softHSMManagedKey); err == nil {
+			fmt.Printf("  ✅ Managed key '%s' deleted.\n", softHSMManagedKey)
+		} else {
+			fmt.Printf("  ⚠️  Could not delete managed key '%s': %v\n", softHSMManagedKey, err)
+		}
+	}
+
+	if keepRuntime {
+		fmt.Println("  ℹ️  SoftHSM runtime and token kept for the upcoming --hsm rebuild.")
+		return
+	}
+
+	// Wipe the token store + softhsm2.conf from the persistent Raft volume.
+	// Runs while the outgoing container still mounts /vault/data; the managed
+	// key is already gone, so nothing holds the token open.
+	softHSMDataDir := strings.TrimSuffix(softHSMConf, "/softhsm2.conf")
+	if out, err := exec.Command(engine, "exec", vaultContainer,
+		"rm", "-rf", softHSMDataDir).CombinedOutput(); err == nil {
+		fmt.Println("  ✅ SoftHSM token data removed from volume.")
+	} else {
+		fmt.Printf("  ⚠️  Could not remove SoftHSM token data: %v (%s)\n", err, strings.TrimSpace(string(out)))
+	}
+
+	if onSoftHSM {
+		fmt.Println("♻️  Restoring Vault to the stock Enterprise image (kms_library block removed)...")
+		if err := restoreVaultWithoutSoftHSM(engine); err != nil {
+			fmt.Printf("  ⚠️  Could not restore Vault container: %v\n", err)
+			fmt.Printf("     Restore manually with: hal vault delete && hal vault create --mode prod --vault-tag %s\n", defaultVaultEntHSMTag)
+			// Keep the runtime image — the failed/old container may still need it.
+			return
+		}
+		if err := waitForVaultHealthy(vaultProdHealthURL, 30); err != nil {
+			fmt.Println("  ⚠️  Vault restored but not yet active after unseal.")
+			fmt.Printf("     Unseal key is in: %s\n", global.VaultInitCachePath())
+		} else {
+			fmt.Println("  ✅ Vault restored on stock image, unsealed, and ready.")
+		}
+	}
+
+	if imagePresent {
+		if err := exec.Command(engine, "image", "rm", "-f", runtimeRef).Run(); err == nil {
+			fmt.Printf("  ✅ Runtime image %s removed.\n", runtimeRef)
+		} else {
+			fmt.Printf("  ⚠️  Could not remove image %s (still in use?).\n", runtimeRef)
+		}
+	}
 }

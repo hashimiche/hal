@@ -217,6 +217,7 @@ var vaultPKICmd = &cobra.Command{
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would unmount '%s' and '%s' from Vault\n", pkiRootMount, pkiIntMount)
 				fmt.Println("[DRY RUN] Would disable Vault auth mounts 'kubernetes-pki' and 'kubernetes-acme' and delete policy 'hal-pki-issuer'")
+				fmt.Printf("[DRY RUN] If the --hsm layer is active: would delete managed key 'sys/managed-keys/pkcs11/%s', wipe SoftHSM token data, restore the stock Vault image/config, and remove the %s image\n", softHSMManagedKey, vaultSoftHSMRuntimeImage)
 				fmt.Println("[DRY RUN] Would uninstall cert-manager and delete pki-demo namespace (if deployed)")
 				fmt.Println("[DRY RUN] Would delete pki-acme-demo namespace (if deployed)")
 				fmt.Println("[DRY RUN] Would delete KinD cluster if hal vault k8s is not active")
@@ -245,6 +246,13 @@ var vaultPKICmd = &cobra.Command{
 				} else {
 					fmt.Println("  ⚠️  Vault unreachable — skipping Vault-side cleanup.")
 				}
+
+				// SoftHSM managed-key layer (--hsm). Must run after the PKI
+				// unmounts above — the managed key cannot be deleted while a
+				// mount still references it. When an --hsm rebuild follows
+				// (update --hsm), the runtime/token are kept and only the key
+				// is deleted for clean re-registration.
+				teardownSoftHSMLayer(client, engine, pkiUpdate && pkiHSM)
 
 				// cert-manager demo
 				cmOut, _ := exec.Command("helm", "list", "-n", "cert-manager", "-q").Output()
