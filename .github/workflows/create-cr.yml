@@ -1,0 +1,97 @@
+name: create-cr
+
+# On issues.opened: fill IssueResolution template and kubectl apply CR
+# issue-<n> in hal-agent. Writes spec.* only (never status.*). Runs from
+# the default-branch workflow file — see docs/create-cr-runbook.md.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read # checkout template
+  id-token: write # OIDC → WIF
+
+concurrency:
+  group: create-cr-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    environment: hal-cluster
+    if: github.event.issue.pull_request == null
+    steps:
+      - name: Checkout (template)
+        uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: GCP auth via OIDC/WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
+          location: ${{ vars.GKE_CLUSTER_LOCATION }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Build and apply IssueResolution CR
+        env:
+          NS: ${{ vars.HAL_AGENT_NAMESPACE }}
+          REPO: ${{ github.repository }}
+          NUM: ${{ github.event.issue.number }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          AUTHOR: ${{ github.event.issue.user.login }}
+          TITLE: ${{ github.event.issue.title }}
+          BODY: ${{ github.event.issue.body }}
+          LABELS_JSON: ${{ toJson(github.event.issue.labels) }}
+        run: |
+          set -euo pipefail
+
+          CR_NAME="issue-${NUM}"
+          TEMPLATE=".github/issueresolution.template.yaml"
+          OUT="/tmp/cr.yaml"
+
+          if ! kubectl -n "$NS" get issueresolution "$CR_NAME" >/dev/null 2>&1; then
+            :
+          else
+            echo "CR ${CR_NAME} already exists; no-op"
+            exit 0
+          fi
+
+          cp "$TEMPLATE" "$OUT"
+
+          # Truncate snapshots to CRD limits (~16KiB body, 500 title).
+          export CR_NAME NS REPO ISSUE_URL AUTHOR
+          export TITLE="$(printf '%s' "$TITLE" | head -c 500)"
+          export BODY_TRUNC="$(printf '%s' "${BODY:-}" | head -c 16384)"
+
+          yq -i '
+            .metadata.name = strenv(CR_NAME) |
+            .metadata.namespace = strenv(NS) |
+            .spec.repository = strenv(REPO) |
+            .spec.issueNumber = (env(NUM) | tonumber) |
+            .spec.issueURL = strenv(ISSUE_URL) |
+            .spec.author = strenv(AUTHOR) |
+            .spec.title = strenv(TITLE) |
+            .spec.body = strenv(BODY_TRUNC) |
+            .spec.approved = false |
+            .spec.maxFixAttempts = 2
+          ' "$OUT"
+
+          LABELS="$(printf '%s' "$LABELS_JSON" | jq '[.[].name // empty]')"
+          printf '%s' "$LABELS" | yq -i '.spec.labels = load("/dev/stdin")' "$OUT"
+
+          kubectl apply -f "$OUT"
+          echo "Applied IssueResolution ${CR_NAME} in namespace ${NS}"
