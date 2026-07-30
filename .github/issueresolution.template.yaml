@@ -1,0 +1,17 @@
+# Template for IssueResolution — filled by create-cr workflow (gh/yq).
+# Placeholders are overwritten; do not kubectl apply this file as-is.
+apiVersion: agent.hal.dev/v1alpha1
+kind: IssueResolution
+metadata:
+  name: issue-0
+  namespace: hal-agent
+spec:
+  repository: owner/repo
+  issueNumber: 0
+  issueURL: ""
+  author: ""
+  title: ""
+  body: ""
+  labels: []
+  approved: false
+  maxFixAttempts: 2
