@@ -23,7 +23,7 @@ jobs:
     if: github.event.issue.pull_request == null
     steps:
       - name: Checkout (template)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install yq
         run: |

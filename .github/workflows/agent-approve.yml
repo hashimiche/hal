@@ -31,7 +31,7 @@ jobs:
         && github.event.action == 'labeled' )
     steps:
       - name: Checkout (CODEOWNERS)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Determine trigger, actor and number
         id: ctx
