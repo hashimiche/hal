@@ -71,10 +71,15 @@ const (
 	vaultMariaDBRootPassword = "vaultroot"
 
 	// --- Image / tag flag defaults ---
-	defaultVaultImageCE     = "hashicorp/vault"
-	defaultVaultImageEnt    = "hashicorp/vault-enterprise"
-	defaultVaultTag         = "2.0.1"
-	defaultVaultEntTag      = "2.0.1-ent"
+	defaultVaultImageCE  = "hashicorp/vault"
+	defaultVaultImageEnt = "hashicorp/vault-enterprise"
+	defaultVaultTag      = "2.0.1"
+	defaultVaultEntTag   = "2.0.1-ent"
+	// HSM-enabled Enterprise builds use the separate "-ent.hsm" tag variant.
+	// The PKCS#11 subsystem is compiled in only for these tags; a plain "-ent"
+	// binary will start but Vault will reject any sys/managed-keys write with
+	// "Vault is not built with HSM support".
+	defaultVaultEntHSMTag   = "2.0.3-ent.hsm"
 	defaultVaultEdition     = "ce"
 	defaultVaultHelperImage = "alpine"
 	defaultVaultHelperTag   = "3.22"
@@ -114,6 +119,33 @@ const (
 
 	defaultInstantClientVerARM64 = "23.26.2.0.0"
 	defaultInstantClientDirARM64 = "instantclient_23_26"
+
+	// --- SoftHSM / Managed-key PKI (hal vault create --edition ent-hsm) ---
+	// A custom image is built locally at create-time: debian:12-slim base with
+	// SoftHSM2 installed and the Vault binary extracted from the official image.
+	// PKI enable detects the running HSM build and uses managed keys by default.
+	vaultSoftHSMRuntimeImage = "hal-vault-softhsm"
+	vaultSoftHSMRuntimeTag   = "latest"
+
+	// SoftHSM token initialisation defaults — all overridable via flags.
+	defaultSoftHSMLabel          = "hal-hsm-token"
+	defaultSoftHSMPin            = "1234"
+	defaultSoftHSMSOPin          = "0000"
+	defaultSoftHSMManagedKeyName = "hal-kms-root"
+	defaultSoftHSMKeyLabel       = "hal-pki-root-key"
+	defaultSoftHSMHMACLabel      = "hal-pki-root-hmac-key"
+
+	// Managed-key crypto parameters. sys/managed-keys/pkcs11 requires
+	// `mechanism`, and `key_bits` is required whenever allow_generate_key=true
+	// with an RSA mechanism. CKM_RSA_PKCS (0x0001) at 4096 bits mirrors the
+	// RSA-4096 CA chain built by the software (non-HSM) PKI path.
+	softHSMMechanismRSAPKCS = "0x0001"
+	softHSMKeyBits          = "4096"
+
+	// Base image for the SoftHSM runtime (must be glibc-based; musl/Alpine cannot
+	// run the SoftHSM2 Debian package).
+	defaultSoftHSMBaseImage = "debian"
+	defaultSoftHSMBaseTag   = "12-slim"
 
 	// --- Database VSO (hal vault database enable --k8s) ---
 	// KinD + VSO port mapping for the database credential demo.

@@ -121,6 +121,7 @@ hal vault create                          # provision Vault with defaults (dev m
 hal vault create --vault-tag 2.0          # pin the image tag
 hal vault create --vault-image myregistry.local/vault --vault-tag 2.0  # custom image
 hal vault create --edition ent            # use Vault Enterprise image (still dev mode)
+hal vault create --edition ent-hsm --mode prod  # Enterprise HSM build + local SoftHSM2 runtime
 hal vault create --join-consul            # tether to the local Consul instance
 hal vault update                          # reconcile config changes
 hal vault status                          # health + seal/init state
@@ -144,6 +145,8 @@ hal vault create --mode prod              # real `server -config`, integrated Ra
   `~/.hal/vault-prod/init.json` (mode `0600`)** — retrieve them anytime with
   `hal vault status` or `hal creds status`.
 - `--mode prod` implies `--edition ent`; requires a valid `VAULT_LICENSE`.
+- `--edition ent-hsm --mode prod` builds `hal-vault-softhsm:latest`, boots the
+  Enterprise HSM binary with PKCS#11 support, and makes HSM-backed PKI the default.
 - `hal vault delete` removes the container, Raft volume, **and** `~/.hal/vault-prod/`.
 
 **Feature subcommands** — `enable` / `update` / `disable`
@@ -190,9 +193,11 @@ hal vault k8s update
 hal vault k8s disable
 
 # PKI secrets engine (Root CA + Intermediate CA)
-hal vault pki enable
 hal vault pki enable --k8s              # also deploy cert-manager + web demo on KinD
 hal vault pki enable --acme             # also deploy Caddy ACME demo on KinD
+hal vault pki enable                    # auto-selects SoftHSM2 managed keys on an ent-hsm deployment
+hal vault pki enable --hsm              # assert that HSM-backed CAs are available
+hal vault pki enable --no-hsm           # force software-backed CAs on an HSM deployment
 hal vault pki update --k8s
 hal vault pki update --acme
 hal vault pki update --acme --acme-cert-ttl 2m  # shorten cert TTL for live renewal demo
@@ -539,4 +544,3 @@ Before changing command behavior or UX patterns, read these files in order:
 4. `LLM_CONTEXT.md` — LLM-oriented command guidance
 
 Keep all three in sync when adding or renaming commands.
-

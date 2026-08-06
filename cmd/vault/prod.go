@@ -78,10 +78,9 @@ func verifyProdEdition(rootToken string) (string, string) {
 }
 
 // runVaultProd stands up the production Vault Enterprise instance. imageRef is
-// the fully-qualified "<repo>:<tag>" already resolved by the create command
-// (edition is forced to Enterprise on the prod path). The VAULT_LICENSE env var
-// has already been validated and set by the caller.
-func runVaultProd(engine, imageRef, displayVersion string) {
+// the fully-qualified runtime image already resolved by the create command.
+// The VAULT_LICENSE env var has already been validated and set by the caller.
+func runVaultProd(engine, imageRef, displayVersion string, hsm bool) {
 	stateDir := global.VaultProdStateDir()
 	if stateDir == "" {
 		fmt.Println("❌ Error: could not resolve home directory for ~/.hal/vault-prod")
@@ -114,6 +113,9 @@ func runVaultProd(engine, imageRef, displayVersion string) {
 		fmt.Printf("[DRY RUN]   TLS certs    : %s -> %s\n", certDir, vaultProdTLSMount)
 		fmt.Printf("[DRY RUN]   init         : -key-shares=%d -key-threshold=%d, node_id=%s\n", vaultKeyShares, vaultKeyThreshold, vaultProdNodeID)
 		fmt.Printf("[DRY RUN]   init cached  : %s (mode 0600)\n", global.VaultInitCachePath())
+		if hsm {
+			fmt.Printf("[DRY RUN]   HSM runtime  : SoftHSM2 PKCS#11 (%s)\n", softHSMLibPath)
+		}
 		return
 	}
 
@@ -134,7 +136,11 @@ func runVaultProd(engine, imageRef, displayVersion string) {
 
 	// 3. Write the Raft server config that the container will boot from.
 	ui.LogoStep("Writing Raft server configuration")
-	if err := os.WriteFile(configPath, []byte(vaultProdConfigHCL()), 0o644); err != nil {
+	configHCL := vaultProdConfigHCL()
+	if hsm {
+		configHCL = vaultHSMProdConfigHCL()
+	}
+	if err := os.WriteFile(configPath, []byte(configHCL), 0o644); err != nil {
 		ui.LogoStop()
 		fmt.Printf("❌ Failed to write Vault config: %v\n", err)
 		return
@@ -166,6 +172,9 @@ func runVaultProd(engine, imageRef, displayVersion string) {
 	if strings.HasPrefix(displayVersion, "2.") {
 		vaultArgs = append(vaultArgs, "-e", "SKIP_SETCAP=true")
 	}
+	if hsm {
+		vaultArgs = append(vaultArgs, "-e", "SOFTHSM2_CONF="+softHSMConf)
+	}
 
 	// Inject the Enterprise license (validated by the caller); Vault autoloads it.
 	vaultArgs = append(vaultArgs, "-e", fmt.Sprintf("VAULT_LICENSE=%s", os.Getenv("VAULT_LICENSE")))
@@ -176,6 +185,10 @@ func runVaultProd(engine, imageRef, displayVersion string) {
 		vaultArgs = append(vaultArgs, "-e", "CONSUL_HTTP_ADDR=http://hal-consul:8500")
 	}
 
+	// The custom HSM image has ENTRYPOINT ["/bin/vault"], so unlike the
+	// official image it does not pass through the entrypoint script that injects
+	// -config=/vault/config. Keep the explicit server/config arguments. The
+	// SKIP_SETCAP variable above is inert for this image but harmless.
 	vaultArgs = append(vaultArgs,
 		imageRef,
 		"server", "-config="+vaultProdConfigMount,
@@ -248,6 +261,9 @@ func runVaultProd(engine, imageRef, displayVersion string) {
 	}
 
 	editionLabel := "ENTERPRISE"
+	if hsm {
+		editionLabel = "ENTERPRISE (HSM / SoftHSM2 PKCS#11)"
+	}
 	if edition == editionCommunity {
 		editionLabel = "COMMUNITY (⚠️ prod expects Enterprise)"
 	} else if edition == editionUnknown {
@@ -279,7 +295,11 @@ func runVaultProd(engine, imageRef, displayVersion string) {
 	// Loud, actionable warning if the running server is not licensed Enterprise.
 	if edition == editionCommunity {
 		ui.Section("⚠️  Enterprise license check FAILED")
-		ui.Item("The running server is a Community build — VAULT_LICENSE is INACTIVE and")
+		if hsm {
+			ui.Item("The HSM runtime source produced a Community build — VAULT_LICENSE is INACTIVE and")
+		} else {
+			ui.Item("The running server is a Community build — VAULT_LICENSE is INACTIVE and")
+		}
 		ui.Item("Enterprise features (Raft auto-snapshots, namespaces, etc.) are unavailable.")
 		ui.Item("This almost always means --vault-image points at a Community image.")
 		ui.Item("Fix: re-run without --vault-image (defaults to %s) using a valid license.", defaultVaultImageEnt)
@@ -299,6 +319,10 @@ func runVaultProd(engine, imageRef, displayVersion string) {
 	ui.Item("export VAULT_TOKEN='%s'", initData.RootToken)
 	ui.Item("export VAULT_CACERT='%s'", hostCertPath)
 	ui.Item("⚠️  Self-signed cert — accept the browser warning or trust %s.", vaultProdCertFileName)
+	if hsm {
+		ui.Section("Next step")
+		ui.Item("hal vault pki enable")
+	}
 }
 
 // vaultProdConfigHCL renders the single-node Raft server config mounted into the

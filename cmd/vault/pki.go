@@ -39,6 +39,9 @@ var (
 	pkiCaddyImage         string
 	pkiCaddyTag           string
 	pkiACMECertTTL        string
+
+	// --hsm: SoftHSM2-backed managed-key PKI (vars live in softhsm.go)
+	// pkiHSM bool  — declared in softhsm.go
 )
 
 var vaultPKICmd = &cobra.Command{
@@ -59,6 +62,28 @@ var vaultPKICmd = &cobra.Command{
 		isPodman := strings.Contains(engine, "podman")
 
 		client, vaultErr := GetHealthyClient()
+		hsmDetected := vaultErr == nil && isVaultHSMBuild(client)
+		hsmMode := hsmDetected && !pkiNoHSM
+		fullPKIChange := pkiEnable || (pkiUpdate && ((!pkiK8s && !pkiACME) || pkiForce))
+
+		// Validate HSM intent and runtime before teardown. In particular, an
+		// invalid `pki update --hsm` must not unmount a working PKI deployment
+		// before reporting that the request cannot succeed.
+		if fullPKIChange && pkiHSM && pkiNoHSM {
+			fmt.Println("❌ --hsm and --no-hsm cannot be used together.")
+			return
+		}
+		if fullPKIChange && vaultErr == nil && pkiHSM && !hsmDetected {
+			fmt.Println("❌ --hsm requires a running Vault Enterprise HSM build.")
+			fmt.Println("   Deploy with: hal vault create --edition ent-hsm --mode prod")
+			return
+		}
+		if fullPKIChange && vaultErr == nil && hsmMode && !vaultOnSoftHSMImage(engine) {
+			fmt.Println("❌ Vault is an HSM build, but the running container does not include the HAL SoftHSM2 runtime.")
+			fmt.Println("   Redeploy with: hal vault create --edition ent-hsm --mode prod --update")
+			fmt.Println("   Or force software-backed CAs with: hal vault pki enable --no-hsm")
+			return
+		}
 
 		// ==========================================
 		// 1. SMART STATUS (default)
@@ -76,6 +101,11 @@ var vaultPKICmd = &cobra.Command{
 			mounts, _ := client.Sys().ListMounts()
 			rootMounted := mounts != nil && mounts[pkiRootMount+"/"] != nil
 			intMounted := mounts != nil && mounts[pkiIntMount+"/"] != nil
+
+			// HSM managed-key status line
+			if hsmManagedKeyActive(client) {
+				fmt.Printf("  ✅ Managed key   : sys/managed-keys/pkcs11/%s (SoftHSM2)\n", softHSMManagedKey)
+			}
 
 			if rootMounted {
 				fmt.Printf("  ✅ %-14s : Mounted\n", pkiRootMount)
@@ -209,6 +239,7 @@ var vaultPKICmd = &cobra.Command{
 			if global.DryRun {
 				fmt.Printf("[DRY RUN] Would unmount '%s' and '%s' from Vault\n", pkiRootMount, pkiIntMount)
 				fmt.Println("[DRY RUN] Would disable Vault auth mounts 'kubernetes-pki' and 'kubernetes-acme' and delete policy 'hal-pki-issuer'")
+				fmt.Printf("[DRY RUN] If the HSM layer is active: would delete managed key 'sys/managed-keys/pkcs11/%s' and wipe SoftHSM token data\n", softHSMManagedKey)
 				fmt.Println("[DRY RUN] Would uninstall cert-manager and delete pki-demo namespace (if deployed)")
 				fmt.Println("[DRY RUN] Would delete pki-acme-demo namespace (if deployed)")
 				fmt.Println("[DRY RUN] Would delete KinD cluster if hal vault k8s is not active")
@@ -237,6 +268,12 @@ var vaultPKICmd = &cobra.Command{
 				} else {
 					fmt.Println("  ⚠️  Vault unreachable — skipping Vault-side cleanup.")
 				}
+
+				// SoftHSM managed-key layer. Must run after the PKI
+				// unmounts above — the managed key cannot be deleted while a
+				// mount still references it. When an HSM rebuild follows, the
+				// token is kept and only the key is deleted for re-registration.
+				teardownSoftHSMLayer(client, engine, pkiUpdate && hsmDetected && !pkiNoHSM)
 
 				// cert-manager demo
 				cmOut, _ := exec.Command("helm", "list", "-n", "cert-manager", "-q").Output()
@@ -301,6 +338,9 @@ var vaultPKICmd = &cobra.Command{
 			}
 
 			if global.DryRun {
+				if hsmMode {
+					fmt.Println("[DRY RUN] Detected Vault Enterprise HSM build; would use SoftHSM2-backed managed keys")
+				}
 				if pkiUpdate && (pkiK8s || pkiACME) && !pkiForce {
 					if pkiK8s {
 						fmt.Println("[DRY RUN] Would reconcile cert-manager layer only (PKI engines left intact)")
@@ -346,7 +386,14 @@ var vaultPKICmd = &cobra.Command{
 			}
 
 			// enable, plain update, or update --force: full CA rebuild.
-			runVaultPKISetup(client, pkiUpdate)
+			if hsmMode {
+				if !pkiHSM {
+					fmt.Println("🔎 Detected Vault Enterprise HSM build; using SoftHSM2-backed PKI (pass --no-hsm for software CAs).")
+				}
+				runVaultPKIHSMSetup(client, engine, pkiUpdate)
+			} else {
+				runVaultPKISetup(client, pkiUpdate)
+			}
 
 			if pkiK8s {
 				runPKIK8sEnable(client, engine, isPodman, pkiIntMount)
@@ -1586,6 +1633,16 @@ func init() {
 	vaultPKICmd.Flags().StringVar(&pkiCaddyImage, "vault-pki-caddy-image", "caddy", "Caddy container image name (ACME/--acme demo)")
 	vaultPKICmd.Flags().StringVar(&pkiCaddyTag, "vault-pki-caddy-tag", "alpine", "Caddy container image tag (ACME/--acme demo)")
 	vaultPKICmd.Flags().StringVar(&pkiACMECertTTL, "acme-cert-ttl", "5m", "TTL for certs issued to Caddy via ACME (short = visible auto-renewal in the web page)")
+
+	// SoftHSM2 / managed-key PKI flags
+	vaultPKICmd.Flags().BoolVar(&pkiHSM, "hsm", false, "Require HSM-backed CAs; errors if Vault is not an HSM build (HSM mode is auto-detected otherwise)")
+	vaultPKICmd.Flags().BoolVar(&pkiNoHSM, "no-hsm", false, "Force software-backed CAs even when Vault is an HSM build")
+	vaultPKICmd.Flags().StringVar(&softHSMLabel, "softhsm-token-label", defaultSoftHSMLabel, "SoftHSM2 token label used during --init-token")
+	vaultPKICmd.Flags().StringVar(&softHSMPin, "softhsm-pin", defaultSoftHSMPin, "SoftHSM2 user PIN")
+	vaultPKICmd.Flags().StringVar(&softHSMSOPin, "softhsm-so-pin", defaultSoftHSMSOPin, "SoftHSM2 SO (security officer) PIN")
+	vaultPKICmd.Flags().StringVar(&softHSMManagedKey, "softhsm-managed-key", defaultSoftHSMManagedKeyName, "Vault managed-key name registered at sys/managed-keys/pkcs11/<name>")
+	vaultPKICmd.Flags().StringVar(&softHSMKeyLabel, "softhsm-key-label", defaultSoftHSMKeyLabel, "PKCS#11 key label for the CA signing key")
+	vaultPKICmd.Flags().StringVar(&softHSMHMACLabel, "softhsm-hmac-label", defaultSoftHSMHMACLabel, "PKCS#11 key label for the HMAC key")
 
 	Cmd.AddCommand(vaultPKICmd)
 }

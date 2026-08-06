@@ -25,12 +25,16 @@ Deploy a local Vault instance and baseline configuration for HAL labs.
   `VAULT_LICENSE_PATH`. The generated unseal key + root token are cached at
   `~/.hal/vault-prod/init.json` (mode `0600`) and surfaced by `hal vault status`
   and `hal creds status`. `--edition ce --mode prod` is rejected.
+- **`prod` + `--edition ent-hsm`**: builds and runs
+  `hal-vault-softhsm:latest` using the Enterprise HSM Vault binary plus a
+  SoftHSM2 PKCS#11 runtime. It requires prod mode and a valid Enterprise
+  license. `hal vault pki enable` detects this build and defaults to HSM-backed CAs.
 
 ## Flags
 - Deprecated: older HAL docs may reference `hal vault create --force` or `hal vault create --edition ent --force`. Those forms have been removed from the CLI. Use `hal vault update` or `hal vault create --update`.
 - Command flags from `hal vault create --help`:
 ```text
--e, --edition string              Vault edition to deploy: 'ce' (Community) or 'ent' (Enterprise) (default "ce")
+-e, --edition string              Vault edition to deploy: 'ce', 'ent', or 'ent-hsm' (Enterprise HSM build + SoftHSM2 runtime; requires --mode prod) (default "ce")
     --mode string                 Deployment mode: 'dev' (in-memory, auto-unsealed, HTTP) or 'prod' (persistent single-node Raft, TLS, initialized+unsealed; implies --edition ent) (default "dev")
     --key-shares int              [prod] Number of unseal key shares to generate at operator init (default 1)
     --key-threshold int           [prod] Number of unseal key shares required to unseal (default 1)
@@ -39,7 +43,9 @@ Deploy a local Vault instance and baseline configuration for HAL labs.
 -h, --help                        help for create
     --vault-helper-image string   Helper container image name for one-shot setup tasks during Vault deploy (default "alpine")
     --vault-helper-tag string     Helper container image tag for one-shot setup tasks during Vault deploy (default "3.22")
-    --vault-image string          Vault container image name (overrides per-edition default: hashicorp/vault or hashicorp/vault-enterprise)
+    --softhsm-base-image string   Base image for the SoftHSM runtime build (must be glibc-based) (default "debian")
+    --softhsm-base-tag string     Base image tag for the SoftHSM runtime build (default "12-slim")
+    --vault-image string          Vault source image name (overrides per-edition default; ent-hsm extracts the Vault binary from it)
 -v, --vault-tag string            Vault container image tag (default "2.0.1")
 -c, --join-consul                 Tether Vault to the global HAL Consul instance
 ```
@@ -51,6 +57,10 @@ Observability artifacts are now managed explicitly with `hal vault obs <create|u
 - This command may create, mutate, or remove local lab resources depending on its operation.
 - In `prod` mode it also writes `~/.hal/vault-prod/` (config, TLS certs, and the
   `init.json` holding the unseal key + root token). `hal vault delete` removes it.
+- In `ent-hsm` mode it builds `hal-vault-softhsm:latest`; `hal vault delete`
+  removes that local runtime image after removing the Vault container.
+- `hal vault update` does not persist create flags. Repeat `--mode`, `--edition`,
+  image/tag, and SoftHSM base flags needed by the desired deployment.
 
 ## Example
 ```bash
@@ -60,4 +70,7 @@ hal vault create
 # single-node production Vault Enterprise (TLS + persistent Raft)
 export VAULT_LICENSE='...'
 hal vault create --mode prod
+
+# production Enterprise HSM binary + SoftHSM2 runtime
+hal vault create --edition ent-hsm --mode prod
 ```

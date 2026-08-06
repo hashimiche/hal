@@ -68,6 +68,19 @@ var vaultDestroyCmd = &cobra.Command{
 			}
 		}
 
+		// The SoftHSM runtime is owned by vault create/delete. Remove it only
+		// after the Vault container is gone so the engine cannot report it in use.
+		softHSMRuntimeRef := vaultSoftHSMRuntimeImage + ":" + vaultSoftHSMRuntimeTag
+		if global.DryRun {
+			fmt.Printf("[DRY RUN] Would remove local image %s if present\n", softHSMRuntimeRef)
+		} else if exec.Command(engine, "image", "inspect", softHSMRuntimeRef).Run() == nil {
+			if err := exec.Command(engine, "image", "rm", "-f", softHSMRuntimeRef).Run(); err != nil {
+				fmt.Printf("⚠️  Could not remove image %s: %v\n", softHSMRuntimeRef, err)
+			} else {
+				fmt.Printf("  ✅ Removed local image: %s\n", softHSMRuntimeRef)
+			}
+		}
+
 		// 1b. Authentik is a shared IdP (also used by 'hal tf saml'), so it is
 		// deregistered and only torn down when no other product still depends on
 		// it — mirroring the GitLab shared-service model rather than force-removing
