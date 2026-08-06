@@ -151,7 +151,10 @@ func bootstrapTFEAPITokenFromIACT(engine, baseURL, username, email, password str
 		return "", fmt.Errorf("initial admin bootstrap not available on this instance; automatic token generation also failed")
 	}
 
-	return "", fmt.Errorf("initial admin bootstrap failed (%d): %s", status, resp)
+	if resp == "" {
+		return "", fmt.Errorf("initial admin bootstrap failed (%d): %w", status, err)
+	}
+	return "", fmt.Errorf("initial admin bootstrap failed (%d): %s: %w", status, resp, err)
 }
 
 func bootstrapTFEUserTokenFromContainer(engine, baseURL, username, email, description string) (string, error) {

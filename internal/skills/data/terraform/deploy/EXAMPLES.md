@@ -69,3 +69,17 @@ Assistant:
     hal terraform vcs-workflow enable
 
 Assistant: Deploy now patches the task-worker cache mount for writable Terraform downloads and preserves `:8443` archivist log links for UI/raw log access.
+
+## Example 7: Wire TFE to Vault Workload Identity
+
+User: Deploy TFE and let workspace runs authenticate to my local Vault without a static token.
+
+Assistant:
+
+    hal vault create
+    hal terraform create --vault-enabled
+
+Assistant: I verify the primary TFE deployment and report the `jwt-tfe` mount,
+organization-scoped role, and global `TFC_VAULT_*` variable set. For a twin-only
+request I explain that Vault issuer wiring is primary-only instead of suggesting
+an unsupported flag combination.

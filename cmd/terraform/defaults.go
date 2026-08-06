@@ -90,4 +90,20 @@ const (
 	tfeCertsDirName     = "tfe-certs"
 	tfeProxyConfName    = "tfe-proxy.conf"
 	tfeAPITokenFileName = "tfe-app-api-token"
+
+	// --- hal terraform create --vault-enabled ---
+	// Wires the running hal-vault container as an external secrets backend for
+	// TFE workspace runs via the Dynamic Provider Credentials (JWT auth) pattern.
+	// The JWT auth mount trusts TFE's OIDC well-known endpoint as the issuer so
+	// workspace runs can exchange a short-lived TFE-issued JWT for a Vault token.
+	defaultTFEVaultJWTMount = "jwt-tfe"
+	defaultTFEVaultRole     = "tfe-workspace-role"
+	defaultTFEVaultPolicy   = "tfe-workspace-policy"
+	defaultTFEVaultVarSet   = "hal-vault"
+	defaultTFEVaultAudience = "vault.workload.identity"
+	// URL of the external hal-vault container as seen by workspace runs on hal-net.
+	defaultTFEExternalVaultAddr     = "http://hal-vault:8200"
+	defaultTFEExternalVaultProdAddr = "https://hal-vault:8200"
+	// hal-vault container name — used for pre-flight IsContainerRunning check.
+	defaultTFEExternalVaultContainer = "hal-vault"
 )

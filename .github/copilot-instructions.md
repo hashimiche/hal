@@ -41,6 +41,7 @@ Treat `docs/cli-lifecycle-model.md` as the source of truth for command lifecycle
 - Password retrieval family: `hal <product> password status`.
 - Scoped updates: allow `--target` on `update` where a scope owns multiple components.
 - Terraform twin handling is product-target based: use `hal terraform <create|update|status|delete> --target twin` instead of a dedicated `hal terraform twin` command.
+- `hal terraform create --vault-enabled` wires the running `hal-vault` container to the primary TFE issuer through **Dynamic Provider Credentials (JWT)**. It creates the `jwt-tfe` mount, an organization-scoped role, and the required global `TFC_VAULT_*` variable set. Run `hal vault create` first; a missing Vault produces a warning while initial TFE deployment continues. `--target both` wires primary and still deploys twin; `--target twin --vault-enabled` is rejected because twin issuer wiring is not implemented. See `LLM_CONTEXT.md` and `docs/commands/terraform-deploy.md`.
 
 ### Documentation maintenance rule
 
