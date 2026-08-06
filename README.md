@@ -304,6 +304,28 @@ hal terraform update
 hal terraform delete
 ```
 
+**TFE + Vault (Dynamic Provider Credentials)** — workspace runs authenticate to Vault via short-lived JWTs
+
+```bash
+# 1. Start Vault first
+hal vault create
+
+# 2. Deploy TFE and wire Vault as the external secrets backend
+hal terraform create --vault-enabled
+
+# What --vault-enabled does in hal-vault:
+#   - Enables JWT auth mount jwt-tfe (trusts the primary TFE OIDC issuer)
+#   - Writes policy tfe-workspace-policy (token lifecycle + secret/data/* read)
+#   - Writes role tfe-workspace-role (audience + hal organization claim bounds)
+# What --vault-enabled does in TFE:
+#   - Creates global variable set hal-vault with the required TFC_VAULT_* values
+```
+
+The integration targets the primary TFE issuer. With `--target both`, HAL wires
+the primary and still deploys the twin; `--target twin --vault-enabled` is
+rejected until the twin has its own Vault JWT issuer/mount design. Vault prod
+mode uses `https://hal-vault:8200` and injects its Base64-encoded self-signed CA.
+
 **Twin TFE instance** — reuses the primary ecosystem (PostgreSQL, Redis, MinIO)
 
 ```bash
@@ -539,4 +561,3 @@ Before changing command behavior or UX patterns, read these files in order:
 4. `LLM_CONTEXT.md` — LLM-oriented command guidance
 
 Keep all three in sync when adding or renaming commands.
-

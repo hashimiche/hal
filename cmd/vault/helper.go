@@ -20,16 +20,29 @@ func vaultProdCertPath() string {
 	return filepath.Join(dir, vaultProdCertsDirName, vaultProdCertFileName)
 }
 
-// vaultProdActive reports whether a production-mode instance has been stood up,
-// detected by the presence of its forged TLS certificate. Host-side clients use
-// this to pick the HTTPS scheme + CA and the cached root token.
+// vaultProdActive reports whether the running instance is serving the
+// production HTTPS endpoint. A certificate alone is not authoritative because
+// ~/.hal/vault-prod can remain after a container is manually replaced by a dev
+// instance.
 func vaultProdActive() bool {
 	certPath := vaultProdCertPath()
 	if certPath == "" {
 		return false
 	}
-	_, err := os.Stat(certPath)
-	return err == nil
+	if _, err := os.Stat(certPath); err != nil {
+		return false
+	}
+	return vaultProdEndpointResponding(vaultProdLocalAPIURL + "/v1/sys/health")
+}
+
+func vaultProdEndpointResponding(url string) bool {
+	client := prodHTTPClient()
+	resp, err := client.Get(url)
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return true
 }
 
 // GetHealthyClient initializes the Vault client, sets the token,

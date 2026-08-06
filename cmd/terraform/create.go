@@ -43,6 +43,7 @@ var (
 	deployTFEAdminUser  string
 	deployTFEAdminEmail string
 	deployTFEAdminPass  string
+	vaultEnabled        bool
 )
 
 var deployCmd = &cobra.Command{
@@ -54,6 +55,12 @@ var deployCmd = &cobra.Command{
 			fmt.Printf("❌ %v\n", err)
 			return
 		}
+		if vaultEnabled {
+			if err := validateTFEVaultTarget(target); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return
+			}
+		}
 
 		if target == tfeTargetTwin {
 			runTFETwinLifecycle(true, false, tfeUpdate)
@@ -63,6 +70,18 @@ var deployCmd = &cobra.Command{
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
+			return
+		}
+
+		// --vault-enabled short-circuit: if TFE is already running, apply Vault
+		// wiring directly without a full redeploy (no license needed).
+		if vaultEnabled && !tfeUpdate && global.IsContainerRunning(engine, tfeCoreContainer) {
+			runVaultEnabledWiring(engine)
+			if target == tfeTargetBoth {
+				fmt.Println("ℹ️  --vault-enabled applies to the primary TFE issuer only; twin Vault wiring is not implemented.")
+				fmt.Println("\n🔁 Target includes twin. Continuing with twin Terraform Enterprise deployment...")
+				runTFETwinLifecycle(true, false, false)
+			}
 			return
 		}
 
@@ -361,7 +380,7 @@ http {
 		ui.LogoCreep(6 * time.Second)
 
 		// This will naturally hit the Proxy, which routes to TFE
-		if err := waitForService("TFE", healthURL, 60); err != nil {
+		if err := waitForService("TFE", healthURL, 120); err != nil {
 			ui.LogoStop()
 			handleDockerFailure(tfeCoreContainer, engine)
 			return
@@ -376,6 +395,30 @@ http {
 			AdminEmail:    deployTFEAdminEmail,
 			AdminPassword: deployTFEAdminPass,
 		})
+
+		// --vault-enabled: wire hal-vault as an external secrets backend for
+		// workspace runs using the JWT / Dynamic Provider Credentials pattern.
+		// Run as long as we have a usable token — foundation errors are non-fatal
+		// (e.g. org/project already existed) and should not block Vault wiring.
+		var vaultEnabledErr error
+		var vaultRunAddress string
+		if vaultEnabled {
+			if token == "" {
+				vaultEnabledErr = fmt.Errorf("TFE foundation did not provide an API token")
+				warnings = append(warnings, fmt.Sprintf("⚠️  --vault-enabled: %v", vaultEnabledErr))
+			} else if !global.IsContainerRunning(engine, defaultTFEExternalVaultContainer) {
+				warnings = append(warnings, "⚠️  --vault-enabled: hal-vault is not running — skipping Vault wiring.\n   💡 Run 'hal vault create', then 'hal terraform create --vault-enabled' again.")
+			} else {
+				step(1, "Wiring hal-vault as external secrets backend (Dynamic Provider Credentials)")
+				runtimeCfg, wiringErr := applyTFEVaultWiring(uiURL, token, deployTFEOrg)
+				if wiringErr != nil {
+					warnings = append(warnings, fmt.Sprintf("⚠️  --vault-enabled: %v", wiringErr))
+					vaultEnabledErr = wiringErr
+				} else {
+					vaultRunAddress = runtimeCfg.RunAddress
+				}
+			}
+		}
 
 		ui.LogoStop()
 		global.RefreshHalHealth(engine)
@@ -404,10 +447,26 @@ http {
 			}
 		}
 
+		if vaultEnabled {
+			ui.Section("Vault Integration")
+			if vaultEnabledErr != nil {
+				ui.Item("❌ Vault wiring incomplete — see warnings above")
+			} else if !global.IsContainerRunning(engine, defaultTFEExternalVaultContainer) {
+				ui.Item("⚠️  hal-vault not running — Vault wiring skipped")
+			} else {
+				ui.Item("✅ JWT auth mount: %s", defaultTFEVaultJWTMount)
+				ui.Item("✅ TFE variable set: %s  (TFC_VAULT_ADDR=%s)", defaultTFEVaultVarSet, vaultRunAddress)
+				ui.Item("   Workspaces can now authenticate to Vault via Dynamic Provider Credentials.")
+			}
+		}
+
 		ui.Item("⚠️  Accept the browser warning for the self-signed certificate.")
 		ui.Hint("Next: hal terraform vcs-workflow enable  (org/project/workspace wiring)")
 
 		if target == tfeTargetBoth {
+			if vaultEnabled {
+				fmt.Println("ℹ️  --vault-enabled applied to the primary TFE issuer only; twin Vault wiring is not implemented.")
+			}
 			fmt.Println("\n🔁 Target includes twin. Continuing with twin Terraform Enterprise deployment...")
 			runTFETwinLifecycle(true, false, tfeUpdate)
 		}
@@ -566,6 +625,7 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	cmd.Flags().StringVar(&deployTFEAdminUser, "tfe-admin-username", defaultTFEAdminUsername, "Initial TFE admin username used when bootstrapping via IACT")
 	cmd.Flags().StringVar(&deployTFEAdminEmail, "tfe-admin-email", defaultTFEAdminEmail, "Initial TFE admin email used when bootstrapping via IACT")
 	cmd.Flags().StringVar(&deployTFEAdminPass, "tfe-admin-password", defaultTFEAdminPassword, "Initial TFE admin password used when bootstrapping via IACT")
+	cmd.Flags().BoolVar(&vaultEnabled, "vault-enabled", false, "Wire the running hal-vault container as an external secrets backend for TFE workspace runs (Dynamic Provider Credentials)")
 	if includeUpdate {
 		cmd.Flags().BoolVarP(&tfeUpdate, "update", "u", false, "Reconcile an existing Terraform Enterprise deployment in place")
 	}

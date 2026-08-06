@@ -19,6 +19,17 @@ Handle hal terraform create requests with a stable lifecycle pattern.
 - If applicable, suggest the next expected command in the lifecycle.
 - Terraform deployment no longer auto-registers observability artifacts.
 
+## Vault Dynamic Provider Credentials
+
+- Use `hal vault create` before `hal terraform create --vault-enabled`.
+- The flag wires the primary TFE issuer to `hal-vault` through the `jwt-tfe`
+  auth mount and a global `TFC_VAULT_*` variable set.
+- `--target both` wires primary and continues the twin deployment.
+- Do not propose `--target twin --vault-enabled`; twin issuer wiring is not
+  implemented and HAL returns an actionable error.
+- If TFE is already running, rerunning `hal terraform create --vault-enabled`
+  applies only the missing Vault wiring and does not require a redeploy.
+
 ## Observability Notes
 
 - Use explicit lifecycle commands for Terraform observability artifacts:
