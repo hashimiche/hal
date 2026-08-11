@@ -724,7 +724,7 @@ func init() {
 	_ = vaultJwtCmd.Flags().MarkHidden("update")
 
 	// 2. Feature-Specific Flags
-	vaultJwtCmd.Flags().StringVar(&gitlabTag, "gitlab-tag", "18.10.1-ce.0", "GitLab CE container image tag")
+	vaultJwtCmd.Flags().StringVar(&gitlabTag, "gitlab-tag", "18.11.9-ce.0", "GitLab CE container image tag")
 	vaultJwtCmd.Flags().StringVar(&gitlabImage, "gitlab-image", "gitlab/gitlab-ce", "GitLab CE container image name")
 	vaultJwtCmd.Flags().IntVar(&gitlabPort, "gitlab-port", integrations.DefaultGitLabPort, "Host/container port for the shared GitLab service (ignored when reusing a running instance)")
 	vaultJwtCmd.Flags().StringVar(&gitlabRunnerImage, "gitlab-runner-image", "gitlab/gitlab-runner", "GitLab Runner container image name")

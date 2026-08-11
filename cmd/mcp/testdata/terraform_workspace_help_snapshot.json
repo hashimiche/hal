@@ -25,7 +25,7 @@
       "name": "--gitlab-token-id string"
     },
     {
-      "description": "GitLab CE container image tag used for shared Terraform workspace setup (default \"18.10.1-ce.0\")",
+      "description": "GitLab CE container image tag used for shared Terraform workspace setup (default \"18.11.9-ce.0\")",
       "name": "--gitlab-tag string"
     },
     {

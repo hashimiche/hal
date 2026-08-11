@@ -32,7 +32,7 @@ Use smart status mode if needed:
 
 Then use the correct lifecycle command:
 
-    hal vault database enable --backend mariadb --mariadb-version 11.4
+    hal vault database enable --backend mariadb --mariadb-version 11.8
     hal vault database update
     hal vault database disable
 

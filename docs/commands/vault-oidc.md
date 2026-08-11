@@ -20,7 +20,7 @@ With `--scim` (Vault Enterprise only), also wire Authentik outbound SCIM to prov
 ```text
 -h, --help                        help for oidc
     --authentik-image string      Authentik container image (default "ghcr.io/goauthentik/server")
-    --authentik-tag string        Authentik image tag (default "2026.2.3")
+    --authentik-tag string        Authentik image tag (default "2026.5.6")
     --scim                        [Vault Enterprise] Also configure SCIM provisioning from Authentik
 -u, --update                      Re-provision Vault OIDC providers (keeps Authentik running)
 -e, --enable                      Start Authentik and configure Vault OIDC

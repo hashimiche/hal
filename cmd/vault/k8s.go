@@ -870,7 +870,7 @@ func init() {
 	// Feature-Specific Flags
 	vaultK8sCmd.Flags().BoolVar(&csiMode, "csi", false, "Use the VSO CSI Driver (Requires Vault Enterprise)")
 	vaultK8sCmd.Flags().BoolVar(&jwtAuth, "jwt", false, "Use the advanced jwt-k8s OIDC architecture (experimental)")
-	vaultK8sCmd.Flags().StringVar(&kindNodeImage, "kind-node-image", "kindest/node:v1.31.1", "KinD node image used when creating the cluster")
+	vaultK8sCmd.Flags().StringVar(&kindNodeImage, "kind-node-image", "kindest/node:v1.36.1", "KinD node image used when creating the cluster")
 	vaultK8sCmd.Flags().StringVar(&vsoChartVersion, "vso-chart-version", "", "Helm chart version for hashicorp/vault-secrets-operator (empty uses latest)")
 	vaultK8sCmd.Flags().StringVar(&webBackendImage, "vault-k8s-web-backend-image", "httpd", "Demo backend container image name")
 	vaultK8sCmd.Flags().StringVar(&webBackendTag, "vault-k8s-web-backend-tag", "2.4-alpine", "Demo backend container image tag")

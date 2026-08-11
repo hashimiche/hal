@@ -18,7 +18,7 @@ Deploy a standalone local Consul server for labs/testing.
 ```text
 -u, --update           Reconcile an existing Consul deployment in place
 -h, --help             help for deploy
--v, --version string   Consul version to deploy (default "1.15.0")
+-v, --version string   Consul version to deploy (default "2.0.3")
 ```
 - Global flags: `--debug`, `--dry-run`, `--verbose`
 

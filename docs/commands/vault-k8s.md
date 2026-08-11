@@ -20,7 +20,7 @@ Deploy KinD and Vault Secrets Operator scenario for Kubernetes integration labs.
 -u, --update                     Reconcile cluster and VSO configuration
 -h, --help                       help for k8s
 --jwt                        Use the advanced jwt-k8s OIDC architecture (experimental)
---kind-node-image string     KinD node image used when creating the cluster (default "kindest/node:v1.31.1")
+--kind-node-image string     KinD node image used when creating the cluster (default "kindest/node:v1.36.1")
 --vso-chart-version string   Helm chart version for hashicorp/vault-secrets-operator (empty uses latest)
 --web-backend-image string   Demo backend container image (default "httpd:2.4-alpine")
 --web-proxy-image string     Demo reverse proxy container image (default "nginx:alpine")

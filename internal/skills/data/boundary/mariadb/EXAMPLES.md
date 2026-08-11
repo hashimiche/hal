@@ -23,7 +23,7 @@ User: Rebuild MariaDB and wire Boundary to Vault dynamic creds.
 
 Assistant:
 
-    hal boundary mariadb enable --mariadb-version 11.4 --with-vault
+    hal boundary mariadb enable --mariadb-version 11.8 --with-vault
 
 Assistant: I confirm the target has brokered credential sources attached, then use the DB-aware connect flow.
 

@@ -38,9 +38,9 @@ Deploy a local Vault instance and baseline configuration for HAL labs.
 -u, --update                      Reconcile an existing Vault deployment in place
 -h, --help                        help for create
     --vault-helper-image string   Helper container image name for one-shot setup tasks during Vault deploy (default "alpine")
-    --vault-helper-tag string     Helper container image tag for one-shot setup tasks during Vault deploy (default "3.22")
+    --vault-helper-tag string     Helper container image tag for one-shot setup tasks during Vault deploy (default "3.24")
     --vault-image string          Vault container image name (overrides per-edition default: hashicorp/vault or hashicorp/vault-enterprise)
--v, --vault-tag string            Vault container image tag (default "2.0.1")
+-v, --vault-tag string            Vault container image tag (default "2.0.4")
 -c, --join-consul                 Tether Vault to the global HAL Consul instance
 ```
 - Global flags: `--debug`, `--dry-run`, `--verbose`

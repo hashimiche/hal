@@ -25,7 +25,7 @@
       "name": "--gitlab-runner-tag string"
     },
     {
-      "description": "GitLab CE container image tag (default \"18.10.1-ce.0\")",
+      "description": "GitLab CE container image tag (default \"18.11.9-ce.0\")",
       "name": "--gitlab-tag string"
     },
     {

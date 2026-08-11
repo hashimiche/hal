@@ -248,7 +248,7 @@ var vaultOSCmd = &cobra.Command{
 
 			// 5. Register OS plugin
 			fmt.Println("⚙️  Registering OS secret engine plugin...")
-			osPluginVersion := "0.1.0+ent"
+			osPluginVersion := "0.1.1+ent"
 			registerCmd := fmt.Sprintf(
 				"VAULT_ADDR='%s' VAULT_TOKEN='%s' vault plugin register -download -version='%s' secret vault-plugin-secrets-os",
 				vaultLocalAPIURL, vaultRootToken, osPluginVersion,

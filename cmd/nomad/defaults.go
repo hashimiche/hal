@@ -12,8 +12,8 @@ const (
 	nomadHTTPPort = 4646
 
 	// --- Flag defaults ---
-	defaultNomadVersion     = "1.11.3"
-	defaultNomadUbuntuImage = "22.04"
+	defaultNomadVersion     = "2.0.3"
+	defaultNomadUbuntuImage = "24.04"
 	defaultNomadCPUs        = "2"
 	defaultNomadMem         = "2G"
 )

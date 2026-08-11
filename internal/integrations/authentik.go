@@ -25,7 +25,7 @@ const (
 	AuthentikWorkerContainer = "hal-authentik-worker"
 
 	AuthentikDefaultImage = "ghcr.io/goauthentik/server"
-	AuthentikDefaultTag   = "2026.2.3"
+	AuthentikDefaultTag   = "2026.5.6"
 
 	// Host ports — chosen to avoid all existing HAL port usage.
 	// 9000: hal-plus / MinIO internal
@@ -211,7 +211,7 @@ func StartAuthentikStack(engine, image, tag string, secrets *AuthentikSecrets) e
 		"-e", "POSTGRES_USER=authentik",
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", secrets.PGPass),
 		"-v", "hal-authentik-db:/var/lib/postgresql/data",
-		"docker.io/library/postgres:16-alpine",
+		"docker.io/library/postgres:17-alpine",
 	}
 	if out, err := exec.Command(engine, pgArgs...).CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to start authentik pg: %w\n%s", err, string(out))

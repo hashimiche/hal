@@ -36,12 +36,12 @@ const (
 
 	// --- Image / tag flag defaults ---
 	defaultBoundaryImage          = "hashicorp/boundary"
-	defaultBoundaryTag            = "0.15.2"
+	defaultBoundaryTag            = "0.21.3"
 	defaultBoundaryPGImage        = "postgres"
-	defaultBoundaryPGTag          = "16-alpine"
+	defaultBoundaryPGTag          = "17-alpine"
 	defaultBoundaryMariaDBImage   = "mariadb"
-	defaultBoundaryMariaDBTag     = "11.4"
-	defaultBoundarySSHUbuntuImage = "22.04"
+	defaultBoundaryMariaDBTag     = "11.8"
+	defaultBoundarySSHUbuntuImage = "24.04"
 	defaultBoundarySSHCPUs        = "1"
 	defaultBoundarySSHMem         = "512M"
 )

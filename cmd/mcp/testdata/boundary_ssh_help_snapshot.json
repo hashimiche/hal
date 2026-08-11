@@ -17,7 +17,7 @@
       "name": "--mem string"
     },
     {
-      "description": "Multipass image/channel used for the SSH target VM (default \"22.04\")",
+      "description": "Multipass image/channel used for the SSH target VM (default \"24.04\")",
       "name": "--ubuntu-image string"
     },
     {

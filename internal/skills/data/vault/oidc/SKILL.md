@@ -76,7 +76,7 @@ Then use the correct lifecycle command:
 
 Flags:
 - `--authentik-image` — override image (default: `ghcr.io/goauthentik/server`)
-- `--authentik-tag` — override tag (default: `2026.2.3`)
+- `--authentik-tag` — override tag (default: `2026.5.6`)
 - `--scim` — [Vault Enterprise] configure Authentik outbound SCIM provisioning to Vault
 
 ### Step 2: Enrich with Vault MCP Context

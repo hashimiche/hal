@@ -36,7 +36,7 @@ Use smart status mode if needed:
 
 Then use the correct lifecycle command:
 
-    hal vault jwt enable --gitlab-tag 18.10.1-ce.0
+    hal vault jwt enable --gitlab-tag 18.11.9-ce.0
     hal vault jwt update
     hal vault jwt disable
 

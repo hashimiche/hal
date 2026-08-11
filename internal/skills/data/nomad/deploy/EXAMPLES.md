@@ -6,7 +6,7 @@ User: Deploy Nomad and confirm scheduler health.
 
 Assistant:
 
-    hal nomad create --ubuntu-image 22.04 --version 1.11.3 --cpus 2 --mem 2G
+    hal nomad create --ubuntu-image 24.04 --version 2.0.3 --cpus 2 --mem 2G
     hal nomad status
 
 Assistant: I report whether servers and clients are healthy before any workload submission.

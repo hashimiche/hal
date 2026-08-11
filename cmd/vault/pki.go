@@ -1579,7 +1579,7 @@ func init() {
 	vaultPKICmd.Flags().BoolVar(&pkiK8s, "k8s", false, "Deploy cert-manager + nginx web demo on KinD (enable/update only)")
 	vaultPKICmd.Flags().BoolVar(&pkiACME, "acme", false, "Deploy Vault ACME endpoint + Caddy demo on KinD (enable/update only)")
 	vaultPKICmd.Flags().BoolVar(&pkiForce, "force", false, "With --k8s/--acme update: also rebuild Root CA and Intermediate CA from scratch")
-	vaultPKICmd.Flags().StringVar(&pkiKindNodeImage, "kind-node-image", "kindest/node:v1.31.1", "KinD node image (used only when creating a new cluster)")
+	vaultPKICmd.Flags().StringVar(&pkiKindNodeImage, "kind-node-image", "kindest/node:v1.36.1", "KinD node image (used only when creating a new cluster)")
 	vaultPKICmd.Flags().StringVar(&pkiCertManagerVersion, "cert-manager-version", "", "Jetstack cert-manager Helm chart version (empty = latest)")
 	vaultPKICmd.Flags().StringVar(&pkiWebBackendImage, "vault-pki-web-backend-image", "nginx", "Demo backend container image name (cert-manager/--k8s demo)")
 	vaultPKICmd.Flags().StringVar(&pkiWebBackendTag, "vault-pki-web-backend-tag", "alpine", "Demo backend container image tag (cert-manager/--k8s demo)")

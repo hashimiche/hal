@@ -804,7 +804,7 @@ resource "null_resource" "hello" {
 }
 `
 
-	gitlabCI := `image: hashicorp/terraform:1.9
+	gitlabCI := `image: hashicorp/terraform:1.15
 
 stages:
   - validate
@@ -947,7 +947,7 @@ func init() {
 	_ = workspaceCmd.Flags().MarkHidden("disable")
 	_ = workspaceCmd.Flags().MarkHidden("update")
 	workspaceCmd.Flags().BoolVar(&workspaceAutoApprove, "auto-approve", false, "Skip interactive confirmation for destructive disable operations")
-	workspaceCmd.Flags().StringVar(&workspaceGitLabTag, "gitlab-tag", "18.10.1-ce.0", "GitLab CE container image tag used for shared Terraform workspace setup")
+	workspaceCmd.Flags().StringVar(&workspaceGitLabTag, "gitlab-tag", "18.11.9-ce.0", "GitLab CE container image tag used for shared Terraform workspace setup")
 	workspaceCmd.Flags().StringVar(&workspaceGitLabImage, "gitlab-image", "gitlab/gitlab-ce", "GitLab CE container image name used for shared Terraform workspace setup")
 	workspaceCmd.Flags().IntVar(&workspaceGitLabPort, "gitlab-port", 8080, "Host/container port for the shared GitLab service (override to avoid conflicts on 8080)")
 	workspaceCmd.Flags().StringVar(&workspaceGitLabPassword, "gitlab-root-password", "hal9000FTW", "Root password used to bootstrap GitLab when HAL starts it")

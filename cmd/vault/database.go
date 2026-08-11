@@ -835,7 +835,7 @@ func init() {
 
 	// --k8s and related flags
 	vaultDatabaseCmd.Flags().BoolVar(&dbVSOEnabled, "k8s", false, "Also deploy KinD + VSO and sync dynamic DB credentials into a demo app via VaultDynamicSecret")
-	vaultDatabaseCmd.Flags().StringVar(&dbVSOKindNodeImage, "db-kind-node-image", "kindest/node:v1.31.1", "KinD node image used when creating the database VSO cluster")
+	vaultDatabaseCmd.Flags().StringVar(&dbVSOKindNodeImage, "db-kind-node-image", "kindest/node:v1.36.1", "KinD node image used when creating the database VSO cluster")
 	vaultDatabaseCmd.Flags().StringVar(&dbVSOChartVersion, "db-vso-chart-version", "", "Helm chart version for vault-secrets-operator (empty uses latest)")
 	vaultDatabaseCmd.Flags().StringVar(&dbVSOBackendImage, "db-app-image", "httpd", "Demo app container image name")
 	vaultDatabaseCmd.Flags().StringVar(&dbVSOBackendTag, "db-app-tag", "2.4-alpine", "Demo app container image tag")

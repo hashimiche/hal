@@ -29,7 +29,7 @@ Use this skill when the user asks to:
 - TFE runtime container: `hal-tfe`
 - Agent container: `hal-tfe-agent`
 - Default pool name: `hal-agent-pool`
-- Default agent image: `hashicorp/tfc-agent:1.28`
+- Default agent image: `hashicorp/tfc-agent:1.30`
 
 ## Validation
 

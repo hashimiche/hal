@@ -20,7 +20,7 @@ Deploy a Multipass Ubuntu VM as a Boundary SSH target.
 -h, --help                  help for ssh
 --mem string            Amount of RAM for the SSH target VM (default "512M")
 -u, --update                Reconcile SSH target VM and Boundary target wiring
---ubuntu-image string   Multipass image/channel used for the SSH target VM (default "22.04")
+--ubuntu-image string   Multipass image/channel used for the SSH target VM (default "24.04")
 ```
 - Global flags: `--debug`, `--dry-run`, `--verbose`
 

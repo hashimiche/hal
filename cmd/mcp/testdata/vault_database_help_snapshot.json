@@ -13,7 +13,7 @@
       "name": "--db-app-tag string"
     },
     {
-      "description": "KinD node image used when creating the database VSO cluster (default \"kindest/node:v1.31.1\")",
+      "description": "KinD node image used when creating the database VSO cluster (default \"kindest/node:v1.36.1\")",
       "name": "--db-kind-node-image string"
     },
     {
@@ -61,7 +61,7 @@
       "name": "--vault-mariadb-image string"
     },
     {
-      "description": "MariaDB container image tag (default \"11.4\")",
+      "description": "MariaDB container image tag (default \"11.8\")",
       "name": "--vault-mariadb-tag string"
     },
     {

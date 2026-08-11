@@ -17,7 +17,7 @@ Deploy an Ubuntu VM via Multipass and configure Vault's OS secret engine to mana
 
 ## Flags
 ```text
-      --ubuntu-image string   Ubuntu image for Multipass VM (default "22.04")
+      --ubuntu-image string   Ubuntu image for Multipass VM (default "24.04")
       --vm-cpus string        Number of CPUs for the VM (default "1")
       --vm-mem string         Amount of RAM for the VM (default "1G")
   -h, --help                  help for os
@@ -45,7 +45,7 @@ Displays:
 ```bash
 hal vault os enable
 ```
-1. Launches Ubuntu 22.04 VM via Multipass
+1. Launches Ubuntu 24.04 VM via Multipass
 2. Creates `mgmt-user` (privileged parent), `demouser`, and `appadmin` on the VM
 3. Grants `mgmt-user` passwordless sudo for `/usr/sbin/chpasswd` only
 4. Enables SSH password authentication on the VM
@@ -127,12 +127,12 @@ This is more reliable than self-managed rotation (which uses a PTY + `passwd` ex
 
 ### VM Configuration
 - **Name**: `hal-vault-os`
-- **OS**: Ubuntu 22.04 LTS (configurable via `--ubuntu-image`)
+- **OS**: Ubuntu 24.04 LTS (configurable via `--ubuntu-image`)
 - **Resources**: 1 CPU, 1GB RAM (configurable)
 - **Network**: Multipass default network
 
 ### Vault Configuration
-- **Plugin**: `vault-plugin-secrets-os` v`0.1.0+ent`
+- **Plugin**: `vault-plugin-secrets-os` v`0.1.1+ent`
 - **Mount Path**: `os/`
 - **Host Key Verification**: Trust-on-first-use (TOFU)
 - **Connection**: SSH with password authentication

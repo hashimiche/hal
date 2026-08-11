@@ -159,12 +159,12 @@ func GitLabGet(urlStr, token string) ([]byte, error) {
 }
 
 // versionLikeName matches a reference component that looks like a bare version
-// tag (e.g. "18.10.1-ce.0", "v1.2.3") rather than an image repository.
+// tag (e.g. "18.11.9-ce.0", "v1.2.3") rather than an image repository.
 var versionLikeName = regexp.MustCompile(`^v?\d+([.\-][0-9A-Za-z.\-]+)*$`)
 
 // imageLooksLikeBareTag reports whether image is almost certainly a version tag
 // that was mistakenly passed as a full image reference (the classic
-// "18.10.1-ce.0" -> pulled as "18.10.1-ce.0:latest" failure).
+// "18.11.9-ce.0" -> pulled as "18.11.9-ce.0:latest" failure).
 func imageLooksLikeBareTag(image string) bool {
 	name := image
 	if i := strings.LastIndex(name, "@"); i >= 0 {

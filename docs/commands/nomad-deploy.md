@@ -21,8 +21,8 @@ Deploy local Nomad cluster resources via Multipass.
 -h, --help                  help for deploy
 -c, --join-consul           Tether Nomad to the global HAL Consul instance
 --mem string            Amount of RAM for the VM (default "2G")
---ubuntu-image string   Multipass image/channel used for the Nomad VM (default "22.04")
--v, --version string        Nomad version to install (default "1.11.3")
+--ubuntu-image string   Multipass image/channel used for the Nomad VM (default "24.04")
+-v, --version string        Nomad version to install (default "2.0.3")
 ```
 - Global flags: `--debug`, `--dry-run`, `--verbose`
 

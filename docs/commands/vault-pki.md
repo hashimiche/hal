@@ -51,7 +51,7 @@ Private keys are **Vault-internal** — they never appear on disk.
 --max-cert-ttl string      Maximum TTL for issued leaf certs (default "24h")
 --k8s                      Also deploy cert-manager + web demo on KinD (see below)
 --force                    With update --k8s: also rebuild Root CA and Intermediate CA from scratch
---kind-node-image string   KinD node image used only when creating a new cluster (default "kindest/node:v1.31.1")
+--kind-node-image string   KinD node image used only when creating a new cluster (default "kindest/node:v1.36.1")
 --cert-manager-version     Jetstack cert-manager Helm chart version (empty = latest)
 --web-backend-image        Demo backend container image (default "nginx:alpine")
 --acme                     Deploy Vault ACME endpoint + Caddy demo on KinD (enable/update only)
@@ -274,7 +274,7 @@ Flags (enable/update):
   --max-cert-ttl string       Max TTL for leaf certs (default "24h")
   --k8s                       Deploy cert-manager + web demo on KinD
   --force                     With update --k8s: also rebuild Root CA and Intermediate CA
-  --kind-node-image string    KinD node image (default "kindest/node:v1.31.1")
+  --kind-node-image string    KinD node image (default "kindest/node:v1.36.1")
   --cert-manager-version      Jetstack chart version (empty = latest)
   --web-backend-image         Demo backend image (default "nginx:alpine")
   --acme                      Deploy Vault ACME endpoint + Caddy demo on KinD
