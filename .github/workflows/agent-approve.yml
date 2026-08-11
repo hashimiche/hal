@@ -140,7 +140,7 @@ jobs:
 
       - name: Get GKE credentials
         if: steps.ctx.outputs.match == 'true'
-        uses: google-github-actions/get-gke-credentials@v2
+        uses: google-github-actions/get-gke-credentials@v3
         with:
           cluster_name: ${{ vars.GKE_CLUSTER_NAME }}
           location: ${{ vars.GKE_CLUSTER_LOCATION }}
