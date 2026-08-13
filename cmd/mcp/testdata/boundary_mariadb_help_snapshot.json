@@ -9,7 +9,7 @@
       "name": "--dry-run"
     },
     {
-      "description": "Version (default \"11.4\")",
+      "description": "Version (default \"11.8\")",
       "name": "--mariadb-version string"
     },
     {

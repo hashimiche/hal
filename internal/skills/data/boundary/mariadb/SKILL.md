@@ -15,9 +15,9 @@ Handle hal boundary mariadb requests with a stable lifecycle pattern, including 
 
 ## Common Variants
 
-- Deploy standalone DB target: hal boundary mariadb enable --mariadb-version 11.4
+- Deploy standalone DB target: hal boundary mariadb enable --mariadb-version 11.8
 - Deploy and re-bootstrap from scratch: hal boundary mariadb update
-- Attach Boundary target to Vault dynamic DB creds: hal boundary mariadb enable --mariadb-version 11.4 --with-vault
+- Attach Boundary target to Vault dynamic DB creds: hal boundary mariadb enable --mariadb-version 11.8 --with-vault
 - Disable lab resources: hal boundary mariadb disable
 
 ## Post-Deploy Access Guidance

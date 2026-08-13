@@ -45,7 +45,7 @@ var deployCmd = &cobra.Command{
 
 		ui.LogoStep("Deploying standalone Consul %s", consulVersion)
 
-		// Command: <engine> run -d --name hal-consul --network hal-net -p 8500:8500 hashicorp/consul:1.15.0 agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
+		// Command: <engine> run -d --name hal-consul --network hal-net -p 8500:8500 hashicorp/consul:2.0.3 agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
 		consulArgs := []string{
 			"run", "-d",
 			"--name", consulContainer,

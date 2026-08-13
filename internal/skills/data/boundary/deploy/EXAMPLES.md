@@ -6,7 +6,7 @@ User: Deploy Boundary in this lab.
 
 Assistant:
 
-hal boundary create --version 0.15.2
+hal boundary create --version 0.21.3
 
 Assistant: I verify core services and provide next target commands.
 

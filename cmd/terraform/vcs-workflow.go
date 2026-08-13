@@ -40,7 +40,7 @@ var (
 	tfeAdminPassword         string
 	tfeTagsRegex             string
 	tfeVCSBranch             string
-	workspaceGitLabServiceID = "gitlab"
+	workspaceGitLabServiceID = global.SharedGitLabServiceKey
 )
 
 // gitlabHostBaseURL is the host-reachable base URL for the shared GitLab
@@ -341,28 +341,21 @@ func disableWorkspaceScenario(engine, target string, autoApprove bool) {
 		fmt.Printf("⚠️  Could not update shared GitLab ownership metadata: %v\n", err)
 	}
 
+	global.PruneStaleTFEBackedSharedConsumers(engine)
+	remaining = global.GetSharedServiceConsumers(workspaceGitLabServiceID)
+
 	if len(remaining) > 0 {
 		fmt.Printf("ℹ️  Shared GitLab remains active (still used by: %s).\n", strings.Join(remaining, ", "))
 		fmt.Printf("✅ Terraform VCS workflow disabled for target=%s (metadata only).\n", target)
 		return
 	}
 
-	if isAnyTFERuntimeRunning(engine) {
-		fmt.Println("ℹ️  Shared GitLab remains active because at least one Terraform Enterprise runtime is still running.")
-		fmt.Printf("✅ Terraform VCS workflow disabled for target=%s (GitLab preserved).\n", target)
+	integrations.StopSharedGitLabIfUnused(engine)
+	if !global.IsContainerRunning(engine, "hal-gitlab") {
+		fmt.Printf("✅ Terraform VCS workflow disabled for target=%s.\n", target)
 		return
 	}
-
-	if global.IsContainerRunning(engine, "hal-gitlab") {
-		if out, rmErr := exec.Command(engine, "rm", "-f", "hal-gitlab").CombinedOutput(); rmErr != nil {
-			fmt.Printf("⚠️  Failed to stop shared GitLab container: %s\n", strings.TrimSpace(string(out)))
-		} else {
-			fmt.Println("🧹 Stopped shared GitLab (no remaining shared-service consumers).")
-		}
-	}
-
-	_ = global.ClearSharedService(workspaceGitLabServiceID)
-	fmt.Printf("✅ Terraform VCS workflow disabled for target=%s.\n", target)
+	fmt.Printf("✅ Terraform VCS workflow disabled for target=%s (GitLab preserved).\n", target)
 }
 
 func ensureTFEWorkspace(orgName, projectID, repoIdentifier string) (string, error) {
@@ -804,7 +797,7 @@ resource "null_resource" "hello" {
 }
 `
 
-	gitlabCI := `image: hashicorp/terraform:1.9
+	gitlabCI := `image: hashicorp/terraform:1.15
 
 stages:
   - validate
@@ -858,18 +851,10 @@ terraform-validate:
 }
 
 func workspaceSharedConsumerForTarget(target string) string {
-	return fmt.Sprintf("terraform-vcs-workflow-%s", target)
-}
-
-func isAnyTFERuntimeRunning(engine string) bool {
-	if global.IsContainerRunning(engine, tfeCoreContainer) {
-		return true
+	if target == tfeTargetTwin {
+		return global.GitLabConsumerVCSTwin
 	}
-	layout, err := buildTFETwinLayout()
-	if err != nil {
-		return false
-	}
-	return global.IsContainerRunning(engine, layout.CoreContainer)
+	return global.GitLabConsumerVCSPrimary
 }
 
 func configureWorkspaceTargetDefaults(cmd *cobra.Command, target string) error {
@@ -947,7 +932,7 @@ func init() {
 	_ = workspaceCmd.Flags().MarkHidden("disable")
 	_ = workspaceCmd.Flags().MarkHidden("update")
 	workspaceCmd.Flags().BoolVar(&workspaceAutoApprove, "auto-approve", false, "Skip interactive confirmation for destructive disable operations")
-	workspaceCmd.Flags().StringVar(&workspaceGitLabTag, "gitlab-tag", "18.10.1-ce.0", "GitLab CE container image tag used for shared Terraform workspace setup")
+	workspaceCmd.Flags().StringVar(&workspaceGitLabTag, "gitlab-tag", "18.11.9-ce.0", "GitLab CE container image tag used for shared Terraform workspace setup")
 	workspaceCmd.Flags().StringVar(&workspaceGitLabImage, "gitlab-image", "gitlab/gitlab-ce", "GitLab CE container image name used for shared Terraform workspace setup")
 	workspaceCmd.Flags().IntVar(&workspaceGitLabPort, "gitlab-port", 8080, "Host/container port for the shared GitLab service (override to avoid conflicts on 8080)")
 	workspaceCmd.Flags().StringVar(&workspaceGitLabPassword, "gitlab-root-password", "hal9000FTW", "Root password used to bootstrap GitLab when HAL starts it")

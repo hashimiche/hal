@@ -6,9 +6,45 @@ import (
 	"path/filepath"
 )
 
+const (
+	SharedGitLabServiceKey    = "gitlab"
+	SharedAuthentikServiceKey = "authentik-idp"
+
+	GitLabConsumerVaultJWT   = "vault-jwt"
+	GitLabConsumerVCSPrimary = "terraform-vcs-workflow-primary"
+	GitLabConsumerVCSTwin    = "terraform-vcs-workflow-twin"
+
+	AuthentikConsumerTFESAMLPrimary = "tfe-saml"
+	AuthentikConsumerTFESAMLTwin    = "tfe-bis-saml"
+
+	tfePrimaryRuntimeContainer = "hal-tfe"
+	tfeTwinRuntimeContainer    = "hal-tfe-bis"
+)
+
+// tfeBackedSharedConsumers are feature registrations that only make sense while
+// the matching TFE runtime is up. Product delete must drop them; otherwise a
+// later vault jwt disable / vcs disable treats a dead TFE as a live owner of
+// shared GitLab or Authentik.
+var tfeBackedSharedConsumers = []struct {
+	Service   string
+	Consumer  string
+	Container string
+}{
+	{SharedGitLabServiceKey, GitLabConsumerVCSPrimary, tfePrimaryRuntimeContainer},
+	{SharedGitLabServiceKey, GitLabConsumerVCSTwin, tfeTwinRuntimeContainer},
+	{SharedAuthentikServiceKey, AuthentikConsumerTFESAMLPrimary, tfePrimaryRuntimeContainer},
+	{SharedAuthentikServiceKey, AuthentikConsumerTFESAMLTwin, tfeTwinRuntimeContainer},
+}
+
+// sharedServicesPathOverride is used by tests to avoid touching ~/.hal.
+var sharedServicesPathOverride string
+
 type sharedServicesState map[string][]string
 
 func sharedServicesPath() string {
+	if sharedServicesPathOverride != "" {
+		return sharedServicesPathOverride
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return ""
@@ -134,4 +170,29 @@ func ResetSharedServicesFile() {
 	if path != "" {
 		_ = os.Remove(path)
 	}
+}
+
+// IsTFERuntimeRunning reports whether any Terraform Enterprise core container
+// (primary or twin) is still up. Shared GitLab stays while this is true even
+// if the consumer registry is empty, so a VCS re-enable does not wait on boot.
+func IsTFERuntimeRunning(engine string) bool {
+	return IsContainerRunning(engine, tfePrimaryRuntimeContainer) ||
+		IsContainerRunning(engine, tfeTwinRuntimeContainer)
+}
+
+// PruneStaleTFEBackedSharedConsumers drops VCS/SAML consumer entries whose TFE
+// runtime container is gone. Returns the GitLab consumers that remain.
+func PruneStaleTFEBackedSharedConsumers(engine string) []string {
+	return pruneStaleTFEBackedConsumers(func(container string) bool {
+		return IsContainerRunning(engine, container)
+	})
+}
+
+func pruneStaleTFEBackedConsumers(alive func(container string) bool) []string {
+	for _, entry := range tfeBackedSharedConsumers {
+		if !alive(entry.Container) {
+			_, _ = RemoveSharedServiceConsumer(entry.Service, entry.Consumer)
+		}
+	}
+	return GetSharedServiceConsumers(SharedGitLabServiceKey)
 }

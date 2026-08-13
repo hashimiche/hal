@@ -18,5 +18,5 @@ const (
 
 	// --- Image / tag flag defaults ---
 	defaultConsulImage = "hashicorp/consul"
-	defaultConsulTag   = "1.15.0"
+	defaultConsulTag   = "2.0.3"
 )

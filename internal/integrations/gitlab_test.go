@@ -8,17 +8,17 @@ func TestImageLooksLikeBareTag(t *testing.T) {
 		want  bool
 	}{
 		// The exact reference that failed for a user: a version passed as image.
-		{"18.10.1-ce.0", true},
-		{"18.10.1-ce.0:latest", true},
+		{"18.11.9-ce.0", true},
+		{"18.11.9-ce.0:latest", true},
 		{"v1.2.3", true},
 		{"1.9", true},
 		// Valid full references must not be flagged.
-		{"gitlab/gitlab-ce:18.10.1-ce.0", false},
+		{"gitlab/gitlab-ce:18.11.9-ce.0", false},
 		{"gitlab/gitlab-ce", false},
-		{"registry.gitlab.com/gitlab-org/gitlab-ce:18.10.1-ce.0", false},
+		{"registry.gitlab.com/gitlab-org/gitlab-ce:18.11.9-ce.0", false},
 		{"nginx", false},
 		{"nginx:alpine", false},
-		{"redis:7-alpine", false},
+		{"redis:8-alpine", false},
 	}
 
 	for _, tc := range cases {

@@ -20,7 +20,7 @@ Deploy KinD and Vault Secrets Operator scenario for Kubernetes integration labs.
 -u, --update                     Reconcile cluster and VSO configuration
 -h, --help                       help for k8s
 --jwt                        Use the advanced jwt-k8s OIDC architecture (experimental)
---kind-node-image string     KinD node image used when creating the cluster (default "kindest/node:v1.31.1")
+--kind-node-image string     KinD node image used when creating the cluster (default "kindest/node:v1.36.1")
 --vso-chart-version string   Helm chart version for hashicorp/vault-secrets-operator (empty uses latest)
 --web-backend-image string   Demo backend container image (default "httpd:2.4-alpine")
 --web-proxy-image string     Demo reverse proxy container image (default "nginx:alpine")
@@ -29,6 +29,12 @@ Deploy KinD and Vault Secrets Operator scenario for Kubernetes integration labs.
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.
+- The shared KinD cluster is attached to `hal-net` via `ensureHALKindCluster()`: experimental kind network env vars plus an explicit `network connect` fallback so Vault can reach the Kubernetes API.
+- `kubernetes_host` and VSO `VaultConnection` addresses use the node's `hal-net` IP only (not a concatenated inspect of every attached NIC).
+
+## Troubleshooting
+- Status line `Active (Network: not on hal-net)` means the node is on the default `kind` network. Re-run `hal vault k8s enable` or `hal vault k8s update` to attach it; a cluster recreate is not required.
+- Token reviewer / VSO connection failures are usually the same network miss: Vault on `hal-net` cannot reach a node that only exists on `kind`.
 
 ## Example
 ```bash

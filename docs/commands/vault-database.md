@@ -40,7 +40,7 @@ Deploys the selected database backend and wires Vault's database secrets engine:
 ```text
 -b, --backend string               Database backend (mariadb, oracle; pgsql planned) (default "mariadb")
     --vault-mariadb-image string   MariaDB container image name (default "mariadb")
-    --vault-mariadb-tag string     MariaDB container image tag (default "11.4")
+    --vault-mariadb-tag string     MariaDB container image tag (default "11.8")
     --username-prefix string       Prefix for generated usernames e.g. "myapp" → "myapp-AbCdEfGhIj" (default "v")
     --oracle-image string          Oracle Database Free image (default "gvenzl/oracle-free")
     --oracle-tag string            Oracle Database Free tag (default "slim")
@@ -55,7 +55,7 @@ Deploys the selected database backend and wires Vault's database secrets engine:
 hal vault database enable
 
 # MariaDB with pinned image
-hal vault database enable --vault-mariadb-tag 11.4
+hal vault database enable --vault-mariadb-tag 11.8
 
 # Oracle (Enterprise only)
 hal vault database enable --backend oracle \
@@ -176,7 +176,7 @@ Setting both to the same value makes the lease **non-renewable**. When VSO tries
 
 ### --k8s flags
 ```text
---db-kind-node-image string    KinD node image (default "kindest/node:v1.31.1")
+--db-kind-node-image string    KinD node image (default "kindest/node:v1.36.1")
 --db-vso-chart-version string  Helm chart version for vault-secrets-operator (empty uses latest)
 --db-app-image string          Demo app container image name (default "httpd")
 --db-app-tag string            Demo app container image tag (default "2.4-alpine")
@@ -254,7 +254,7 @@ kubectl logs -n db-app -l app=hal-db-app --tail=20
 
 ### Shared KinD cluster
 
-The `--k8s` flag shares the same KinD cluster used by `hal vault k8s` and `hal vault pki --k8s`. Port mappings declared in the shared `writeHALKindConfig()`:
+The `--k8s` flag shares the same KinD cluster used by `hal vault k8s` and `hal vault pki --k8s`. Bring-up goes through `ensureHALKindCluster()` so the node is on `hal-net`. Port mappings declared in the shared `writeHALKindConfig()`:
 
 | Host port | KinD NodePort | Used by |
 |-----------|--------------|---------|
@@ -273,7 +273,7 @@ The `--k8s` flag shares the same KinD cluster used by `hal vault k8s` and `hal v
 - Mounts `database/` secrets engine in Vault
 - Writes `database/config/<container-name>` and `database/roles/<role-name>`
 - Rotates the broker account password — Vault holds exclusive ownership, it is not recoverable from outside Vault
-- `--k8s`: enables `kubernetes/` Vault auth mount, writes `db-app-read` policy and `db-app-role`
+- `--k8s`: enables dedicated `kubernetes-db/` Vault auth mount, writes `db-app-read` policy and `db-app-role`
 - `--k8s`: installs `vault-secrets-operator` Helm release in namespace `vso`
 - `--k8s`: creates namespace `db-app`, service account `db-app-sa`, and all VSO CRDs
 - `disable` tears down all of the above
@@ -289,14 +289,14 @@ Alias: hal vault db
 Flags:
   -b, --backend string               Database backend (mariadb, oracle; pgsql planned) (default "mariadb")
       --vault-mariadb-image string   MariaDB container image name (default "mariadb")
-      --vault-mariadb-tag string     MariaDB container image tag (default "11.4")
+      --vault-mariadb-tag string     MariaDB container image tag (default "11.8")
       --username-prefix string       Dynamic username prefix (default "v")
       --oracle-image string          Oracle Free image (default "gvenzl/oracle-free")
       --oracle-tag string            Oracle Free tag (default "slim")
       --oracle-plugin-path string    Path to vault-plugin-database-oracle binary
       --oracle-plugin-version string Plugin version to register (default "0.14.1+ent")
       --k8s                          Deploy KinD + VSO with VaultDynamicSecret rotation demo
-      --db-kind-node-image string    KinD node image for --k8s (default "kindest/node:v1.31.1")
+      --db-kind-node-image string    KinD node image for --k8s (default "kindest/node:v1.36.1")
       --db-vso-chart-version string  VSO Helm chart version for --k8s (empty = latest)
       --db-app-image string          Demo app image for --k8s (default "httpd")
       --db-app-tag string            Demo app tag for --k8s (default "2.4-alpine")

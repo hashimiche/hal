@@ -5,7 +5,7 @@
       "name": "--authentik-image string"
     },
     {
-      "description": "Authentik image tag (default \"2026.2.3\")",
+      "description": "Authentik image tag (default \"2026.5.6\")",
       "name": "--authentik-tag string"
     },
     {

@@ -17,7 +17,7 @@ Deploy a MariaDB database target for Boundary labs.
 - Command flags from `hal boundary mariadb --help`:
 ```text
 -h, --help                     help for mariadb
---mariadb-version string   Version (default "11.4")
+--mariadb-version string   Version (default "11.8")
 -u, --update                   Reconcile MariaDB target and Boundary target configuration
 --with-vault               Link with Vault Dynamic Creds
 ```

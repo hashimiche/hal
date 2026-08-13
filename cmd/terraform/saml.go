@@ -16,8 +16,8 @@ import (
 // ─── shared-service keys and slug helpers ─────────────────────────────────────
 
 const (
-	tfeSAMLSharedServiceKeyPrimary = "tfe-saml"
-	tfeSAMLSharedServiceKeyTwin    = "tfe-bis-saml"
+	tfeSAMLSharedServiceKeyPrimary = global.AuthentikConsumerTFESAMLPrimary
+	tfeSAMLSharedServiceKeyTwin    = global.AuthentikConsumerTFESAMLTwin
 )
 
 func tfeSAMLSharedServiceKey(target string) string {

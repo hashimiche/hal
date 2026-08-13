@@ -1166,7 +1166,7 @@ func componentContext(component string) (map[string]interface{}, []string, error
 			"component":         "terraform_agent",
 			"agent_container":   "hal-tfe-agent",
 			"default_pool_name": "hal-agent-pool",
-			"default_image":     "hashicorp/tfc-agent:1.28",
+			"default_image":     "hashicorp/tfc-agent:1.30",
 			"workflow":          "create/reuse agent pool, mint token, register local tfc-agent",
 		}, []string{"hal terraform agent", "hal terraform agent enable", "hal terraform agent disable", "hal terraform status"}, nil
 	case "terraform_api_workflow", "terraform_cli":

@@ -491,6 +491,8 @@ func destroyTFETwin(engine string, layout tfeTwinLayout) {
 		fmt.Println("✅ Twin Terraform Enterprise resources removed.")
 		fmt.Printf("ℹ️  Shared resources are preserved: hal-tfe-db (%s), hal-tfe-redis, hal-tfe-minio (%s).\n", tfeTwinDatabaseName, tfeTwinObjectStorageBucket)
 	}
+
+	releaseTFESharedServices(engine)
 }
 
 func ensureSharedTFEEcosystemRunning(engine string) error {

@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"hal/internal/global"
 )
 
 // GitLabContainerName is the shared singleton container HAL runs for every
@@ -159,12 +161,12 @@ func GitLabGet(urlStr, token string) ([]byte, error) {
 }
 
 // versionLikeName matches a reference component that looks like a bare version
-// tag (e.g. "18.10.1-ce.0", "v1.2.3") rather than an image repository.
+// tag (e.g. "18.11.9-ce.0", "v1.2.3") rather than an image repository.
 var versionLikeName = regexp.MustCompile(`^v?\d+([.\-][0-9A-Za-z.\-]+)*$`)
 
 // imageLooksLikeBareTag reports whether image is almost certainly a version tag
 // that was mistakenly passed as a full image reference (the classic
-// "18.10.1-ce.0" -> pulled as "18.10.1-ce.0:latest" failure).
+// "18.11.9-ce.0" -> pulled as "18.11.9-ce.0:latest" failure).
 func imageLooksLikeBareTag(image string) bool {
 	name := image
 	if i := strings.LastIndex(name, "@"); i >= 0 {
@@ -319,4 +321,28 @@ func EnsureSharedGitLab(engine, image, rootPassword string, requestedPort, waitS
 	}
 
 	return handle, nil
+}
+
+// StopSharedGitLabIfUnused removes hal-gitlab when no registry consumers remain
+// and no TFE runtime is still running. Stale TFE VCS/SAML consumers must be
+// pruned first via global.PruneStaleTFEBackedSharedConsumers.
+func StopSharedGitLabIfUnused(engine string) {
+	remaining := global.GetSharedServiceConsumers(global.SharedGitLabServiceKey)
+	if len(remaining) > 0 {
+		fmt.Printf("  ℹ️  Shared GitLab left running (still used by: %s)\n", strings.Join(remaining, ", "))
+		return
+	}
+	if global.IsTFERuntimeRunning(engine) {
+		fmt.Println("  ℹ️  Shared GitLab left running (a Terraform Enterprise runtime is still active)")
+		return
+	}
+
+	if global.IsContainerRunning(engine, GitLabContainerName) {
+		if out, rmErr := exec.Command(engine, "rm", "-f", GitLabContainerName).CombinedOutput(); rmErr != nil {
+			fmt.Printf("⚠️  Failed to remove shared GitLab: %s\n", strings.TrimSpace(string(out)))
+			return
+		}
+		fmt.Println("  🧹 Stopped shared GitLab (no remaining consumers).")
+	}
+	_ = global.ClearSharedService(global.SharedGitLabServiceKey)
 }

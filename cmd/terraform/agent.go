@@ -18,7 +18,7 @@ import (
 const (
 	tfeAgentPrimaryContainer   = "hal-tfe-agent"
 	tfeAgentTwinContainer      = "hal-tfe-bis-agent"
-	defaultTFEAgentImage       = "hashicorp/tfc-agent:1.28"
+	defaultTFEAgentImage       = "hashicorp/tfc-agent:1.30"
 	defaultTFEAgentPoolName    = "hal-agent-pool"
 	defaultTFETwinAgentPool    = "hal-agent-pool-bis"
 	defaultTFEAgentDisplayName = "hal-tfc-agent"

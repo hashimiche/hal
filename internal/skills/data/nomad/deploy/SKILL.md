@@ -11,7 +11,7 @@ Handle hal nomad create requests with a stable lifecycle pattern.
 
 ## Primary Command
 
-- hal nomad create --ubuntu-image 22.04 --version 1.11.3 --cpus 2 --mem 2G
+- hal nomad create --ubuntu-image 24.04 --version 2.0.3 --cpus 2 --mem 2G
 
 ## Validation
 

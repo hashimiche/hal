@@ -6,7 +6,7 @@ User: Deploy Consul in this lab and confirm it is healthy.
 
 Assistant:
 
-    hal consul create --version 1.15.0
+    hal consul create --version 2.0.3
     hal consul status
 
 Assistant: I summarize whether the server and UI endpoint are reachable, then provide the next command to continue with dependent services.

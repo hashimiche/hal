@@ -76,7 +76,7 @@ Then use the correct lifecycle command:
 
 Flags:
 - `--authentik-image` — override image (default: `ghcr.io/goauthentik/server`)
-- `--authentik-tag` — override tag (default: `2026.2.3`)
+- `--authentik-tag` — override tag (default: `2026.5.6`)
 - `--scim` — [Vault Enterprise] configure Authentik outbound SCIM provisioning to Vault
 
 ### Step 2: Enrich with Vault MCP Context
@@ -124,6 +124,7 @@ Provide a brief confirmation that the OIDC auth method is enabled.
 5. **First boot appears stuck at "Waiting for Authentik scope mappings":** Token readiness and scope readiness are separate. The worker can need another 1-3 minutes to apply default blueprints that create `openid`, `profile`, and `email`. HAL now waits up to 180 seconds and prints progress as scopes appear.
 6. **User asks about Authentik admin password:** Reveal it with `hal vault oidc status` or `hal creds status`; it is also stored in `~/.hal/authentik/env` (field `AUTHENTIK_BOOTSTRAP_PASSWORD`). Username is `akadmin`. (`hal vault oidc enable` no longer prints it — its summary shows only the alice/bob demo logins.)
 7. **"Expired or missing OAuth state" on second OIDC attempt:** Caused by the explicit-consent authorization flow orphaning the state. Fixed by using the implicit-consent flow. The `GetDefaultAuthorizationFlowPK` function now prefers slugs containing `implicit`.
-8. **SCIM group membership empty after adding a user:** This was a known gap in older Authentik (ManyToMany signals not firing). **Fixed in Authentik 2026.2.3+** — membership changes now auto-propagate. If you see stale membership with an older Authentik version, use `hal vault oidc update --scim --sync` to force a full re-sync.
-9. **SCIM returns 400/invalidValue for group PATCH:** Authentik without `compatibility_mode: aws` includes `"schemas"` inside PatchOp Operations array items, which Vault SCIM rejects. This is already set by `hal`. If syncing manually, ensure provider has compatibility mode enabled.
-10. **SCIM returns permission denied on group PATCH:** The `scim-client` Vault policy must include the `patch` capability. Vault 1.14+ treats HTTP PATCH as a separate capability from `update`.
+8. **"The callback from the provider did not supply all of the required parameters" and Vault never shows Authentik:** Authentik 2026.5+ added configurable `grant_types`. API-created providers default to an empty list, so `/authorize` immediately redirects back to Vault with `error=invalid_request` and no `code`. HAL now sets `authorization_code` (and `refresh_token`) on create/PATCH. Re-provision with `hal vault oidc update`.
+9. **SCIM group membership empty after adding a user:** This was a known gap in older Authentik (ManyToMany signals not firing). **Fixed in Authentik 2026.2.3+** — membership changes now auto-propagate. If you see stale membership with an older Authentik version, use `hal vault oidc update --scim --sync` to force a full re-sync.
+10. **SCIM returns 400/invalidValue for group PATCH:** Authentik without `compatibility_mode: aws` includes `"schemas"` inside PatchOp Operations array items, which Vault SCIM rejects. This is already set by `hal`. If syncing manually, ensure provider has compatibility mode enabled.
+11. **SCIM returns permission denied on group PATCH:** The `scim-client` Vault policy must include the `patch` capability. Vault 1.14+ treats HTTP PATCH as a separate capability from `update`.

@@ -31,9 +31,9 @@ Deploy the local Terraform Enterprise (TFE) stack for HAL labs.
 --minio-console-port int       Host port mapped to MinIO console container port 9001 (default 19001)
 --minio-version string         MinIO image tag for TFE object storage (default "latest")
 -p, --password string              TFE Encryption Password (default "hal-secret-encryption-password")
---pg-version string            PostgreSQL version for TFE backend (default "16")
+--pg-version string            PostgreSQL version for TFE backend (default "17-alpine")
 --proxy-nginx-version string   Nginx image tag for the TFE ingress proxy (default "alpine")
---redis-version string         Redis version for TFE background jobs (default "7")
+--redis-version string         Redis version for TFE background jobs (default "8-alpine")
 -t, --target string            Terraform scope to act on: primary, twin, or both (default "primary")
 --tfe-admin-email string       Initial TFE admin email used when bootstrapping via IACT (default "haladmin@localhost")
 --tfe-admin-password string    Initial TFE admin password used when bootstrapping via IACT (default "hal9000FTW")
@@ -56,8 +56,8 @@ Deploy the local Terraform Enterprise (TFE) stack for HAL labs.
 --twin-tfe-admin-username string    Initial twin TFE admin username used when bootstrapping via IACT (default "haladmin")
 --twin-tfe-org string               Terraform Enterprise organization name to auto-bootstrap for the twin instance (default "hal-bis")
 --twin-tfe-project string           Terraform Enterprise project name to auto-bootstrap for the twin instance (default "Dave-bis")
---twin-version string               Terraform Enterprise Docker image tag for the twin instance (default "1.2.0")
--v, --version string               Terraform Enterprise Docker image tag (default "1.2.0")
+--twin-version string               Terraform Enterprise Docker image tag for the twin instance (default "2.0.5")
+-v, --version string               Terraform Enterprise Docker image tag (default "2.0.5")
 ```
 - Global flags: `--debug`, `--dry-run`, `--verbose`
 

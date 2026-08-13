@@ -19,8 +19,8 @@ Deploy the local Boundary control plane and required services.
 -u, --update              Reconcile an existing Boundary deployment in place
 -h, --help                help for deploy
 -c, --join-consul         Tether Boundary to the global HAL Consul instance
---pg-version string   PostgreSQL version for Boundary backend (default "16")
--v, --version string      Boundary version to deploy (default "0.15.2")
+--pg-version string   PostgreSQL version for Boundary backend (default "17-alpine")
+-v, --version string      Boundary version to deploy (default "0.21.3")
 ```
 - Global flags: `--debug`, `--dry-run`, `--verbose`
 

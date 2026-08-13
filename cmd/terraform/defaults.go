@@ -71,11 +71,11 @@ const (
 	// --- Default backend images + tags (create flag defaults) ---
 	// The TFE core image is also reused by the twin lifecycle.
 	defaultTFEImage      = "images.releases.hashicorp.com/hashicorp/terraform-enterprise"
-	defaultTFETag        = "2.0.2"
+	defaultTFETag        = "2.0.5"
 	defaultTFEPGImage    = "postgres"
-	defaultTFEPGTag      = "16-alpine"
+	defaultTFEPGTag      = "17-alpine"
 	defaultTFERedisImage = "redis"
-	defaultTFERedisTag   = "7-alpine"
+	defaultTFERedisTag   = "8-alpine"
 	defaultTFEMinioImage = "minio/minio"
 	defaultTFEMinioTag   = "latest"
 	defaultTFEProxyImage = "nginx"

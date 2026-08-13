@@ -25,7 +25,6 @@ package vault
 import (
 	"encoding/base64"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -49,36 +48,9 @@ func enableDatabaseVSO(engine string, client *vault.Client, backend, roleName st
 	}
 
 	// ---- KinD cluster ----
-	clusterOut, _ := exec.Command("kind", "get", "clusters").Output()
-	if strings.Contains(string(clusterOut), "kind") {
-		fmt.Println("⚡ KinD cluster already running — skipping boot sequence...")
-	} else {
-		fmt.Println("🚀 Booting KinD cluster for database VSO demo...")
-		kindConfigPath, cfgErr := writeHALKindConfig()
-		if cfgErr != nil {
-			fmt.Printf("❌ Failed to prepare KinD config: %v\n", cfgErr)
-			return
-		}
-		defer func() { _ = os.Remove(kindConfigPath) }()
-
-		startCmd := exec.Command("kind", "create", "cluster", "--config", kindConfigPath)
-		if strings.TrimSpace(dbVSOKindNodeImage) != "" {
-			startCmd.Args = append(startCmd.Args, "--image", dbVSOKindNodeImage)
-		}
-		env := os.Environ()
-		isPodman := strings.Contains(engine, "podman")
-		if isPodman {
-			env = append(env, "KIND_EXPERIMENTAL_PROVIDER=podman")
-		}
-		env = append(env, "KIND_EXPERIMENTAL_DOCKER_NETWORK="+global.HalNetName)
-		startCmd.Env = env
-		startCmd.Stdout = os.Stdout
-		startCmd.Stderr = os.Stderr
-
-		if err := startCmd.Run(); err != nil {
-			fmt.Printf("❌ Failed to start KinD: %v\n", err)
-			return
-		}
+	if err := ensureHALKindCluster(engine, dbVSOKindNodeImage); err != nil {
+		fmt.Printf("❌ %v\n", err)
+		return
 	}
 
 	// ---- Namespaces ----
@@ -102,13 +74,7 @@ func enableDatabaseVSO(engine string, client *vault.Client, backend, roleName st
 		"vault-reviewer", "-n", "default", "--duration=87600h").Output()
 	reviewerToken := strings.TrimSpace(string(tokenOut))
 
-	kindIPOut, _ := exec.Command(engine, "inspect",
-		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-		"kind-control-plane").Output()
-	kindIP := strings.TrimSpace(string(kindIPOut))
-	if kindIP == "" {
-		kindIP = "kind-control-plane"
-	}
+	kindIP := containerIPOnHalNetOrName(engine, kindControlPlaneName)
 
 	fmt.Printf("⚙️  Enabling dedicated Kubernetes auth engine at %s/ on Vault...\n", dbVSOAuthMount)
 	_ = client.Sys().EnableAuthWithOptions(dbVSOAuthMount, &vault.EnableAuthOptions{Type: "kubernetes"})
@@ -177,13 +143,7 @@ path "sys/license/status"  { capabilities = ["read"] }
 	time.Sleep(5 * time.Second)
 
 	// ---- Resolve vault IP inside hal-net ----
-	vaultIPOut, _ := exec.Command(engine, "inspect",
-		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-		vaultContainer).Output()
-	vaultIP := strings.TrimSpace(string(vaultIPOut))
-	if vaultIP == "" {
-		vaultIP = vaultContainer
-	}
+	vaultIP := containerIPOnHalNetOrName(engine, vaultContainer)
 
 	// ---- Service account ----
 	_ = exec.Command("kubectl", "create", "sa", dbVSOSAName, "-n", dbVSONS).Run()

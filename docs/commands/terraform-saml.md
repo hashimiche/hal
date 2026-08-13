@@ -21,7 +21,7 @@ With `--scim`, also wire Authentik outbound SCIM to provision users and teams in
 ```text
 -h, --help                        help for saml
     --authentik-image string      Authentik container image (default "ghcr.io/goauthentik/server")
-    --authentik-tag string        Authentik image tag (default "2026.2.3")
+    --authentik-tag string        Authentik image tag (default "2026.5.6")
     --scim                        Also configure SCIM provisioning from Authentik to TFE
     --sync                        With --scim: re-push all group membership without full re-provision
 -t, --target string               TFE instance scope: primary or twin (default "primary")

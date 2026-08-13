@@ -17,7 +17,7 @@
       "name": "--jwt"
     },
     {
-      "description": "KinD node image used when creating the cluster (default \"kindest/node:v1.31.1\")",
+      "description": "KinD node image used when creating the cluster (default \"kindest/node:v1.36.1\")",
       "name": "--kind-node-image string"
     },
     {

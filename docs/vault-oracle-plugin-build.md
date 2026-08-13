@@ -139,4 +139,4 @@ hal vault database enable --backend oracle \
 | arm64 Instant Client | https://www.oracle.com/database/technologies/instant-client/linux-arm-aarch64-downloads.html | `23.26.2.0.0` |
 | Go version (for source build) | https://github.com/hashicorp/vault-plugin-database-oracle/blob/main/.go-version | `1.23.6` |
 | Oracle Free image | https://hub.docker.com/r/gvenzl/oracle-free/tags | `gvenzl/oracle-free:slim` |
-| Vault Enterprise image | https://hub.docker.com/r/hashicorp/vault-enterprise/tags | `2.0.1-ent` |
+| Vault Enterprise image | https://hub.docker.com/r/hashicorp/vault-enterprise/tags | `2.0.4-ent` |

@@ -73,19 +73,19 @@ const (
 	// --- Image / tag flag defaults ---
 	defaultVaultImageCE     = "hashicorp/vault"
 	defaultVaultImageEnt    = "hashicorp/vault-enterprise"
-	defaultVaultTag         = "2.0.1"
-	defaultVaultEntTag      = "2.0.1-ent"
+	defaultVaultTag         = "2.0.4"
+	defaultVaultEntTag      = "2.0.4-ent"
 	defaultVaultEdition     = "ce"
 	defaultVaultHelperImage = "alpine"
-	defaultVaultHelperTag   = "3.22"
+	defaultVaultHelperTag   = "3.24"
 
 	defaultVaultMariaDBImage = "mariadb"
-	defaultVaultMariaDBTag   = "11.4"
+	defaultVaultMariaDBTag   = "11.8"
 
 	defaultOpenLDAPTag     = "1.5.0"
 	defaultPHPLDAPAdminTag = "0.9.0"
 
-	defaultVaultOSUbuntuImage = "22.04"
+	defaultVaultOSUbuntuImage = "24.04"
 	defaultVaultOSVMCPUs      = "1"
 	defaultVaultOSVMMem       = "1G"
 

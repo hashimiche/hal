@@ -32,7 +32,7 @@ Flags:
 |---|---|---|
 | `--scim` | `false` | [Vault Enterprise] Also configure SCIM provisioning from Authentik |
 | `--authentik-image` | `ghcr.io/goauthentik/server` | Authentik image name |
-| `--authentik-tag` | `2026.2.3` | Authentik image tag |
+| `--authentik-tag` | `2026.5.6` | Authentik image tag |
 
 ---
 
@@ -42,7 +42,7 @@ Flags:
 
 | Container | Image | Role |
 |---|---|---|
-| `hal-authentik-pg` | `docker.io/library/postgres:16-alpine` | Authentik database |
+| `hal-authentik-pg` | `docker.io/library/postgres:17-alpine` | Authentik database |
 | `hal-authentik-server` | `ghcr.io/goauthentik/server:<tag>` | Authentik API + UI (cmd: `server`) |
 | `hal-authentik-worker` | `ghcr.io/goauthentik/server:<tag>` | Celery background tasks (cmd: `worker`) |
 
@@ -114,6 +114,7 @@ These endpoints changed and broke against the original implementation:
 Additional required fields added in 2024.x:
 
 - `POST /api/v3/providers/oauth2/` now requires **`invalidation_flow`** in addition to `authorization_flow`. Use `GetDefaultInvalidationFlowPK()` which prefers the `default-provider-invalidation-flow` slug.
+- Authentik 2026.5+ added configurable **`grant_types`**. The API/model default is an empty list (the admin UI still auto-selects all types). HAL must send `grant_types: ["authorization_code", "refresh_token"]` on create and PATCH. An empty list makes `/authorize` redirect back to Vault with `error=invalid_request` and no `code`, which the Vault UI reports as "The callback from the provider did not supply all of the required parameters".
 
 Removed defaults:
 
@@ -276,7 +277,7 @@ Flags:
 | `--tfe-org` | `hal-org` | TFE organization name |
 | `--tfe-token` | _(auto)_ | TFE admin API token (auto-bootstrapped if omitted) |
 | `--authentik-image` | `ghcr.io/goauthentik/server` | Authentik image |
-| `--authentik-tag` | `2026.2.3` | Authentik tag |
+| `--authentik-tag` | `2026.5.6` | Authentik tag |
 
 ### URLs (defaults)
 

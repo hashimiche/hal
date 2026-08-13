@@ -19,7 +19,7 @@ Deploy Prometheus, Loki, Grafana, and Promtail stack components.
 -u, --update                    Reconcile an existing observability stack in place
 --grafana-version string    Tag for the grafana/grafana image (default "main")
 -h, --help                      help for deploy
---loki-version string       Tag for the grafana/loki image (default "3.7")
+--loki-version string       Tag for the grafana/loki image (default "3.8")
 --prom-version string       Tag for the prom/prometheus image (default "main")
 --promtail-version string   Tag for the grafana/promtail image (default "3.6")
 ```

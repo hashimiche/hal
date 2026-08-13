@@ -20,7 +20,7 @@ const (
 
 	// --- Image / tag flag defaults ---
 	defaultLokiImage     = "grafana/loki"
-	defaultLokiTag       = "3.7"
+	defaultLokiTag       = "3.8"
 	defaultGrafanaImage  = "grafana/grafana"
 	defaultGrafanaTag    = "main"
 	defaultPromImage     = "prom/prometheus"

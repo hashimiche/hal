@@ -151,13 +151,13 @@ hal vault create --mode prod              # real `server -config`, integrated Ra
 ```bash
 # OIDC auth method (deploys Authentik as the IdP)
 hal vault oidc enable
-hal vault oidc enable --authentik-tag 2026.2.3  # pin the image tag
+hal vault oidc enable --authentik-tag 2026.5.6  # pin the image tag
 hal vault oidc enable --scim                     # also configure SCIM (Vault Enterprise only)
 hal vault oidc update
 hal vault oidc disable
 
 # JWT auth method (deploys GitLab CE as the OIDC provider)
-hal vault jwt enable --gitlab-tag 18.10.1-ce.0
+hal vault jwt enable --gitlab-tag 18.11.9-ce.0
 hal vault jwt enable --gitlab-port 8929   # if host port 8080 is taken (shared with terraform vcs-workflow)
 
 # AAP JWT/OIDC org-mapped auth setup (starts AAP container + configures OIDC)
@@ -166,7 +166,7 @@ hal vault aap update
 hal vault aap disable
 
 # Database secrets engine (MariaDB backend — only supported backend today)
-hal vault database enable --backend mariadb --vault-mariadb-tag 11.4
+hal vault database enable --backend mariadb --vault-mariadb-tag 11.8
 hal vault database enable --backend oracle \
   --oracle-plugin-path /path/to/vault-plugin-database-oracle   # Enterprise only — see docs/vault-oracle-plugin-build.md
 
@@ -181,7 +181,7 @@ hal vault ldap enable --openldap-version 1.5.0 --phpldapadmin-version 0.9.0
 
 # Kubernetes auth + Vault Secrets Operator (KinD cluster)
 hal vault k8s enable \
-  --kind-node-image kindest/node:v1.31.1 \
+  --kind-node-image kindest/node:v1.36.1 \
   --vso-chart-version 0.8.1 \
   --vault-k8s-web-backend-image httpd --vault-k8s-web-backend-tag 2.4-alpine \
   --vault-k8s-web-proxy-image nginx --vault-k8s-web-proxy-tag alpine
@@ -226,18 +226,18 @@ The demo app is reachable at http://web.localhost:8088 — no `kubectl port-forw
 ### Boundary (`hal boundary`)
 
 ```bash
-hal boundary create --boundary-tag 0.15.2
+hal boundary create --boundary-tag 0.21.3
 hal boundary status
 hal boundary delete
 
 # SSH target VM (Multipass)
-hal boundary ssh enable --ubuntu-image 22.04 --cpus 1 --mem 512M
+hal boundary ssh enable --ubuntu-image 24.04 --cpus 1 --mem 512M
 hal boundary ssh update
 hal boundary ssh disable
 
 # MariaDB target
-hal boundary mariadb enable --boundary-mariadb-tag 11.4
-hal boundary mariadb enable --boundary-mariadb-tag 11.4 --with-vault    # link Vault dynamic creds
+hal boundary mariadb enable --boundary-mariadb-tag 11.8
+hal boundary mariadb enable --boundary-mariadb-tag 11.8 --with-vault    # link Vault dynamic creds
 hal boundary mariadb disable
 
 # Observability
@@ -250,7 +250,7 @@ hal boundary obs delete
 ### Consul (`hal consul`)
 
 ```bash
-hal consul create --consul-tag 1.15.0
+hal consul create --consul-tag 2.0.3
 hal consul status
 hal consul delete
 
@@ -275,7 +275,7 @@ hal vault aap disable
 ### Nomad (`hal nomad`)
 
 ```bash
-hal nomad create --ubuntu-image 22.04 --nomad-version 1.11.3 --cpus 2 --mem 2G
+hal nomad create --ubuntu-image 24.04 --nomad-version 2.0.3 --cpus 2 --mem 2G
 hal nomad status
 hal nomad delete
 
@@ -291,9 +291,9 @@ hal nomad obs delete
 
 ```bash
 hal terraform create \
-  --tfe-tag 1.2.0 \
-  --tfe-pg-tag 16-alpine \
-  --tfe-redis-tag 7-alpine \
+  --tfe-tag 2.0.5 \
+  --tfe-pg-tag 17-alpine \
+  --tfe-redis-tag 8-alpine \
   --tfe-minio-tag latest \
   --minio-api-port 19000 \
   --minio-console-port 19001 \
@@ -307,7 +307,7 @@ hal terraform delete
 **Twin TFE instance** — reuses the primary ecosystem (PostgreSQL, Redis, MinIO)
 
 ```bash
-hal terraform create --target twin --twin-tag 1.2.0
+hal terraform create --target twin --twin-tag 2.0.5
 hal terraform status --target twin
 hal terraform update --target twin
 hal terraform delete --target twin
@@ -318,7 +318,7 @@ hal terraform delete --target twin
 ```bash
 # VCS-driven workspace workflow (local GitLab integration)
 hal terraform vcs-workflow enable
-hal terraform vcs-workflow enable --gitlab-image gitlab/gitlab-ce --gitlab-tag 18.10.1-ce.0
+hal terraform vcs-workflow enable --gitlab-image gitlab/gitlab-ce --gitlab-tag 18.11.9-ce.0
 hal terraform vcs-workflow enable --gitlab-port 8929   # if host port 8080 is taken
 hal terraform vcs-workflow update
 hal terraform vcs-workflow disable
@@ -363,7 +363,7 @@ Deploys a PLG stack (Prometheus, Loki, Grafana, Promtail) on `hal-net` with pre-
 ```bash
 hal obs create                  # deploy with default image tags
 hal obs create \
-  --loki-tag 3.7 \
+  --loki-tag 3.8 \
   --grafana-tag main \
   --prometheus-tag main \
   --promtail-tag 3.6
@@ -376,7 +376,7 @@ hal obs delete
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--loki-tag` | `3.7` | Tag for the Loki image |
+| `--loki-tag` | `3.8` | Tag for the Loki image |
 | `--loki-image` | `grafana/loki` | Loki image name |
 | `--grafana-tag` | `main` | Tag for the Grafana image |
 | `--grafana-image` | `grafana/grafana` | Grafana image name |
@@ -508,9 +508,9 @@ HAL uses environment variables and Docker/Podman networking — there is no conf
 
 - **macOS-first.** HAL is primarily developed and tested on macOS. Linux support is best-effort. Windows is not supported.
 - **Docker or Podman must be running** before any `create` command. HAL auto-detects the engine by probing `docker info` then `podman info` — whichever responds is used. No alias is needed. HAL will error early if neither engine is reachable.
-- **`hal vault k8s`** requires KinD, kubectl, and helm to be on your `$PATH`. The KinD cluster is created on demand and removed on `disable`.
+- **`hal vault k8s`** requires KinD, kubectl, and helm to be on your `$PATH`. The KinD cluster is created on demand, attached to `hal-net`, and removed on `disable`. If status reports `not on hal-net`, re-run `enable`/`update` to attach the node.
 - **`hal nomad` and `hal boundary ssh`** require Multipass. The Ubuntu VM is provisioned and torn down as part of the lifecycle.
-- **`hal delete`** (global teardown) removes all HAL-managed containers, volumes, VMs, and the `hal-net` Docker network. There is a confirmation prompt but the action is not reversible. If `hal-net` cannot be removed (non-HAL containers still attached), the command exits with an error listing the blockers.
+- **`hal delete`** (global teardown) removes all HAL-managed containers, volumes, VMs, KinD nodes, and the `hal-net` Docker network. There is a confirmation prompt but the action is not reversible. If `hal-net` cannot be removed (non-HAL containers still attached), the command exits with an error listing the blockers. KinD discovery does not require a working `kind get clusters` (Podman 6 + older kind CLIs).
 - **TFE requires a valid license.** `hal terraform create` expects a Terraform Enterprise license to be in place. The stack will start but TFE itself will not activate without one.
 - **Vault Enterprise prod mode requires a license.** `hal vault create --mode prod` needs `VAULT_LICENSE` (or `VAULT_LICENSE_PATH`) and will not boot without one. It serves HTTPS with a self-signed cert — accept the browser warning, or set `VAULT_CACERT=~/.hal/vault-prod/certs/cert.pem` for the CLI. The saved unseal key + root token in `~/.hal/vault-prod/init.json` are the **only** copy; losing that file leaves a sealed, unrecoverable Vault. Feature integrations that embed URLs into Vault (OIDC callbacks, PKI AIA/CRL, the OS plugin register) are currently validated against **dev mode**; enabling them against a prod (TLS) instance may need manual URL adjustment.
 - **CSI mode for `hal vault k8s`** requires a Vault Enterprise binary. HAL will detect the edition at runtime and fall back to native mode automatically.

@@ -26,7 +26,7 @@ hal obs delete
 
 ```
 hal obs create \
-  --loki-version 3.7 \
+  --loki-version 3.8 \
   --grafana-version main \
   --prom-version main \
   --promtail-version 3.6

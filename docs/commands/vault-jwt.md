@@ -18,7 +18,7 @@ Simulate enterprise Secret Zero CI/CD pipeline auth flow with GitLab JWT.
 ```text
 -u, --update                 Reconcile GitLab and Vault JWT integration settings
 --gitlab-image string        GitLab CE container image name (default "gitlab/gitlab-ce")
---gitlab-tag string          GitLab CE container image tag (default "18.10.1-ce.0")
+--gitlab-tag string          GitLab CE container image tag (default "18.11.9-ce.0")
 --gitlab-port int            Host/container port for the shared GitLab service (default 8080)
 -h, --help                   help for jwt
 ```
