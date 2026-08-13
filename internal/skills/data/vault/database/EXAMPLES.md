@@ -30,3 +30,13 @@ User: Reset the Vault database secrets lab.
 Assistant:
 
     hal vault database update
+
+## Example 4: KinD + VSO Live Rotation
+
+User: Show database credentials rotating inside Kubernetes.
+
+Assistant:
+
+    hal vault database enable --k8s
+
+Assistant: The demo is at `http://db.localhost:8091`. Auth lives on `kubernetes-db/`, not `kubernetes/`. The KinD node is attached to `hal-net` so VSO can reach Vault.

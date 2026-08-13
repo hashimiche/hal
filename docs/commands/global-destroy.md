@@ -23,6 +23,9 @@ Destroy all HAL-managed infrastructure globally.
 6. HAL MCP config, PID file, and managed binary
 7. The `hal-net` Docker/Podman network (removed after all containers are gone)
 
+## KinD discovery
+`kind get clusters` on Podman 6+ can fail because older kind CLIs use `{{index .Labels "io.x-k8s.kind.cluster"}}` and Podman 6 stores Labels as a slice. Teardown lists clusters with `{{.Label "io.x-k8s.kind.cluster"}}` instead and always force-removes leftover node containers. That template error is not a teardown warning.
+
 ## Output statuses
 Each cleanup step reports one of three statuses:
 - `cleaned` — resource existed and was removed

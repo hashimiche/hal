@@ -221,6 +221,14 @@ than invoking `kind create` directly. That helper:
 3. Resolves container IPs from the `hal-net` NIC only. Inspecting every attached
    network concatenates addresses when the node is dual-homed (`kind` + `hal-net`).
 
+### Teardown discovery
+`hal delete` / `hal daisy` must not depend on `kind get clusters` succeeding.
+Older kind CLIs index `.Labels` as a map; Podman 6 stores Labels as a slice, so
+that command fails with `cannot index slice/array with type string`. Teardown
+lists cluster names with `{{.Label "io.x-k8s.kind.cluster"}}`, always
+force-removes leftover `kind-control-plane` nodes, and does not warn for that
+known template error.
+
 
 ## Migration Policy
 

@@ -36,7 +36,7 @@
   - Spec: [vault-jwt.md](vault-jwt.md)
 
 - `hal vault k8s`
-  - Deploy KinD and Vault Secrets Operator scenario
+  - Deploy KinD (on `hal-net`) and Vault Secrets Operator scenario
   - Spec: [vault-k8s.md](vault-k8s.md)
 
 - `hal vault ldap`

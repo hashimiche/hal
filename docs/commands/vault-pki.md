@@ -79,7 +79,7 @@ When `--k8s` is passed to `enable` or `update`, the following additional steps r
 
 | Step | What happens |
 |------|-------------|
-| 1 | Reuse existing KinD cluster or create a new one (NodePort 30082 → host port 80) |
+| 1 | Reuse or create the shared KinD cluster on `hal-net` via `ensureHALKindCluster()` (NodePort 30082 → host 8089) |
 | 2 | Deploy cert-manager via Jetstack OCI chart (`oci://quay.io/jetstack/charts/cert-manager`) with CRDs, `webhook.hostNetwork=true`, and `webhook.securePort=10260` |
 | 3 | Enable dedicated Vault Kubernetes auth at `kubernetes-pki/` (always fresh, never shared with `kubernetes/`) |
 | 4 | Configure `vault-reviewer` SA and `cert-manager-vault` SA |
@@ -208,7 +208,7 @@ When `--acme` is passed, the following additional steps run after PKI CA setup:
 |------|--------------|
 | 1 | Vault ACME endpoint enabled (`pki-int/config/acme`, `max_ttl` = `acme-cert-ttl`) |
 | 2 | Role `acme-demo` created/updated: `allow_any_name=true`, `ttl`/`max_ttl` = `acme-cert-ttl` |
-| 3 | Reuse existing KinD cluster or create a new one (all 3 port mappings declared upfront via shared `writeHALKindConfig()`) |
+| 3 | Reuse or create the shared KinD cluster on `hal-net` via `ensureHALKindCluster()` (all port mappings declared upfront via shared `writeHALKindConfig()`) |
 | 4 | `fetch-ca` init container downloads Vault Root CA PEM from `pki-int/ca/pem` |
 | 5 | `build-page` init container writes live countdown HTML page to `/srv` |
 | 6 | Caddy main container: `apk add openssl`, `caddy start`, then watches `/data/caddy/certificates` for cert changes, writes `cert-info.txt` + `cert-pem.txt` to `/srv` |

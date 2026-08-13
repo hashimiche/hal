@@ -78,6 +78,9 @@ sent back. The PR template has a checklist to help you catch this.
   sensible default.
 - **Reuse shared runtime helpers** in `internal/global` (engine detection,
   `hal-net` management, `HalNetStaticIP`) instead of open-coding them.
+- **Shared KinD:** `--k8s` enable paths must call `ensureHALKindCluster()` so
+  nodes join `hal-net`. Do not invoke `kind create` directly. See
+  `docs/cli-lifecycle-model.md`.
 
 ## Commit and PR discipline
 

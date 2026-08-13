@@ -254,7 +254,7 @@ kubectl logs -n db-app -l app=hal-db-app --tail=20
 
 ### Shared KinD cluster
 
-The `--k8s` flag shares the same KinD cluster used by `hal vault k8s` and `hal vault pki --k8s`. Port mappings declared in the shared `writeHALKindConfig()`:
+The `--k8s` flag shares the same KinD cluster used by `hal vault k8s` and `hal vault pki --k8s`. Bring-up goes through `ensureHALKindCluster()` so the node is on `hal-net`. Port mappings declared in the shared `writeHALKindConfig()`:
 
 | Host port | KinD NodePort | Used by |
 |-----------|--------------|---------|
@@ -273,7 +273,7 @@ The `--k8s` flag shares the same KinD cluster used by `hal vault k8s` and `hal v
 - Mounts `database/` secrets engine in Vault
 - Writes `database/config/<container-name>` and `database/roles/<role-name>`
 - Rotates the broker account password — Vault holds exclusive ownership, it is not recoverable from outside Vault
-- `--k8s`: enables `kubernetes/` Vault auth mount, writes `db-app-read` policy and `db-app-role`
+- `--k8s`: enables dedicated `kubernetes-db/` Vault auth mount, writes `db-app-read` policy and `db-app-role`
 - `--k8s`: installs `vault-secrets-operator` Helm release in namespace `vso`
 - `--k8s`: creates namespace `db-app`, service account `db-app-sa`, and all VSO CRDs
 - `disable` tears down all of the above

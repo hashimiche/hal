@@ -1,6 +1,6 @@
 ---
 name: database
-description: Deploy, verify, and troubleshoot the Vault database secrets lab in hal. Use this skill when the user asks to enable the database secrets engine, generate dynamic DB credentials, debug database leases, rotate the root connection, or reset the local database demo. Triggers include "enable database", "dynamic db credentials", "Vault database engine", "rotate root", and "hal vault database".
+description: Deploy, verify, and troubleshoot the Vault database secrets lab in hal. Use this skill when the user asks to enable the database secrets engine, generate dynamic DB credentials, debug database leases, rotate the root connection, run the KinD + VSO VaultDynamicSecret demo, or reset the local database demo. Triggers include "enable database", "dynamic db credentials", "Vault database engine", "rotate root", "database --k8s", "VaultDynamicSecret", and "hal vault database".
 ---
 
 # Hal Vault Database Configurator
@@ -22,6 +22,13 @@ This skill covers the local Vault database secrets engine lab implemented by `ha
 - Root connection user initially created: `vaultadmin`
 - Vault rotates the `vaultadmin` password so it becomes Vault-owned
 
+### `--k8s` mode (adds KinD + VSO VaultDynamicSecret demo)
+
+- Shared KinD cluster on `hal-net` via `ensureHALKindCluster()` (port `30084` → host `8091`)
+- Dedicated Vault Kubernetes auth mount: `kubernetes-db/` (never `kubernetes/`)
+- Vault Secrets Operator + `VaultDynamicSecret` writing rotating DB creds into a Kubernetes Secret
+- Demo app at `http://db.localhost:8091` (15s TTL, non-renewable leases so each cycle mints a new username/password)
+
 ## Workflow
 
 ### Step 1: Choose the lifecycle action
@@ -33,8 +40,10 @@ Use smart status mode if needed:
 Then use the correct lifecycle command:
 
     hal vault database enable --backend mariadb --mariadb-version 11.8
+    hal vault database enable --k8s
     hal vault database update
     hal vault database disable
+    hal vault database disable --k8s
 
 ### Step 2: Enrich with Vault MCP Context
 
@@ -75,3 +84,4 @@ Provide a brief confirmation that the database is running and the engine is moun
 2. **Port conflicts:** If Docker fails to bind `3306` or `5432`, advise the user to stop local DB services using those ports.
 3. **Dangling leases prevent cleanup:** Explain that the code force-revokes `database/` leases during teardown.
 4. **User wants to change SQL statements or TTLs after deployment:** Provide exact `vault write database/roles/dba-role ...` commands rather than suggesting Go edits.
+5. **VSO cannot reach Vault / KinD not on `hal-net`:** Re-run `hal vault database enable --k8s` (or `update --k8s`) so `ensureHALKindCluster()` attaches `kind-control-plane` to `hal-net`. Do not tell the user to recreate the cluster unless the port map is stale.

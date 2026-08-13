@@ -17,7 +17,7 @@ This skill covers the KinD + Vault Secrets Operator lab implemented by `hal vaul
 
 ## What The Command Actually Sets Up
 
-- KinD cluster attached to `hal-net`
+- KinD cluster attached to `hal-net` via `ensureHALKindCluster()` (sets `KIND_EXPERIMENTAL_DOCKER_NETWORK` and `KIND_EXPERIMENTAL_PODMAN_NETWORK`, then `network connect`s the node if a newer kind CLI still placed it on the default `kind` network)
 - `vso` and `app1` namespaces
 - KV mount: `kv-k8s/`
 - Policy: `app1-read`
@@ -93,6 +93,6 @@ Provide a brief confirmation that KinD, VSO, and Vault auth are configured, incl
 ## Handling Edge Cases
 
 1. **Missing local dependencies:** If `kind`, `kubectl`, or `helm` is not installed, say so explicitly.
-2. **Token reviewer errors:** Explain that Vault must be able to reach the KinD API endpoint and validate service account tokens.
+2. **Token reviewer errors / VSO cannot reach Vault:** Vault and the KinD node must share `hal-net`. `hal vault k8s` status reports `Active (Network: not on hal-net)` when the node is off the HAL network. Re-run `hal vault k8s enable` or `hal vault k8s update` — that attaches `kind-control-plane` without requiring a cluster recreate.
 3. **CSI requested on OSS Vault:** Explain that the code downgrades to standard native sync if Vault Enterprise is not detected.
 4. **User wants to tune roles after deployment:** Provide exact `vault write auth/kubernetes/role/...` commands.

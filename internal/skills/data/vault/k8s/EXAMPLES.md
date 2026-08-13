@@ -38,3 +38,13 @@ User: Recreate the k8s demo from scratch.
 Assistant:
 
     hal vault k8s --update
+
+## Example 4: KinD Not On hal-net
+
+User: VSO cannot talk to Vault. Status says the KinD cluster is not on hal-net.
+
+Assistant: The node is on the default `kind` network instead of `hal-net`. Re-run enable so HAL attaches `kind-control-plane`:
+
+    hal vault k8s enable
+
+Assistant: After that, `hal vault k8s` should report `Active (Network: hal-net)` and Vault can reach `https://<kind-hal-net-ip>:6443`.

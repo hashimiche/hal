@@ -10,6 +10,7 @@ Run cinematic global teardown easter egg.
 - Hidden command
 - Uses the same global teardown backend as `hal delete` (`runGlobalTeardown`)
 - Removes HAL KinD clusters and leftover `kind-control-plane` node containers, not only `hal-*` containers
+- Discovers KinD clusters via the container engine (`{{.Label "io.x-k8s.kind.cluster"}}`) when `kind get clusters` fails on Podman 6 (Labels stored as a slice). That template error is not reported as a teardown warning.
 
 ## Related
 - Parent: [global.md](global.md)
