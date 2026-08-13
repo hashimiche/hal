@@ -29,6 +29,7 @@ Deploy KinD and Vault Secrets Operator scenario for Kubernetes integration labs.
 
 ## Side Effects
 - This command may create, mutate, or remove local lab resources depending on its operation.
+- The shared KinD cluster is attached to `hal-net` (experimental kind network env plus an explicit `network connect` fallback) so Vault can reach the Kubernetes API.
 
 ## Example
 ```bash

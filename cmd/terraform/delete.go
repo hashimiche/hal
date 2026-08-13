@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"hal/internal/global"
+	"hal/internal/integrations"
 
 	"github.com/spf13/cobra"
 )
@@ -186,15 +187,53 @@ var destroyCmd = &cobra.Command{
 			fmt.Println("  ℹ️  Shared backend state retained for running twin instance.")
 		}
 
-		if preserveSharedBackend {
-			fmt.Println("  ℹ️  Shared backend state retained for running twin instance.")
-		}
+		releaseTFESharedServices(engine)
 
 		if !global.DryRun {
 			fmt.Println("\n✅ TFE environment wiped. You are ready for a clean 'hal terraform create'.")
 			global.RefreshHalHealth(engine)
 		}
 	},
+}
+
+// releaseTFESharedServices drops VCS/SAML consumer entries for TFE runtimes that
+// are no longer running, then stops shared GitLab/Authentik when nothing else
+// needs them. Vault JWT / Vault OIDC keep those stacks if they are still registered.
+func releaseTFESharedServices(engine string) {
+	if global.DryRun {
+		fmt.Println("[DRY RUN] Would drop stale TFE VCS/SAML shared-service consumers and stop GitLab/Authentik if unused")
+		return
+	}
+
+	global.PruneStaleTFEBackedSharedConsumers(engine)
+	integrations.StopSharedGitLabIfUnused(engine)
+	releaseAuthentikIfUnused(engine)
+}
+
+func releaseAuthentikIfUnused(engine string) {
+	remaining := global.GetSharedServiceConsumers(integrations.AuthentikSharedServiceKey)
+	if len(remaining) == 0 {
+		if integrations.IsAuthentikRunning(engine) {
+			if err := integrations.StopAuthentikStack(engine, true); err != nil {
+				fmt.Printf("⚠️  Warning during Authentik teardown: %v\n", err)
+			} else {
+				fmt.Println("  🧹 Stopped Authentik (no remaining consumers).")
+			}
+		}
+		return
+	}
+
+	fmt.Printf("  ℹ️  Authentik left running (still used by: %s)\n", strings.Join(remaining, ", "))
+	hasTFESAML := false
+	for _, c := range remaining {
+		if c == global.AuthentikConsumerTFESAMLPrimary || c == global.AuthentikConsumerTFESAMLTwin {
+			hasTFESAML = true
+			break
+		}
+	}
+	if !hasTFESAML {
+		integrations.StopAuthentikSAMLProxy(engine)
+	}
 }
 
 func init() {

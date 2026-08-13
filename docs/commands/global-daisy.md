@@ -8,7 +8,8 @@ Run cinematic global teardown easter egg.
 
 ## Behavior
 - Hidden command
-- Uses global teardown backend
+- Uses the same global teardown backend as `hal delete` (`runGlobalTeardown`)
+- Removes HAL KinD clusters and leftover `kind-control-plane` node containers, not only `hal-*` containers
 
 ## Related
 - Parent: [global.md](global.md)

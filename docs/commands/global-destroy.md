@@ -15,7 +15,7 @@ Destroy all HAL-managed infrastructure globally.
 - Older HAL docs may reference `--force` or `--yes` for non-interactive teardown. The current flag is `--auto-approve`.
 
 ## What gets removed
-1. HAL KinD clusters (`kind`, `hal-*`)
+1. HAL KinD clusters (`kind`, `hal-*`) plus leftover `kind-control-plane` node containers (those are not named `hal-*`, so they are swept by cluster label even if the `kind` CLI is missing or `kind get clusters` fails on Podman 6's Labels-as-slice change)
 2. All `hal-*` Docker/Podman containers (including TFE agents)
 3. The `hal-tfe-cli:latest` helper image (best-effort)
 4. HAL Multipass VMs (purged after deletion)

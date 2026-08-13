@@ -14,6 +14,7 @@ Tear down the local Terraform Enterprise stack and related local state for a cle
 - Resets local deployment state used by the Terraform namespace.
 - Uses `--target` to remove primary, twin, or both scopes (`primary` by default).
 - Smart guard: `--target primary` preserves shared backend containers when the twin TFE core is still running.
+- Drops stale TFE VCS (`terraform-vcs-workflow-*`) and SAML (`tfe-saml` / `tfe-bis-saml`) shared-service consumers for runtimes that were just removed. Shared GitLab / Authentik stay up if Vault JWT / Vault OIDC (or the other TFE target) still needs them.
 
 ## Related
 - Parent namespace: [terraform.md](terraform.md)

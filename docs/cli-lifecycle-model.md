@@ -210,6 +210,17 @@ in `cmd/vault/helper.go`). All host port mappings are declared upfront:
 When adding a new `--k8s` feature, reserve the next available pair and add it
 to `writeHALKindConfig()` so the port is pre-mapped on any existing cluster.
 
+### Network
+KinD nodes must be on `hal-net` so Vault and other HAL containers can reach the
+API server. All `--k8s` enable paths must call `ensureHALKindCluster()` rather
+than invoking `kind create` directly. That helper:
+
+1. Sets `KIND_EXPERIMENTAL_DOCKER_NETWORK` and `KIND_EXPERIMENTAL_PODMAN_NETWORK`
+   (the Podman provider ignores the Docker env).
+2. Connects every KinD node to `hal-net` if it is missing after create or reuse.
+3. Resolves container IPs from the `hal-net` NIC only. Inspecting every attached
+   network concatenates addresses when the node is dual-homed (`kind` + `hal-net`).
+
 
 ## Migration Policy
 

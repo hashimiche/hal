@@ -56,8 +56,6 @@ var vaultPKICmd = &cobra.Command{
 			fmt.Printf("❌ %v\n", err)
 			return
 		}
-		isPodman := strings.Contains(engine, "podman")
-
 		client, vaultErr := GetHealthyClient()
 
 		// ==========================================
@@ -335,11 +333,11 @@ var vaultPKICmd = &cobra.Command{
 					}
 					if pkiK8s {
 						fmt.Println("♻️  Reconciling cert-manager layer (PKI engines preserved)...")
-						runPKIK8sEnable(client, engine, isPodman, pkiIntMount)
+						runPKIK8sEnable(client, engine, pkiIntMount)
 					}
 					if pkiACME {
 						fmt.Println("♻️  Reconciling ACME/Caddy layer (PKI engines preserved)...")
-						runPKIACMEEnable(client, engine, isPodman, pkiIntMount)
+						runPKIACMEEnable(client, engine, pkiIntMount)
 					}
 					return
 				}
@@ -349,10 +347,10 @@ var vaultPKICmd = &cobra.Command{
 			runVaultPKISetup(client, pkiUpdate)
 
 			if pkiK8s {
-				runPKIK8sEnable(client, engine, isPodman, pkiIntMount)
+				runPKIK8sEnable(client, engine, pkiIntMount)
 			}
 			if pkiACME {
-				runPKIACMEEnable(client, engine, isPodman, pkiIntMount)
+				runPKIACMEEnable(client, engine, pkiIntMount)
 			}
 		}
 	},
@@ -527,7 +525,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 }
 
 // runPKIK8sEnable deploys cert-manager (Jetstack) + ClusterIssuer + web demo pod.
-func runPKIK8sEnable(client *vault.Client, engine string, isPodman bool, intMount string) {
+func runPKIK8sEnable(client *vault.Client, engine string, intMount string) {
 	// Verify role exists before continuing
 	roleResp, err := client.Logical().Read(intMount + "/roles/hal-role")
 	if err != nil || roleResp == nil {
@@ -535,35 +533,9 @@ func runPKIK8sEnable(client *vault.Client, engine string, isPodman bool, intMoun
 		return
 	}
 
-	// ---- KinD cluster ----
-	clusterOut, _ := exec.Command("kind", "get", "clusters").Output()
-	if strings.Contains(string(clusterOut), "kind") {
-		fmt.Println("⚡ KinD cluster already running — reusing it.")
-	} else {
-		fmt.Println("🚀 Booting KinD cluster (attached to hal-net)...")
-		kindConfigPath, err := writeHALKindConfig()
-		if err != nil {
-			fmt.Printf("❌ Failed to prepare KinD config: %v\n", err)
-			return
-		}
-		defer os.Remove(kindConfigPath)
-
-		startCmd := exec.Command("kind", "create", "cluster", "--config", kindConfigPath)
-		if strings.TrimSpace(pkiKindNodeImage) != "" {
-			startCmd.Args = append(startCmd.Args, "--image", pkiKindNodeImage)
-		}
-		env := os.Environ()
-		if isPodman {
-			env = append(env, "KIND_EXPERIMENTAL_PROVIDER=podman")
-		}
-		env = append(env, "KIND_EXPERIMENTAL_DOCKER_NETWORK=hal-net")
-		startCmd.Env = env
-		startCmd.Stdout = os.Stdout
-		startCmd.Stderr = os.Stderr
-		if err := startCmd.Run(); err != nil {
-			fmt.Printf("❌ Failed to start KinD: %v\n", err)
-			return
-		}
+	if err := ensureHALKindCluster(engine, pkiKindNodeImage); err != nil {
+		fmt.Printf("❌ %v\n", err)
+		return
 	}
 
 	// ---- cert-manager (Jetstack OCI chart) ----
@@ -618,15 +590,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	}
 
 	// ---- Vault IP ----
-	vaultIPOut, _ := exec.Command(
-		engine, "inspect",
-		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-		"hal-vault",
-	).Output()
-	vaultIP := strings.TrimSpace(string(vaultIPOut))
-	if vaultIP == "" {
-		vaultIP = "hal-vault"
-	}
+	vaultIP := containerIPOnHalNetOrName(engine, vaultContainer)
 	// Ensure ACME endpoint links (new-nonce/new-account/new-order) advertised by Vault
 	// are reachable from in-cluster ACME clients (Caddy) during --acme reconcile.
 	_, _ = client.Logical().Write(intMount+"/config/cluster", map[string]interface{}{
@@ -752,13 +716,7 @@ func configurePKIKubeAuth(client *vault.Client, engine string) error {
 		"-n", "default", "--duration=87600h").Output()
 	reviewerToken := strings.TrimSpace(string(tokenOut))
 
-	kindIPOut, _ := exec.Command(engine, "inspect",
-		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-		"kind-control-plane").Output()
-	kindIP := strings.TrimSpace(string(kindIPOut))
-	if kindIP == "" {
-		kindIP = "kind-control-plane"
-	}
+	kindIP := containerIPOnHalNetOrName(engine, kindControlPlaneName)
 
 	if err := client.Sys().EnableAuthWithOptions(authMount, &vault.EnableAuthOptions{Type: "kubernetes"}); err != nil {
 		return fmt.Errorf("failed to enable %s auth: %w", authMount, err)
@@ -948,7 +906,7 @@ spec:
 // runPKIACMEEnable deploys a Caddy pod that uses Vault's built-in ACME endpoint
 // to obtain its TLS certificate — no cert-manager, no Kubernetes CRDs.
 // Caddy speaks the ACME protocol directly to Vault's pki-int/acme/directory.
-func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMount string) {
+func runPKIACMEEnable(client *vault.Client, engine string, intMount string) {
 	if err := tunePKIACMEHeaders(client, intMount); err != nil {
 		fmt.Printf("❌ Failed to tune ACME headers on '%s': %v\n", intMount, err)
 		return
@@ -984,55 +942,16 @@ func runPKIACMEEnable(client *vault.Client, engine string, isPodman bool, intMou
 	})
 	fmt.Printf("⚙️  Role 'acme-demo' TTL set to %s.\n", pkiACMECertTTL)
 
-	// ---- KinD cluster (reuse if already running) ----
-	clusterOut, _ := exec.Command("kind", "get", "clusters").Output()
-	if strings.Contains(string(clusterOut), "kind") {
-		fmt.Println("⚡ KinD cluster already running — reusing it.")
-	} else {
-		fmt.Println("🚀 Booting KinD cluster (attached to hal-net)...")
-		kindConfigPath, err := writeHALKindConfig()
-		if err != nil {
-			fmt.Printf("❌ Failed to prepare KinD config: %v\n", err)
-			return
-		}
-		defer os.Remove(kindConfigPath)
-
-		startCmd := exec.Command("kind", "create", "cluster", "--config", kindConfigPath)
-		if strings.TrimSpace(pkiKindNodeImage) != "" {
-			startCmd.Args = append(startCmd.Args, "--image", pkiKindNodeImage)
-		}
-		env := os.Environ()
-		if isPodman {
-			env = append(env, "KIND_EXPERIMENTAL_PROVIDER=podman")
-		}
-		env = append(env, "KIND_EXPERIMENTAL_DOCKER_NETWORK=hal-net")
-		startCmd.Env = env
-		startCmd.Stdout = os.Stdout
-		startCmd.Stderr = os.Stderr
-		if err := startCmd.Run(); err != nil {
-			fmt.Printf("❌ Failed to start KinD: %v\n", err)
-			return
-		}
+	if err := ensureHALKindCluster(engine, pkiKindNodeImage); err != nil {
+		fmt.Printf("❌ %v\n", err)
+		return
 	}
 
 	// ---- Vault IP reachable from within the cluster ----
-	vaultIPOut, _ := exec.Command(
-		engine, "inspect",
-		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-		"hal-vault",
-	).Output()
-	vaultIP := strings.TrimSpace(string(vaultIPOut))
-	if vaultIP == "" {
-		vaultIP = "hal-vault"
-	}
+	vaultIP := containerIPOnHalNetOrName(engine, vaultContainer)
 
 	// Make Vault resolve acme.localhost to the KinD node IP for HTTP-01 callbacks.
-	kindIPOut, _ := exec.Command(
-		engine, "inspect",
-		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-		"kind-control-plane",
-	).Output()
-	kindIP := strings.TrimSpace(string(kindIPOut))
+	kindIP := containerIPOnHalNet(engine, kindControlPlaneName)
 	if kindIP != "" {
 		// The Vault container's /etc/hosts is read-only in rootless Podman and the
 		// .localhost TLD always resolves to 127.0.0.1 via the container DNS.
@@ -1157,9 +1076,7 @@ func ensureACMEDNS(engine, kindIP string) (string, error) {
 	// Return early if already running with the correct mapping.
 	runningOut, _ := exec.Command(engine, "inspect", "-f", "{{.State.Running}}", acmeDNSContainer).Output()
 	if strings.TrimSpace(string(runningOut)) == "true" {
-		ipOut, _ := exec.Command(engine, "inspect",
-			"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", acmeDNSContainer).Output()
-		if ip := strings.TrimSpace(string(ipOut)); ip != "" {
+		if ip := containerIPOnHalNet(engine, acmeDNSContainer); ip != "" {
 			return ip, nil
 		}
 	}
@@ -1198,9 +1115,7 @@ func ensureACMEDNS(engine, kindIP string) (string, error) {
 	// Give CoreDNS a moment to bind.
 	time.Sleep(2 * time.Second)
 
-	ipOut, _ := exec.Command(engine, "inspect",
-		"-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", acmeDNSContainer).Output()
-	dnsIP := strings.TrimSpace(string(ipOut))
+	dnsIP := containerIPOnHalNet(engine, acmeDNSContainer)
 	if dnsIP == "" {
 		return "", fmt.Errorf("hal-acme-dns started but could not determine its IP")
 	}

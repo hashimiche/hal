@@ -40,7 +40,7 @@ var (
 	tfeAdminPassword         string
 	tfeTagsRegex             string
 	tfeVCSBranch             string
-	workspaceGitLabServiceID = "gitlab"
+	workspaceGitLabServiceID = global.SharedGitLabServiceKey
 )
 
 // gitlabHostBaseURL is the host-reachable base URL for the shared GitLab
@@ -341,28 +341,21 @@ func disableWorkspaceScenario(engine, target string, autoApprove bool) {
 		fmt.Printf("⚠️  Could not update shared GitLab ownership metadata: %v\n", err)
 	}
 
+	global.PruneStaleTFEBackedSharedConsumers(engine)
+	remaining = global.GetSharedServiceConsumers(workspaceGitLabServiceID)
+
 	if len(remaining) > 0 {
 		fmt.Printf("ℹ️  Shared GitLab remains active (still used by: %s).\n", strings.Join(remaining, ", "))
 		fmt.Printf("✅ Terraform VCS workflow disabled for target=%s (metadata only).\n", target)
 		return
 	}
 
-	if isAnyTFERuntimeRunning(engine) {
-		fmt.Println("ℹ️  Shared GitLab remains active because at least one Terraform Enterprise runtime is still running.")
-		fmt.Printf("✅ Terraform VCS workflow disabled for target=%s (GitLab preserved).\n", target)
+	integrations.StopSharedGitLabIfUnused(engine)
+	if !global.IsContainerRunning(engine, "hal-gitlab") {
+		fmt.Printf("✅ Terraform VCS workflow disabled for target=%s.\n", target)
 		return
 	}
-
-	if global.IsContainerRunning(engine, "hal-gitlab") {
-		if out, rmErr := exec.Command(engine, "rm", "-f", "hal-gitlab").CombinedOutput(); rmErr != nil {
-			fmt.Printf("⚠️  Failed to stop shared GitLab container: %s\n", strings.TrimSpace(string(out)))
-		} else {
-			fmt.Println("🧹 Stopped shared GitLab (no remaining shared-service consumers).")
-		}
-	}
-
-	_ = global.ClearSharedService(workspaceGitLabServiceID)
-	fmt.Printf("✅ Terraform VCS workflow disabled for target=%s.\n", target)
+	fmt.Printf("✅ Terraform VCS workflow disabled for target=%s (GitLab preserved).\n", target)
 }
 
 func ensureTFEWorkspace(orgName, projectID, repoIdentifier string) (string, error) {
@@ -858,18 +851,10 @@ terraform-validate:
 }
 
 func workspaceSharedConsumerForTarget(target string) string {
-	return fmt.Sprintf("terraform-vcs-workflow-%s", target)
-}
-
-func isAnyTFERuntimeRunning(engine string) bool {
-	if global.IsContainerRunning(engine, tfeCoreContainer) {
-		return true
+	if target == tfeTargetTwin {
+		return global.GitLabConsumerVCSTwin
 	}
-	layout, err := buildTFETwinLayout()
-	if err != nil {
-		return false
-	}
-	return global.IsContainerRunning(engine, layout.CoreContainer)
+	return global.GitLabConsumerVCSPrimary
 }
 
 func configureWorkspaceTargetDefaults(cmd *cobra.Command, target string) error {

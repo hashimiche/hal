@@ -3,7 +3,6 @@ package vault
 import (
 	"encoding/base64"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -51,8 +50,6 @@ var vaultK8sCmd = &cobra.Command{
 			fmt.Printf("❌ Error: %v\n", err)
 			return
 		}
-		isPodman := strings.Contains(engine, "podman")
-
 		if _, err := exec.LookPath("kind"); err != nil {
 			fmt.Println("❌ Error: 'kind' is not installed or not in PATH.")
 			return
@@ -107,7 +104,11 @@ var vaultK8sCmd = &cobra.Command{
 
 			// Output Status
 			if clusterRunning {
-				fmt.Printf("  ✅ KinD Cluster  : Active (Network: hal-net)\n")
+				netLabel := global.HalNetName
+				if containerIPOnHalNet(engine, kindControlPlaneName) == "" {
+					netLabel = "not on " + global.HalNetName
+				}
+				fmt.Printf("  ✅ KinD Cluster  : Active (Network: %s)\n", netLabel)
 			} else {
 				fmt.Printf("  ❌ KinD Cluster  : Not running\n")
 			}
@@ -295,35 +296,9 @@ var vaultK8sCmd = &cobra.Command{
 				return
 			}
 
-			clusterCheck, _ := exec.Command("kind", "get", "clusters").Output()
-			if strings.Contains(string(clusterCheck), "kind") {
-				fmt.Println("⚡ KinD cluster already running, skipping boot sequence...")
-			} else {
-				fmt.Println("🚀 Booting KinD Cluster (attached directly to hal-net)...")
-				kindConfigPath, cfgErr := writeHALKindConfig()
-				if cfgErr != nil {
-					fmt.Printf("❌ Failed to prepare KinD config: %v\n", cfgErr)
-					return
-				}
-				defer os.Remove(kindConfigPath)
-
-				startCmd := exec.Command("kind", "create", "cluster", "--config", kindConfigPath)
-				if strings.TrimSpace(kindNodeImage) != "" {
-					startCmd.Args = append(startCmd.Args, "--image", kindNodeImage)
-				}
-				env := os.Environ()
-				if isPodman {
-					env = append(env, "KIND_EXPERIMENTAL_PROVIDER=podman")
-				}
-				env = append(env, "KIND_EXPERIMENTAL_DOCKER_NETWORK="+global.HalNetName)
-				startCmd.Env = env
-				startCmd.Stdout = os.Stdout
-				startCmd.Stderr = os.Stderr
-
-				if err := startCmd.Run(); err != nil {
-					fmt.Printf("❌ Failed to start KinD: %v\n", err)
-					return
-				}
+			if err := ensureHALKindCluster(engine, kindNodeImage); err != nil {
+				fmt.Printf("❌ %v\n", err)
+				return
 			}
 
 			fmt.Println("⚙️  Ensuring Kubernetes Namespaces exist...")
@@ -361,11 +336,7 @@ path "sys/license/status" { capabilities = ["read"] }
 			tokenOut, _ := exec.Command("kubectl", "create", "token", "vault-reviewer", "-n", "default", "--duration=87600h").Output()
 			reviewerToken := strings.TrimSpace(string(tokenOut))
 
-			kindIPOut, _ := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "kind-control-plane").Output()
-			kindIP := strings.TrimSpace(string(kindIPOut))
-			if kindIP == "" {
-				kindIP = "kind-control-plane"
-			}
+			kindIP := containerIPOnHalNetOrName(engine, kindControlPlaneName)
 
 			fmt.Println("⚙️  Enabling Native Kubernetes Auth Engine...")
 			_ = client.Sys().EnableAuthWithOptions("kubernetes", &vault.EnableAuthOptions{Type: "kubernetes"})
@@ -434,11 +405,7 @@ path "sys/license/status" { capabilities = ["read"] }
 			fmt.Println("⚙️  Applying Kubernetes Manifests...")
 			_ = exec.Command("kubectl", "create", "sa", "app1-sa", "-n", "app1").Run()
 
-			ipOut, _ := exec.Command(engine, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", vaultContainer).Output()
-			vaultIP := strings.TrimSpace(string(ipOut))
-			if vaultIP == "" {
-				vaultIP = vaultContainer
-			}
+			vaultIP := containerIPOnHalNetOrName(engine, vaultContainer)
 
 			modeTitle := "VSO ROLLING UPDATE DEMO"
 			modeDetail := "Secret is synced by VaultStaticSecret and injected as HAL_SECRET env var"

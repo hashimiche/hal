@@ -35,7 +35,7 @@ const (
 	AuthentikHTTPSPort = "9143"
 
 	// Shared-services key used in ~/.hal/shared-services.json
-	AuthentikSharedServiceKey = "authentik-idp"
+	AuthentikSharedServiceKey = global.SharedAuthentikServiceKey
 
 	// AuthentikSAMLProxyContainer is the nginx container that rewrites TFE SAML
 	// form action URLs from portless HTTPS (port 443) to the accessible TFE proxy
@@ -869,6 +869,14 @@ type AuthentikRedirectURI struct {
 	URL          string `json:"url"`
 }
 
+// AuthentikOAuth2AuthorizationGrants is the grant-type set Vault OIDC needs.
+// Authentik 2026.5+ stores an empty grant_types list by default for API-created
+// providers (the admin UI still auto-selects all types). An empty list makes
+// /authorize immediately redirect back with error=invalid_request and no code,
+// which Vault UI surfaces as "The callback from the provider did not supply
+// all of the required parameters" without ever showing the Authentik login page.
+var AuthentikOAuth2AuthorizationGrants = []string{"authorization_code", "refresh_token"}
+
 // CreateOAuth2Provider creates a confidential OAuth2/OIDC provider.
 // Returns (providerPK, clientID, clientSecret, error).
 func (c *AuthentikClient) CreateOAuth2Provider(
@@ -891,6 +899,7 @@ func (c *AuthentikClient) CreateOAuth2Provider(
 		"authorization_flow":         flowPK,
 		"invalidation_flow":          invalidationFlowPK,
 		"client_type":                "confidential",
+		"grant_types":                AuthentikOAuth2AuthorizationGrants,
 		"sub_mode":                   "user_username",
 		"include_claims_in_id_token": true,
 		"signing_key":                signingKeyPK,
@@ -920,10 +929,12 @@ func (c *AuthentikClient) CreateOAuth2Provider(
 			}
 			pkFloat, _ := item["pk"].(float64)
 			pk := int(pkFloat)
-			// PATCH to refresh redirect_uris and property_mappings.
+			// PATCH to refresh redirect_uris, mappings, and grant_types (empty
+			// grant_types on 2026.5+ providers breaks the Vault OIDC callback).
 			updated, _, _ := c.do("PATCH", fmt.Sprintf("/api/v3/providers/oauth2/%d/", pk), map[string]interface{}{
 				"redirect_uris":     redirectURIs,
 				"property_mappings": mappings,
+				"grant_types":       AuthentikOAuth2AuthorizationGrants,
 			})
 			if updated != nil {
 				item = updated

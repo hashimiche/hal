@@ -25,10 +25,9 @@ var daisyCmd = &cobra.Command{
 		defer fmt.Print("\033[?25h")
 
 		// 🎯 BACKGROUND WORKER
-		done := make(chan struct{})
+		resultCh := make(chan globalTeardownResult, 1)
 		go func() {
-			_ = runGlobalTeardown()
-			close(done)
+			resultCh <- runGlobalTeardown()
 		}()
 
 		lyrics := []string{
@@ -43,11 +42,11 @@ var daisyCmd = &cobra.Command{
 			"of a bicycle built for two...",
 		}
 
-		runCinematicDaisy(done, lyrics)
+		runCinematicDaisy(resultCh, lyrics)
 	},
 }
 
-func runCinematicDaisy(done <-chan struct{}, lyrics []string) {
+func runCinematicDaisy(resultCh <-chan globalTeardownResult, lyrics []string) {
 	const (
 		frameDelay          = 90 * time.Millisecond
 		barWidth            = 44
@@ -65,6 +64,7 @@ func runCinematicDaisy(done <-chan struct{}, lyrics []string) {
 	lyricIdx := 0
 	typedChars := 0
 	doneSeen := false
+	var teardownResult globalTeardownResult
 	frame := 0
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	barState := make([]bool, barWidth)
@@ -85,7 +85,8 @@ func runCinematicDaisy(done <-chan struct{}, lyrics []string) {
 
 	for {
 		select {
-		case <-done:
+		case res := <-resultCh:
+			teardownResult = res
 			doneSeen = true
 		default:
 		}
@@ -215,6 +216,10 @@ func runCinematicDaisy(done <-chan struct{}, lyrics []string) {
 
 	fmt.Printf("\033[2K  final vocal output: daisy... daisy...\n")
 	fmt.Printf("\033[2K✅ HAL has been gracefully disconnected.\n")
+	if teardownResult.KindClustersDeleted > 0 {
+		fmt.Printf("\033[2K   KinD clusters deleted: %d\n", teardownResult.KindClustersDeleted)
+	}
+	printTeardownWarnings(teardownResult)
 }
 
 func renderDecayingBar(barState []bool, remaining int, rng *rand.Rand) string {
@@ -288,6 +293,19 @@ func runPlainDaisy() {
 	}
 
 	fmt.Println("HAL has been gracefully disconnected.")
+	if result.KindClustersDeleted > 0 {
+		fmt.Printf("KinD clusters deleted: %d\n", result.KindClustersDeleted)
+	}
+}
+
+func printTeardownWarnings(result globalTeardownResult) {
+	if len(result.Warnings) == 0 {
+		return
+	}
+	fmt.Println("⚠️  Teardown warnings:")
+	for _, warning := range result.Warnings {
+		fmt.Printf("   - %s\n", warning)
+	}
 }
 
 func glitchLyric(s string) string {
