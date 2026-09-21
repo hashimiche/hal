@@ -119,9 +119,9 @@ host port 19000, so `aws --endpoint-url http://127.0.0.1:19000` works, and reque
 logging stays verbose so archivist traffic is visible in
 `<engine> logs hal-tfe-s3`.
 
-**Unverified against real TFE.** S3 conformance and archivist key patterns were
-validated with `aws` CLI, but no TFE instance has consumed this gateway yet. The
-acceptance test below is the gate.
+**~~Unverified against real TFE.~~ Verified 2026-09-21** — see
+[Verification result](#verification-result). TFE 2.0.5 booted against the
+gateway, ran plan and apply, and served plan logs from archivist with zero 5xx.
 
 **Gaps accepted:** no server-side encryption (`GetBucketEncryption` →
 `NotImplemented`), no object-level ACLs, SigV4 only, versioning off unless
@@ -470,6 +470,59 @@ go run . terraform create --target twin
 go run . terraform status --target twin
 <engine> exec hal-tfe-s3 ls -la /data   # expect tfe-data AND tfe-bis-data
 ```
+
+---
+
+## Verification result
+
+Executed 2026-09-21 on macOS arm64 / rootless podman, TFE 2.0.5. **All checks
+passed.**
+
+| Check | Result |
+|---|---|
+| `go build ./...`, `go vet ./...`, `go test ./...` | pass (`golangci-lint` not installed locally) |
+| Rename completeness grep | clean — only the legacy `teardown.go` entry, this ADR, and the README note |
+| Flag surface | `--tfe-s3-image`, `--tfe-s3-tag`, `--s3-api-port`, `--twin-s3-access-key`, `--twin-s3-secret-key` present; no `--minio-*` |
+| Anonymous GHCR pull | works, no credentials |
+| `exec mkdir` with no shell | exit 0 — **the `/bin/sh` question in Step 0 is moot**, the image ships `mkdir` and we never invoke a shell |
+| `mkdir` → bucket bijection | `ListBuckets` shows the bucket, `HeadBucket` → 200, no restart |
+| 20 MB multipart round-trip on an archivist-shaped key | ETag `…-3`, sha256 identical both ways |
+| `HeadBucket` on a nonexistent bucket | 404 |
+| `hal terraform create` | TFE booted; `S3 API` endpoint rendered; **zero sleep, no readiness wait needed** |
+| `/livez` unauthenticated | `OK` / HTTP 200 |
+| `hal terraform status` | all green, `Object Storage (S3): Active (hal-tfe-s3)` |
+| TFE archivist self-test at boot | multipart create → 2 parts → complete → GET → DELETE, all 200/204 |
+| Plan + apply end to end | 2 runs `applied`; configuration versions `uploaded`, **never stuck in `fetching`** |
+| Plan log renders | fetched 775 bytes of real Terraform output through `log-read-url` |
+| Twin path | `tfe-data` **and** `tfe-bis-data` both present; twin ran its own multipart self-test; status all green |
+| **Gateway error sweep, whole lifetime** | **0× 5xx, 0× 401/403.** 74× 200, 2× 204, 82× 404 |
+
+Archivist key prefixes exercised through the gateway: `terraform/slugs/cv-*`,
+`terraform/plans/plan-*`, `terraform/logs/plan*`, `terraform/logs/appl*`,
+`terraform/states/sv-*`, `terraform/json-plan*`, `terraform/json-prov*`,
+`terraform/json-reda*`, `terraform/runtime-r*`.
+
+### Two benign 404 patterns, documented so they are not mistaken for faults
+
+1. **`HEAD /tfe-data/archivisthealthz` → 404, every ~2s during boot only.** TFE
+   probes a sentinel key that is never written; 404 is the correct
+   "storage reachable, object absent" answer and MinIO answered identically. The
+   loop stops once TFE finishes starting.
+2. **`GET terraform/logs/plan-<id>` → 404 several times, then `PUT` → 200, then
+   `GET` → 200.** TFE polls for the plan log while the plan is still running.
+   Verified ordering per plan: every 404 precedes the `PUT`, and a 200 `GET`
+   follows it.
+
+### Upgrade snag worth knowing
+
+`hal terraform delete` on a pre-VersityGW stack leaves the **`hal-tfe-minio`
+container running**, because the new code only knows `hal-tfe-s3`. That orphan
+still publishes host port 19000, so the subsequent `hal terraform create` cannot
+bind it. Upgrading users must `<engine> rm -f hal-tfe-minio` once, by hand.
+Removing the container does **not** touch the irreplaceable cached image.
+`hal delete` reclaims the `hal-tfe-minio-data` volume via the legacy entry in
+`cmd/teardown.go`, and the `hal-` prefix sweep there covers the container — it is
+only the product-scoped `hal terraform delete` path that misses it.
 
 ---
 

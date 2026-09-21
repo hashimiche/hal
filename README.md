@@ -304,7 +304,21 @@ hal nomad obs delete
 >
 > There are no deprecated aliases and no data migration. Recreate existing
 > stacks with `hal terraform delete && hal terraform create` — HAL is stateless
-> between an up and a down. S3 credentials are now the shared lab pair
+> between an up and a down.
+>
+> **Upgrading from a MinIO stack takes one manual step.** `hal terraform delete`
+> leaves the old `hal-tfe-minio` container behind (the new code only knows
+> `hal-tfe-s3`), and it still holds host port 19000, so the next
+> `hal terraform create` cannot bind it. Remove it once by hand:
+>
+> ```bash
+> hal terraform delete
+> podman rm -f hal-tfe-minio   # or: docker rm -f hal-tfe-minio
+> hal terraform create
+> ```
+>
+> `hal delete` reclaims the leftover `hal-tfe-minio-data` volume automatically.
+> S3 credentials are now the shared lab pair
 > `haladmin` / `hal9000FTW` instead of MinIO's `minioadmin` defaults. The S3 API
 > stays published on host port 19000 for troubleshooting with
 > `aws --endpoint-url http://127.0.0.1:19000`; see
