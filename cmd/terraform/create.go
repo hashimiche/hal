@@ -31,10 +31,9 @@ var (
 	pgImage             string
 	redisVersion        string
 	redisImage          string
-	minioVersion        string
-	minioImage          string
-	minioAPIPort        int
-	minioConsolePort    int
+	s3Version           string
+	s3Image             string
+	s3APIPort           int
 	tfeProxyNginxTag    string
 	tfeProxyImage       string
 	tfeUpdate           bool
@@ -129,7 +128,7 @@ var deployCmd = &cobra.Command{
 		if tfeUpdate {
 			step(1, "Reconciling existing TFE resources (update)")
 			// 🎯 Included the proxy in the teardown list
-			_ = exec.Command(engine, "rm", "-f", tfeCoreContainer, tfeProxyContainer, tfeDBContainer, tfeRedisContainer, tfeMinioContainer).Run()
+			_ = exec.Command(engine, "rm", "-f", tfeCoreContainer, tfeProxyContainer, tfeDBContainer, tfeRedisContainer, tfeS3Container).Run()
 			_ = os.Remove(filepath.Join(certDir, "cert.pem"))
 			_ = os.Remove(filepath.Join(certDir, "key.pem"))
 		}
@@ -169,16 +168,20 @@ var deployCmd = &cobra.Command{
 			"-v", tfeRedisVolume+":/data",
 			fmt.Sprintf("%s:%s", redisImage, redisVersion)).Run()
 
-		// 7. Deploy MinIO (S3 Mock)
-		step(1, "Provisioning object storage (MinIO)")
-		_ = exec.Command(engine, "run", "-d", "--name", tfeMinioContainer, "--network", global.HalNetName,
-			"-p", fmt.Sprintf("%d:9000", minioAPIPort), "-p", fmt.Sprintf("%d:9001", minioConsolePort),
-			"-v", tfeMinioVolume+":/data",
-			"-e", "MINIO_ROOT_USER="+tfeMinioRootUser, "-e", "MINIO_ROOT_PASSWORD="+tfeMinioRootPass,
-			fmt.Sprintf("%s:%s", minioImage, minioVersion), "server", "/data", "--console-address", ":9001").Run()
+		// 7. Deploy the S3 object storage gateway
+		step(1, "Provisioning object storage (S3)")
+		_ = exec.Command(engine, "run", "-d", "--name", tfeS3Container, "--network", global.HalNetName,
+			"-p", fmt.Sprintf("%d:9000", s3APIPort),
+			"-v", tfeS3Volume+":/data",
+			"-e", "ROOT_ACCESS_KEY="+tfeS3AccessKey, "-e", "ROOT_SECRET_KEY="+tfeS3SecretKey,
+			fmt.Sprintf("%s:%s", s3Image, s3Version),
+			"--port", ":9000", "--health", "/livez", "posix", "/data").Run()
 
-		time.Sleep(3 * time.Second)
-		_ = exec.Command(engine, "exec", tfeMinioContainer, "sh", "-c", "mkdir -p /data/"+tfeS3Bucket).Run()
+		// A bucket is just a top-level directory on the POSIX backend, and the
+		// gateway stats it per request — no restart and no readiness wait needed.
+		// The gateway serves ~0.06s after `run -d` returns; the old 3s sleep was
+		// ~50x larger than necessary.
+		_ = exec.Command(engine, "exec", tfeS3Container, "mkdir", "-p", "/data/"+tfeS3Bucket).Run()
 
 		// 8. Deploy TFE Core (NO EXPOSED HOST PORTS!)
 		step(2, "Booting TFE core application (heavy compute)")
@@ -249,11 +252,11 @@ var deployCmd = &cobra.Command{
 			"-e", "TFE_REDIS_USE_AUTH=false",
 			"-e", "TFE_OBJECT_STORAGE_TYPE=s3",
 			"-e", "TFE_OBJECT_STORAGE_S3_USE_INSTANCE_PROFILE=false",
-			"-e", fmt.Sprintf("TFE_OBJECT_STORAGE_S3_ENDPOINT=http://%s:9000", tfeMinioContainer),
+			"-e", fmt.Sprintf("TFE_OBJECT_STORAGE_S3_ENDPOINT=http://%s:9000", tfeS3Container),
 			"-e", "TFE_OBJECT_STORAGE_S3_BUCKET="+tfeS3Bucket,
 			"-e", "TFE_OBJECT_STORAGE_S3_REGION="+tfeS3Region,
-			"-e", "TFE_OBJECT_STORAGE_S3_ACCESS_KEY_ID="+tfeMinioRootUser,
-			"-e", "TFE_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY="+tfeMinioRootPass,
+			"-e", "TFE_OBJECT_STORAGE_S3_ACCESS_KEY_ID="+tfeS3AccessKey,
+			"-e", "TFE_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY="+tfeS3SecretKey,
 			"-e", "TFE_OBJECT_STORAGE_S3_FORCE_PATH_STYLE=true",
 			"-e", "TFE_CAPACITY_CONCURRENCY=5",
 			fmt.Sprintf("%s:%s", tfeImage, tfeVersion),
@@ -386,8 +389,7 @@ http {
 		ui.Success("Terraform Enterprise %s is UP!", tfeVersion)
 		ui.Section("Endpoints")
 		ui.Field("UI", uiURL)
-		ui.Field("MinIO API", fmt.Sprintf("http://127.0.0.1:%d", minioAPIPort))
-		ui.Field("MinIO UI", fmt.Sprintf("http://127.0.0.1:%d", minioConsolePort))
+		ui.Field("S3 API", fmt.Sprintf("http://127.0.0.1:%d", s3APIPort))
 		ui.Section("Admin")
 		ui.Field("User", deployTFEAdminUser)
 		ui.Field("Password", deployTFEAdminPass)
@@ -554,10 +556,9 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	cmd.Flags().StringVar(&pgImage, "tfe-pg-image", defaultTFEPGImage, "PostgreSQL image name for TFE backend")
 	cmd.Flags().StringVar(&redisVersion, "tfe-redis-tag", defaultTFERedisTag, "Redis image tag for TFE background jobs")
 	cmd.Flags().StringVar(&redisImage, "tfe-redis-image", defaultTFERedisImage, "Redis image name for TFE background jobs")
-	cmd.Flags().StringVar(&minioVersion, "tfe-minio-tag", defaultTFEMinioTag, "MinIO image tag for TFE object storage")
-	cmd.Flags().StringVar(&minioImage, "tfe-minio-image", defaultTFEMinioImage, "MinIO image name for TFE object storage")
-	cmd.Flags().IntVar(&minioAPIPort, "minio-api-port", defaultMinioAPIHostPort, "Host port mapped to MinIO S3 API container port 9000")
-	cmd.Flags().IntVar(&minioConsolePort, "minio-console-port", defaultMinioConsoleHostPort, "Host port mapped to MinIO console container port 9001")
+	cmd.Flags().StringVar(&s3Version, "tfe-s3-tag", defaultTFES3Tag, "Object storage gateway image tag for TFE object storage")
+	cmd.Flags().StringVar(&s3Image, "tfe-s3-image", defaultTFES3Image, "Object storage gateway image name for TFE object storage")
+	cmd.Flags().IntVar(&s3APIPort, "s3-api-port", defaultTFES3APIHostPort, "Host port mapped to the S3 API container port 9000")
 	cmd.Flags().StringVar(&tfeProxyNginxTag, "tfe-proxy-tag", defaultTFEProxyTag, "Nginx image tag for the TFE ingress proxy")
 	cmd.Flags().StringVar(&tfeProxyImage, "tfe-proxy-image", defaultTFEProxyImage, "Nginx image name for the TFE ingress proxy")
 	cmd.Flags().StringVarP(&tfePassword, "password", "p", defaultTFEEncryptionPassword, "TFE Encryption Password")

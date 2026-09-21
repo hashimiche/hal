@@ -43,8 +43,8 @@ var (
 	tfeTwinProxyInternalIP     string
 	tfeTwinDatabasePassword    string
 	tfeTwinDatabaseName        string
-	tfeTwinMinioRootUser       string
-	tfeTwinMinioRootPassword   string
+	tfeTwinS3AccessKey         string
+	tfeTwinS3SecretKey         string
 	tfeTwinObjectStorageBucket string
 )
 
@@ -155,7 +155,7 @@ var twinCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Printf("🚀 Deploying twin Terraform Enterprise %s using shared PG/Redis/MinIO via %s...\n", tfeTwinVersion, engine)
+		fmt.Printf("🚀 Deploying twin Terraform Enterprise %s using shared PG/Redis/S3 via %s...\n", tfeTwinVersion, engine)
 
 		// Only auth with the HashiCorp registry when using the default image
 		if strings.Contains(tfeTwinImage, "images.releases.hashicorp.com") {
@@ -179,7 +179,7 @@ var twinCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Printf("⚙️  Ensuring shared MinIO has twin bucket '%s'...\n", tfeTwinObjectStorageBucket)
+		fmt.Printf("⚙️  Ensuring shared object storage has twin bucket '%s'...\n", tfeTwinObjectStorageBucket)
 		if err := ensureTwinBucketExists(engine, tfeTwinObjectStorageBucket); err != nil {
 			fmt.Printf("❌ Failed to ensure twin object bucket exists: %v\n", err)
 			return
@@ -244,11 +244,11 @@ var twinCmd = &cobra.Command{
 			"-e", "TFE_REDIS_USE_AUTH=false",
 			"-e", "TFE_OBJECT_STORAGE_TYPE=s3",
 			"-e", "TFE_OBJECT_STORAGE_S3_USE_INSTANCE_PROFILE=false",
-			"-e", "TFE_OBJECT_STORAGE_S3_ENDPOINT=http://hal-tfe-minio:9000",
+			"-e", fmt.Sprintf("TFE_OBJECT_STORAGE_S3_ENDPOINT=http://%s:9000", tfeS3Container),
 			"-e", fmt.Sprintf("TFE_OBJECT_STORAGE_S3_BUCKET=%s", tfeTwinObjectStorageBucket),
-			"-e", "TFE_OBJECT_STORAGE_S3_REGION=us-east-1",
-			"-e", fmt.Sprintf("TFE_OBJECT_STORAGE_S3_ACCESS_KEY_ID=%s", tfeTwinMinioRootUser),
-			"-e", fmt.Sprintf("TFE_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY=%s", tfeTwinMinioRootPassword),
+			"-e", "TFE_OBJECT_STORAGE_S3_REGION="+tfeS3Region,
+			"-e", fmt.Sprintf("TFE_OBJECT_STORAGE_S3_ACCESS_KEY_ID=%s", tfeTwinS3AccessKey),
+			"-e", fmt.Sprintf("TFE_OBJECT_STORAGE_S3_SECRET_ACCESS_KEY=%s", tfeTwinS3SecretKey),
 			"-e", "TFE_OBJECT_STORAGE_S3_FORCE_PATH_STYLE=true",
 			"-e", "TFE_CAPACITY_CONCURRENCY=5",
 			fmt.Sprintf("%s:%s", tfeTwinImage, tfeTwinVersion),
@@ -345,7 +345,7 @@ http {
 		fmt.Println("---------------------------------------------------------")
 		fmt.Printf("🔗 UI Address:   %s\n", layout.UIURL)
 		fmt.Printf("🗄️  Shared DB:    hal-tfe-db/%s\n", tfeTwinDatabaseName)
-		fmt.Printf("🪣 Shared Bucket: %s (on hal-tfe-minio)\n", tfeTwinObjectStorageBucket)
+		fmt.Printf("🪣 Shared Bucket: %s (on %s)\n", tfeTwinObjectStorageBucket, tfeS3Container)
 		fmt.Printf("👤 Admin User:   %s\n", tfeTwinAdminUser)
 		fmt.Printf("🔑 Admin Pass:   %s\n", tfeTwinAdminPass)
 		fmt.Println("⚠️  Note:         Accept the browser warning for the self-signed certificate.")
@@ -421,7 +421,7 @@ func showTFETwinStatus(engine string, layout tfeTwinLayout) {
 	}{
 		{"Shared Database (Postgres)", tfeDBContainer},
 		{"Shared Cache (Redis)", tfeRedisContainer},
-		{"Shared Object Storage (MinIO)", tfeMinioContainer},
+		{"Shared Object Storage (S3)", tfeS3Container},
 		{"Twin TFE Core", layout.CoreContainer},
 		{"Twin Ingress Proxy", layout.ProxyContainer},
 	}
@@ -447,7 +447,7 @@ func showTFETwinStatus(engine string, layout tfeTwinLayout) {
 		fmt.Println("   Run 'hal tf create' first, then 'hal tf create --target twin'.")
 	} else {
 		fmt.Printf("   🔗 UI Address: %s\n", layout.UIURL)
-		fmt.Println("   Twin reuses hal-tfe-db, hal-tfe-redis, and hal-tfe-minio.")
+		fmt.Printf("   Twin reuses %s, %s, and %s.\n", tfeDBContainer, tfeRedisContainer, tfeS3Container)
 		fmt.Println("   To remove twin resources, run: hal tf delete --target twin")
 	}
 }
@@ -489,14 +489,14 @@ func destroyTFETwin(engine string, layout tfeTwinLayout) {
 
 	if !global.DryRun {
 		fmt.Println("✅ Twin Terraform Enterprise resources removed.")
-		fmt.Printf("ℹ️  Shared resources are preserved: hal-tfe-db (%s), hal-tfe-redis, hal-tfe-minio (%s).\n", tfeTwinDatabaseName, tfeTwinObjectStorageBucket)
+		fmt.Printf("ℹ️  Shared resources are preserved: %s (%s), %s, %s (%s).\n", tfeDBContainer, tfeTwinDatabaseName, tfeRedisContainer, tfeS3Container, tfeTwinObjectStorageBucket)
 	}
 
 	releaseTFESharedServices(engine)
 }
 
 func ensureSharedTFEEcosystemRunning(engine string) error {
-	required := []string{tfeDBContainer, tfeRedisContainer, tfeMinioContainer}
+	required := []string{tfeDBContainer, tfeRedisContainer, tfeS3Container}
 	for _, container := range required {
 		if !global.IsContainerRunning(engine, container) {
 			return fmt.Errorf("required shared component '%s' is not running; run 'hal tf create' first", container)
@@ -535,9 +535,9 @@ func ensureTwinBucketExists(engine, bucketName string) error {
 		return fmt.Errorf("invalid bucket name '%s'", bucketName)
 	}
 
-	out, err := exec.Command(engine, "exec", tfeMinioContainer, "sh", "-c", fmt.Sprintf("mkdir -p /data/%s", trimmed)).CombinedOutput()
+	out, err := exec.Command(engine, "exec", tfeS3Container, "mkdir", "-p", "/data/"+trimmed).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("minio bucket creation failed: %s", strings.TrimSpace(string(out)))
+		return fmt.Errorf("s3 bucket creation failed: %s", strings.TrimSpace(string(out)))
 	}
 	return nil
 }
@@ -710,9 +710,9 @@ func bindTwinFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&tfeTwinProxyInternalIP, "twin-proxy-ip", "", "Static internal proxy IP on hal-net for twin hostname routing (default: auto-derived .249)")
 	cmd.Flags().StringVar(&tfeTwinDatabasePassword, "twin-db-password", "tfe_password", "PostgreSQL password used by the twin TFE backend")
 	cmd.Flags().StringVar(&tfeTwinDatabaseName, "twin-db-name", "tfe_bis", "Database name for the twin TFE schema in shared PostgreSQL")
-	cmd.Flags().StringVar(&tfeTwinMinioRootUser, "twin-minio-root-user", "minioadmin", "MinIO root user for shared object storage")
-	cmd.Flags().StringVar(&tfeTwinMinioRootPassword, "twin-minio-root-password", "minioadmin", "MinIO root password for shared object storage")
-	cmd.Flags().StringVar(&tfeTwinObjectStorageBucket, "twin-s3-bucket", "tfe-bis-data", "S3 bucket name for twin TFE objects in shared MinIO")
+	cmd.Flags().StringVar(&tfeTwinS3AccessKey, "twin-s3-access-key", tfeS3AccessKey, "S3 access key for shared object storage")
+	cmd.Flags().StringVar(&tfeTwinS3SecretKey, "twin-s3-secret-key", tfeS3SecretKey, "S3 secret key for shared object storage")
+	cmd.Flags().StringVar(&tfeTwinObjectStorageBucket, "twin-s3-bucket", "tfe-bis-data", "S3 bucket name for twin TFE objects in shared object storage")
 }
 
 func init() {

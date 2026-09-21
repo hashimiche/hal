@@ -279,7 +279,7 @@ func buildDiagnostics(product string, tailLines int) (map[string]interface{}, er
 		"consul":    {"hal-consul"},
 		"nomad":     {},
 		"boundary":  {"hal-boundary", "hal-boundary-target-mariadb"},
-		"terraform": {"hal-tfe", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-minio", "hal-tfe-proxy"},
+		"terraform": {"hal-tfe", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-s3", "hal-tfe-proxy"},
 		"obs":       {"hal-grafana", "hal-prometheus", "hal-loki"},
 	}
 	containers, ok := containersByProduct[product]

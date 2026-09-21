@@ -23,12 +23,12 @@ const (
 	tfeProxyContainer = "hal-tfe-proxy"
 	tfeDBContainer    = "hal-tfe-db"
 	tfeRedisContainer = "hal-tfe-redis"
-	tfeMinioContainer = "hal-tfe-minio"
+	tfeS3Container    = "hal-tfe-s3"
 
 	// --- Named volumes backing the shared services (create, delete) ---
 	tfeDBVolume    = "hal-tfe-db-data"
 	tfeRedisVolume = "hal-tfe-redis-data"
-	tfeMinioVolume = "hal-tfe-minio-data"
+	tfeS3Volume    = "hal-tfe-s3-data"
 	tfeCacheVolume = "hal-tfe-cache"
 
 	// --- Primary hostname, ports, and base URL (shared widely) ---
@@ -60,13 +60,16 @@ const (
 
 	// --- Shared backend service credentials / object storage config ---
 	// Used by create and twin.
-	tfeDBUser        = "tfe"
-	tfeDBPassword    = "tfe_password"
-	tfeDBName        = "tfe"
-	tfeMinioRootUser = "minioadmin"
-	tfeMinioRootPass = "minioadmin"
-	tfeS3Bucket      = "tfe-data"
-	tfeS3Region      = "us-east-1"
+	tfeDBUser     = "tfe"
+	tfeDBPassword = "tfe_password"
+	tfeDBName     = "tfe"
+	// hal9000FTW is the shared lab password — the same value backs the TFE admin
+	// user (defaultTFEAdminPassword) and the GitLab root account. One password to
+	// remember for the whole lab; do not invent a new secret here.
+	tfeS3AccessKey = "haladmin"
+	tfeS3SecretKey = "hal9000FTW"
+	tfeS3Bucket    = "tfe-data"
+	tfeS3Region    = "us-east-1"
 
 	// --- Default backend images + tags (create flag defaults) ---
 	// The TFE core image is also reused by the twin lifecycle.
@@ -76,14 +79,13 @@ const (
 	defaultTFEPGTag      = "17-alpine"
 	defaultTFERedisImage = "redis"
 	defaultTFERedisTag   = "8-alpine"
-	defaultTFEMinioImage = "minio/minio"
-	defaultTFEMinioTag   = "latest"
+	defaultTFES3Image    = "ghcr.io/versity/versitygw"
+	defaultTFES3Tag      = "v1.8.0"
 	defaultTFEProxyImage = "nginx"
 	defaultTFEProxyTag   = "alpine"
 
 	// --- Host port mappings (create flag defaults) ---
-	defaultMinioAPIHostPort     = 19000
-	defaultMinioConsoleHostPort = 19001
+	defaultTFES3APIHostPort = 19000
 
 	// --- ~/.hal filesystem layout (create, delete, api-workflow, agent) ---
 	halStateDirName     = ".hal"

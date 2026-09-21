@@ -663,8 +663,8 @@ func init() {
 		"twin-proxy-ip",
 		"twin-db-password",
 		"twin-db-name",
-		"twin-minio-root-user",
-		"twin-minio-root-password",
+		"twin-s3-access-key",
+		"twin-s3-secret-key",
 		"twin-s3-bucket",
 	} {
 		_ = agentCmd.Flags().MarkHidden(name)

@@ -26,7 +26,7 @@ var tfePrimaryContainers = []string{
 var tfeSharedBackendContainers = []string{
 	tfeDBContainer,
 	tfeRedisContainer,
-	tfeMinioContainer,
+	tfeS3Container,
 }
 
 // Named volumes created by the shared backend containers. Must be removed
@@ -34,7 +34,7 @@ var tfeSharedBackendContainers = []string{
 var tfeSharedBackendVolumes = []string{
 	tfeDBVolume,
 	tfeRedisVolume,
-	tfeMinioVolume,
+	tfeS3Volume,
 }
 
 var destroyCmd = &cobra.Command{
@@ -79,7 +79,7 @@ var destroyCmd = &cobra.Command{
 
 		fmt.Printf("⚙️  Destroying Terraform Enterprise ecosystem via %s...\n", engine)
 		if preserveSharedBackend {
-			fmt.Println("ℹ️  Twin instance is running; preserving shared backend containers (hal-tfe-db, hal-tfe-redis, hal-tfe-minio).")
+			fmt.Printf("ℹ️  Twin instance is running; preserving shared backend containers (%s, %s, %s).\n", tfeDBContainer, tfeRedisContainer, tfeS3Container)
 		}
 
 		// 1. Destroy all associated containers
