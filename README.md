@@ -287,6 +287,29 @@ hal nomad obs delete
 
 ### Terraform Enterprise (`hal terraform` / `hal tf` / `hal tfe`)
 
+> **⚠️ Breaking change — object storage moved from MinIO to VersityGW.**
+> MinIO Community Edition is dead and its Docker Hub repository was deleted, so
+> the old default image no longer pulls. TFE object storage now runs
+> `ghcr.io/versity/versitygw` in container `hal-tfe-s3` on volume
+> `hal-tfe-s3-data`. Six flags are renamed and one is removed:
+>
+> | Old | New |
+> |---|---|
+> | `--tfe-minio-tag` | `--tfe-s3-tag` |
+> | `--tfe-minio-image` | `--tfe-s3-image` |
+> | `--minio-api-port` | `--s3-api-port` |
+> | `--minio-console-port` | **removed** — VersityGW has no console |
+> | `--twin-minio-root-user` | `--twin-s3-access-key` |
+> | `--twin-minio-root-password` | `--twin-s3-secret-key` |
+>
+> There are no deprecated aliases and no data migration. Recreate existing
+> stacks with `hal terraform delete && hal terraform create` — HAL is stateless
+> between an up and a down. S3 credentials are now the shared lab pair
+> `haladmin` / `hal9000FTW` instead of MinIO's `minioadmin` defaults. The S3 API
+> stays published on host port 19000 for troubleshooting with
+> `aws --endpoint-url http://127.0.0.1:19000`; see
+> [docs/adr/0001-versitygw-for-tfe-object-storage.md](docs/adr/0001-versitygw-for-tfe-object-storage.md).
+
 **Primary TFE instance**
 
 ```bash
@@ -294,9 +317,8 @@ hal terraform create \
   --tfe-tag 2.0.5 \
   --tfe-pg-tag 17-alpine \
   --tfe-redis-tag 8-alpine \
-  --tfe-minio-tag latest \
-  --minio-api-port 19000 \
-  --minio-console-port 19001 \
+  --tfe-s3-tag v1.8.0 \
+  --s3-api-port 19000 \
   --tfe-proxy-tag alpine
 
 hal terraform status
@@ -304,7 +326,7 @@ hal terraform update
 hal terraform delete
 ```
 
-**Twin TFE instance** — reuses the primary ecosystem (PostgreSQL, Redis, MinIO)
+**Twin TFE instance** — reuses the primary ecosystem (PostgreSQL, Redis, S3)
 
 ```bash
 hal terraform create --target twin --twin-tag 2.0.5
@@ -495,8 +517,7 @@ HAL uses environment variables and Docker/Podman networking — there is no conf
 | Boundary | http://boundary.localhost:9200 |
 | Terraform Enterprise | https://tfe.localhost:8443 |
 | Terraform Enterprise Admin | https://tfe.localhost:8444 |
-| MinIO API | http://127.0.0.1:19000 |
-| MinIO Console | http://127.0.0.1:19001 |
+| TFE S3 API | http://127.0.0.1:19000 |
 | Grafana | http://grafana.localhost:3000 |
 | Prometheus | http://prometheus.localhost:9090 |
 | Loki | http://loki.localhost:3100/ready |

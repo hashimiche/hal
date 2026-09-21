@@ -49,7 +49,7 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
 - Any create/enable path that launches Docker/Podman containers, KinD clusters, Helm installs, or Multipass VMs must expose explicit flags for runtime versions/images.
 - Keep sensible defaults for each flag, but never hardcode an image/channel/version without a user override path.
 - For KinD/Helm, expose node image and chart version controls (example pattern: `--kind-node-image`, `--vso-chart-version`).
-- For helper sidecars/proxies/support services (for example nginx/minio/openldap UI containers), expose image tag flags alongside primary product flags.
+- For helper sidecars/proxies/support services (for example nginx/versitygw/openldap UI containers), expose image tag flags alongside primary product flags.
 
 ### 7. Engine Capacity Advisory
 - Heavy HAL stacks should consult current engine capacity before large deploys, regardless of whether the engine is Docker or Podman.
@@ -99,7 +99,7 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - `hal plus status` reports image presence, container state, and endpoint health for all three containers.
     - Ollama must run on the **host**. HAL Plus contacts it from inside the container via `host.containers.internal:11434` (podman) or `host.docker.internal:11434` (docker). `OLLAMA_BASE_URL` env var overrides the resolved URL.
     - No socket mounts, no `--user` overrides, no `DOCKER_HOST` injection into `hal-mcp`. Podman stays rootless.
-- Terraform Enterprise local deployment depends on a mocked PostgreSQL, Redis, and MinIO stack and uses local TLS material under `~/.hal/tfe-certs`.
+- Terraform Enterprise local deployment depends on a mocked PostgreSQL, Redis, and S3 (VersityGW, container `hal-tfe-s3`) stack and uses local TLS material under `~/.hal/tfe-certs`.
     - Rootless Podman path uses `https://tfe.localhost:8443` through `hal-tfe-proxy`.
     - TFE admin HTTPS is exposed through the same proxy at `https://tfe.localhost:8444`.
     - Twin TFE lifecycle is target-based on product CRUD commands (for example `hal terraform create --target twin`) instead of a dedicated `hal terraform twin` subcommand.
