@@ -212,6 +212,13 @@ var twinCmd = &cobra.Command{
 			tfeArgs = append(tfeArgs, "-v", writableTmpl+":/etc/task-worker/config.hcl.tmpl:ro")
 		}
 
+		// Stage trust anchors for both local TFE hostnames: booting the twin rebuilds the shared
+		// hashicorp/tfe-agent:now tag, which would otherwise strand the primary's runs on an x509
+		// error. See writeTFETrustAnchors.
+		if _, anchorErr := writeTFETrustAnchors(layout.CertDir); anchorErr != nil {
+			fmt.Printf("⚠️  Could not stage twin TFE trust anchors (runs may fail to start an agent): %v\n", anchorErr)
+		}
+
 		tfeArgs = append(tfeArgs,
 			"-e", "TFE_OPERATIONAL_MODE=external",
 			"-e", fmt.Sprintf("TFE_HOSTNAME=%s", tfeTwinHostname),
@@ -268,7 +275,7 @@ var twinCmd = &cobra.Command{
 			layout.CoreContainer,
 			"sh",
 			"-lc",
-			"cp /etc/ssl/tfe/cert.pem /usr/local/share/ca-certificates/tfe-twin-localhost.crt && update-ca-certificates >/dev/null 2>&1 && supervisorctl restart tfe:archivist >/dev/null 2>&1",
+			refreshTFETrustStoreCmd,
 		).CombinedOutput(); trustErr != nil {
 			fmt.Printf("⚠️  Could not refresh twin TFE trust store automatically: %s\n", strings.TrimSpace(string(trustOut)))
 		}
