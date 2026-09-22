@@ -68,7 +68,7 @@ target.
 | 5 | **`resolver` + variable upstream**, so nginx re-resolves and never hard-fails on an absent target |
 | 6 | **Only emit vhosts for targets that exist** |
 | 7 | **Lifecycle is consumer-aware**, reusing the existing `preserveSharedBackend` pattern |
-| 8 | **No compatibility aliases.** Host ports and hostnames are unchanged, so users see no CLI break |
+| 8 | **Three redundant twin flags are removed**, with no aliases; host ports, hostnames and URLs are unchanged |
 
 ### 1. One certificate
 
@@ -151,10 +151,14 @@ the proxy down.
 resolver <engine-dns> valid=10s ipv6=off;
 
 location / {
-    set $upstream_tfe hal-tfe:8443;
-    proxy_pass https://$upstream_tfe;
+    set $tfe_upstream hal-tfe:8443;
+    proxy_pass https://$tfe_upstream;
 }
 ```
+
+The variable is named `$tfe_upstream`, not `$upstream…`: nginx owns the `$upstream_`
+namespace for its own built-ins (`$upstream_addr`, `$upstream_http_*`, …), so a
+custom `set` there risks colliding with a reserved name.
 
 This buys two distinct things:
 
@@ -201,8 +205,27 @@ behind it.
 
 ## Consequences
 
-**No user-visible CLI or URL change.** Same flags, same host ports, same
-hostnames. This is an internal consolidation, unlike ADR 0001.
+**No URL change.** Same host ports, same hostnames, same
+`--twin-https-port`. Existing bookmarks and docs keep working.
+
+**Three twin flags are removed** — a small, deliberate CLI break:
+
+| Removed | Why | Replacement |
+|---|---|---|
+| `--twin-proxy-image` | named a container that no longer exists | `--tfe-proxy-image` |
+| `--twin-proxy-tag` | same | `--tfe-proxy-tag` |
+| `--twin-proxy-ip` | actively harmful — it set the twin's `--add-host` to an IP where nothing listens now that the proxy is shared | none needed |
+
+`--tfe-proxy-image` / `--tfe-proxy-tag` are already registered on the same
+`create`/`update` commands the twin lifecycle runs through, so the version-override
+contract in `LLM_CONTEXT.md` §6 is still satisfied by exactly one pair of flags for
+the one container. Keeping the twin duplicates would have let the two disagree over
+a single container, with last-writer-wins semantics.
+
+Because those flag vars are only bound on `create`/`update` while `delete` and
+`status` also reconcile the proxy, the image reference is resolved through
+`tfeProxyImageRef()`, which falls back to the defaults per component rather than
+producing `":"`.
 
 **Two classes of bug become structurally impossible,** rather than patched: there
 is no second cert to disagree with the first, and no second proxy to hold a stale

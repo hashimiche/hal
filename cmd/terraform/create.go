@@ -122,8 +122,11 @@ var deployCmd = &cobra.Command{
 		}
 
 		step(1, "Forging local TLS certificates")
-		homeDir, _ := os.UserHomeDir()
-		certDir := filepath.Join(homeDir, halStateDirName, tfeCertsDirName)
+		certDir, certDirErr := sharedTFECertDir()
+		if certDirErr != nil {
+			ui.Fail("Failed to resolve the shared TFE certificate directory: %v", certDirErr)
+			return
+		}
 
 		if tfeUpdate {
 			step(1, "Reconciling existing TFE resources (update)")
@@ -132,7 +135,7 @@ var deployCmd = &cobra.Command{
 			_ = os.Remove(filepath.Join(certDir, "cert.pem"))
 			_ = os.Remove(filepath.Join(certDir, "key.pem"))
 		}
-		if err := ensureCerts(certDir); err != nil {
+		if err := ensureSharedTFECert(certDir, sharedTFECertDNSNames()); err != nil {
 			ui.Fail("Failed to generate TLS certificates: %v", err)
 			return
 		}
@@ -152,8 +155,9 @@ var deployCmd = &cobra.Command{
 
 		// 4. Ensure the global HAL network exists
 		global.EnsureNetwork(engine)
-		// Derive the proxy IP from the actual hal-net subnet so it works on any engine.
-		proxyInternalIP := global.HalNetStaticIP(engine, tfePrimaryProxyHostNum)
+		// Derive the shared proxy IP from the actual hal-net subnet so it works on any
+		// engine. One proxy serves every target, so there is a single IP.
+		proxyInternalIP := global.HalNetStaticIP(engine, tfeProxyHostNum)
 
 		// 5. Deploy PostgreSQL
 		step(1, "Provisioning PostgreSQL database")
@@ -284,77 +288,21 @@ var deployCmd = &cobra.Command{
 			warnings = append(warnings, fmt.Sprintf("⚠️  Could not refresh TFE trust store automatically: %s", strings.TrimSpace(string(trustOut))))
 		}
 
-		// 8.5 Deploy the Magic Redirect Fixer (AFTER TFE BOOTS!)
-		step(1, "Deploying ingress proxy (redirect fixer)")
-		nginxConfig := `events {}
-http {
-	server {
-		listen 443 ssl;
-		listen 8443 ssl;
-		server_name tfe.localhost;
-		
-		ssl_certificate /etc/ssl/tfe/cert.pem;
-		ssl_certificate_key /etc/ssl/tfe/key.pem;
-		
-		location / {
-			# 🎯 Direct pass. Works perfectly in both Docker and Podman!
-			proxy_pass https://hal-tfe:8443;
-			
-			proxy_set_header Host tfe.localhost:8443;
-			proxy_set_header X-Forwarded-Host tfe.localhost:8443;
-			proxy_set_header X-Forwarded-Port 8443;
-			proxy_set_header X-Real-IP $remote_addr;
-			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-			proxy_set_header X-Forwarded-Proto https;
-			proxy_set_header Accept-Encoding "";
-			
-			# 🎯 Skip validating TFE's internal self-signed cert
-			proxy_ssl_verify off;
-
-			# TFE generates archivist object URLs without :8443. Rewrite them in JSON/UI
-			# responses so plan/apply log links remain reachable from the host OS.
-			sub_filter_once off;
-			sub_filter_types application/json application/vnd.api+json text/html text/plain;
-			sub_filter 'https://tfe.localhost/_archivist/' 'https://tfe.localhost:8443/_archivist/';
-			
-			# 🎯 Rewrite canonical redirects to the externally reachable :8443 endpoint.
-			proxy_redirect ~^https://tfe\.localhost(?::443)?(/.*)$ https://tfe.localhost:8443$1;
-			proxy_redirect ~^https://hal-tfe(?::8443)?(/.*)$ https://tfe.localhost:8443$1;
+		// 8.5 Deploy the shared ingress proxy (redirect fixer) AFTER TFE boots.
+		// One proxy serves every TFE target, one vhost each — adding the twin later only
+		// adds a vhost. See docs/adr/0002-shared-tfe-ingress-proxy-and-certificate.md.
+		step(1, "Deploying shared ingress proxy (redirect fixer)")
+		vhosts := []tfeProxyVhost{primaryTFEProxyVhost()}
+		// Keep a twin's vhost if one is already running, so reconciling the primary never
+		// tears the twin's ingress down.
+		for _, existing := range desiredTFEProxyVhosts(engine) {
+			if existing.Name == tfeProxyVhostTwin {
+				vhosts = append(vhosts, existing)
+			}
 		}
-	}
-
-	server {
-		listen 8444 ssl;
-		server_name tfe.localhost;
-
-		ssl_certificate /etc/ssl/tfe/cert.pem;
-		ssl_certificate_key /etc/ssl/tfe/key.pem;
-
-		location / {
-			proxy_pass https://hal-tfe:8444;
-
-			proxy_set_header Host tfe.localhost:8444;
-			proxy_set_header X-Forwarded-Host tfe.localhost:8444;
-			proxy_set_header X-Forwarded-Port 8444;
-			proxy_set_header X-Real-IP $remote_addr;
-			proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-			proxy_set_header X-Forwarded-Proto https;
-			proxy_set_header Accept-Encoding "";
-
-			proxy_ssl_verify off;
+		if err := ensureTFEProxy(engine, tfeProxyImageRef(), certDir, vhosts); err != nil {
+			warnings = append(warnings, fmt.Sprintf("⚠️  Could not reconcile the shared ingress proxy: %v", err))
 		}
-	}
-}`
-		proxyConfPath := filepath.Join(homeDir, halStateDirName, tfeProxyConfName)
-		_ = os.WriteFile(proxyConfPath, []byte(nginxConfig), 0644)
-
-		_ = exec.Command(engine, "run", "-d", "--name", tfeProxyContainer, "--network", global.HalNetName, "--ip", proxyInternalIP,
-			"--network-alias", tfePrimaryHostname,
-			"-p", fmt.Sprintf("%d:%d", tfeHTTPSPort, tfeHTTPSPort), // 🎯 Only the proxy exposes port 8443 to the host OS
-			"-p", fmt.Sprintf("%d:%d", tfeAdminHTTPSPort, tfeAdminHTTPSPort), // 🎯 Expose the TFE admin HTTPS port through the proxy
-			"-v", fmt.Sprintf("%s:/etc/ssl/tfe:ro", certDir),
-			"-v", fmt.Sprintf("%s:/etc/nginx/nginx.conf:ro", proxyConfPath),
-			fmt.Sprintf("%s:%s", tfeProxyImage, tfeProxyNginxTag)).Run()
 
 		// 9. THE HEALTH CHECK PHASE
 		ui.LogoStep("Waiting for TFE to initialize (this can take a few minutes)")
@@ -416,12 +364,51 @@ http {
 	},
 }
 
-func ensureCerts(certDir string) error {
+// sharedTFECertDNSNames returns every DNS name the one shared TFE certificate must
+// cover: both targets, plus any override passed by the twin lifecycle.
+//
+// The twin's names are included even when no twin exists, because the cert is minted
+// during primary create — long before --twin-hostname/--twin-container-name are
+// known. Using the defaults means the common case needs no rotation later. See the
+// accepted limitation in docs/adr/0002-shared-tfe-ingress-proxy-and-certificate.md
+// for what happens when those flags are overridden against a live primary.
+func sharedTFECertDNSNames(extra ...string) []string {
+	names := []string{
+		"localhost",
+		tfeCoreContainer,
+		tfePrimaryHostname,
+		defaultTFETwinContainer,
+		defaultTFETwinHostname,
+	}
+	names = append(names, extra...)
+
+	seen := map[string]bool{}
+	deduped := make([]string, 0, len(names))
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		deduped = append(deduped, n)
+	}
+	return deduped
+}
+
+// ensureSharedTFECert mints the single self-signed certificate shared by every TFE
+// target and by the shared ingress proxy.
+//
+// One cert for all targets is what keeps TFE's internal run agents working: each TFE
+// container bakes its own CA store into the shared hashicorp/tfe-agent:now image at
+// boot, so with per-target certs whichever booted last left the other's agents
+// unable to verify their own hostname (x509: certificate signed by unknown
+// authority) and its runs stuck in plan_queued.
+func ensureSharedTFECert(certDir string, dnsNames []string) error {
 	certPath := filepath.Join(certDir, "cert.pem")
 	keyPath := filepath.Join(certDir, "key.pem")
 
 	if _, err := os.Stat(certPath); err == nil {
-		if !shouldRotatePrimaryTFECert(certPath) {
+		if !shouldRotateSharedTFECert(certPath, dnsNames) {
 			return nil
 		}
 		_ = os.Remove(certPath)
@@ -447,7 +434,7 @@ func ensureCerts(certDir string) error {
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"HAL Primary TFE Local Dev Environment"},
+			Organization: []string{"HAL TFE Local Dev Environment"},
 			CommonName:   tfePrimaryHostname,
 		},
 		NotBefore:             time.Now(),
@@ -456,7 +443,7 @@ func ensureCerts(certDir string) error {
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		IsCA:                  true,
-		DNSNames:              []string{"localhost", tfeCoreContainer, tfePrimaryHostname},
+		DNSNames:              dnsNames,
 		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
 	}
 
@@ -476,7 +463,10 @@ func ensureCerts(certDir string) error {
 	return nil
 }
 
-func shouldRotatePrimaryTFECert(certPath string) bool {
+// shouldRotateSharedTFECert rotates whenever the cert on disk is missing any DNS
+// name it now has to cover. That one rule also performs the migration from the two
+// old per-target certs: each of them lacks at least one of the shared SANs.
+func shouldRotateSharedTFECert(certPath string, dnsNames []string) bool {
 	certPEM, err := os.ReadFile(certPath)
 	if err != nil {
 		return true
@@ -492,15 +482,14 @@ func shouldRotatePrimaryTFECert(certPath string) bool {
 		return true
 	}
 
-	hasPrimaryDNS := false
+	present := map[string]bool{}
 	for _, name := range cert.DNSNames {
-		if name == tfePrimaryHostname {
-			hasPrimaryDNS = true
-			break
-		}
+		present[name] = true
 	}
-	if !hasPrimaryDNS {
-		return true
+	for _, required := range dnsNames {
+		if !present[required] {
+			return true
+		}
 	}
 
 	legacyIssuer := strings.Contains(strings.Join(cert.Subject.Organization, ","), "HAL Local Dev Environment")
@@ -559,8 +548,8 @@ func bindLifecycleFlags(cmd *cobra.Command, includeUpdate bool) {
 	cmd.Flags().StringVar(&s3Version, "tfe-s3-tag", defaultTFES3Tag, "Object storage gateway image tag for TFE object storage")
 	cmd.Flags().StringVar(&s3Image, "tfe-s3-image", defaultTFES3Image, "Object storage gateway image name for TFE object storage")
 	cmd.Flags().IntVar(&s3APIPort, "s3-api-port", defaultTFES3APIHostPort, "Host port mapped to the S3 API container port 9000")
-	cmd.Flags().StringVar(&tfeProxyNginxTag, "tfe-proxy-tag", defaultTFEProxyTag, "Nginx image tag for the TFE ingress proxy")
-	cmd.Flags().StringVar(&tfeProxyImage, "tfe-proxy-image", defaultTFEProxyImage, "Nginx image name for the TFE ingress proxy")
+	cmd.Flags().StringVar(&tfeProxyNginxTag, "tfe-proxy-tag", defaultTFEProxyTag, "Nginx image tag for the shared TFE ingress proxy (serves every target)")
+	cmd.Flags().StringVar(&tfeProxyImage, "tfe-proxy-image", defaultTFEProxyImage, "Nginx image name for the shared TFE ingress proxy (serves every target)")
 	cmd.Flags().StringVarP(&tfePassword, "password", "p", defaultTFEEncryptionPassword, "TFE Encryption Password")
 	cmd.Flags().StringVar(&deployTFEOrg, "tfe-org", defaultTFEOrg, "Terraform Enterprise organization name to auto-bootstrap during deploy")
 	cmd.Flags().StringVar(&deployTFEProject, "tfe-project", defaultTFEProject, "Terraform Enterprise project name to auto-bootstrap during deploy")

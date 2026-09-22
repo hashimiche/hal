@@ -103,7 +103,7 @@ var capacityCmd = &cobra.Command{
 			{product: "Platform", scenario: "vault-k8s", label: "KinD + VSO (Vault K8s flow)", deployed: isVaultK8sDeployed(engine), containers: []string{"kind-control-plane"}},
 			{product: "Platform", scenario: "vault-jwt", label: "GitLab CI + runner (shared service)", deployed: global.IsContainerRunning(engine, "hal-gitlab"), containers: []string{"hal-gitlab", "hal-gitlab-runner"}},
 			{product: "Terraform", scenario: "terraform-deploy", label: "Terraform Enterprise stack", deployed: global.IsContainerRunning(engine, "hal-tfe"), containers: []string{"hal-tfe", "hal-tfe-db", "hal-tfe-redis", "hal-tfe-s3", "hal-tfe-proxy"}},
-			{product: "Terraform", scenario: "terraform-deploy", label: "Terraform Enterprise twin stack", deployed: global.IsContainerRunning(engine, "hal-tfe-bis"), containers: []string{"hal-tfe-bis", "hal-tfe-bis-proxy"}},
+			{product: "Terraform", scenario: "terraform-deploy", label: "Terraform Enterprise twin stack", deployed: global.IsContainerRunning(engine, "hal-tfe-bis"), containers: []string{"hal-tfe-bis"}},
 			{product: "Observability", scenario: "obs-deploy", label: "Observability stack", deployed: global.IsContainerRunning(engine, "hal-grafana"), containers: []string{"hal-grafana", "hal-prometheus", "hal-loki", "hal-promtail"}},
 		}
 		type compColor struct {

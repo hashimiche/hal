@@ -16,17 +16,25 @@ import (
 // Primary-only Terraform Enterprise containers and helpers.
 var tfePrimaryContainers = []string{
 	tfeCoreContainer,
-	tfeProxyContainer,
 	tfeAPIPrimaryContainer,
 	legacyTFECLIContainerName,
 	tfeAgentPrimaryContainer,
 }
 
-// Shared backend components used by primary and twin TFE instances.
+// Shared backend components used by primary and twin TFE instances. The ingress
+// proxy belongs here, not with the primary: one proxy serves every target via a
+// vhost each, so it must survive a primary delete while a twin is still running.
 var tfeSharedBackendContainers = []string{
 	tfeDBContainer,
 	tfeRedisContainer,
 	tfeS3Container,
+	tfeProxyContainer,
+}
+
+// Legacy per-target resources from before the proxy and certificate were shared.
+// Removed on a full teardown so upgraded machines are not left with orphans.
+var tfeLegacyPerTargetContainers = []string{
+	"hal-tfe-bis-proxy",
 }
 
 // Named volumes created by the shared backend containers. Must be removed
@@ -79,7 +87,7 @@ var destroyCmd = &cobra.Command{
 
 		fmt.Printf("⚙️  Destroying Terraform Enterprise ecosystem via %s...\n", engine)
 		if preserveSharedBackend {
-			fmt.Printf("ℹ️  Twin instance is running; preserving shared backend containers (%s, %s, %s).\n", tfeDBContainer, tfeRedisContainer, tfeS3Container)
+			fmt.Printf("ℹ️  Twin instance is running; preserving shared backend containers (%s, %s, %s, %s).\n", tfeDBContainer, tfeRedisContainer, tfeS3Container, tfeProxyContainer)
 		}
 
 		// 1. Destroy all associated containers
@@ -147,16 +155,33 @@ var destroyCmd = &cobra.Command{
 			}
 		}
 
-		// 3. Wipe the local Cert cache
+		// 3. Cert cache and proxy config.
+		//
+		// Both are shared with the twin. When a twin is still running we only retract
+		// the primary's vhost from the shared proxy and leave the certificate in place,
+		// because the twin is still serving from it.
 		homeDir, _ := os.UserHomeDir()
 		certDir := filepath.Join(homeDir, halStateDirName, tfeCertsDirName)
-		if _, err := os.Stat(certDir); err == nil {
-			if global.DryRun {
-				fmt.Printf("[DRY RUN] Would execute: rm -rf %s\n", certDir)
-			} else {
-				fmt.Println("  🧹 Wiping local TLS certificate cache...")
-				_ = os.RemoveAll(certDir)
+
+		if preserveSharedBackend {
+			if !global.DryRun {
+				if err := removeTFEProxyVhost(engine, tfeProxyImageRef(), certDir, tfeProxyVhostPrimary); err != nil {
+					fmt.Printf("⚠️  Could not remove the primary vhost from the shared proxy: %v\n", err)
+				} else {
+					fmt.Println("  🧹 Removed the primary vhost from the shared ingress proxy.")
+				}
 			}
+		} else {
+			if _, err := os.Stat(certDir); err == nil {
+				if global.DryRun {
+					fmt.Printf("[DRY RUN] Would execute: rm -rf %s\n", certDir)
+				} else {
+					fmt.Println("  🧹 Wiping local TLS certificate cache...")
+					_ = os.RemoveAll(certDir)
+				}
+			}
+			// Shared proxy config, plus the legacy per-target layout.
+			removeTFELegacyPerTargetState(engine, homeDir)
 		}
 
 		// 3. Attempt to clean the network
@@ -240,4 +265,25 @@ func init() {
 	bindTFETargetFlag(destroyCmd)
 	bindTwinFlags(destroyCmd)
 	Cmd.AddCommand(destroyCmd)
+}
+
+// removeTFELegacyPerTargetState clears the shared proxy's config directory and the
+// orphans left by the pre-shared layout: the twin's own proxy container, its separate
+// certificate directory, and both single-file proxy configs. Only called on a full
+// teardown, never while a twin is still serving.
+func removeTFELegacyPerTargetState(engine, homeDir string) {
+	_ = os.RemoveAll(filepath.Join(homeDir, halStateDirName, tfeProxyDirName))
+
+	for _, container := range tfeLegacyPerTargetContainers {
+		_ = exec.Command(engine, "rm", "-f", container).Run()
+	}
+
+	legacyPaths := []string{
+		filepath.Join(homeDir, halStateDirName, "tfe-proxy.conf"),
+		filepath.Join(homeDir, halStateDirName, "hal-tfe-bis-proxy.conf"),
+		filepath.Join(homeDir, halStateDirName, "hal-tfe-bis-certs"),
+	}
+	for _, path := range legacyPaths {
+		_ = os.RemoveAll(path)
+	}
 }
