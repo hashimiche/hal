@@ -240,7 +240,13 @@ func twinTFEProxyVhost(coreContainer, hostname string, httpsPort int) tfeProxyVh
 //
 //   - not running            -> create, publishing exactly the ports the vhosts need
 //   - running, ports suffice -> nginx -t then nginx -s reload (keeps connections)
-//   - running, ports short   -> recreate with the union of ports
+//   - running, ports short   -> recreate with the union
+//
+// "ports suffice" is deliberately a superset test, not equality: when a target is
+// removed the proxy keeps publishing that target's host port until something else
+// forces a recreate. That is harmless — nginx stops listening on it, so the port
+// answers nothing — and it is strictly better than tearing down the surviving
+// target's ingress just to unpublish a port nobody is using. of ports
 //
 // The recreate branch is not a preference, it is an engine constraint: a published
 // port cannot be added to a running container, so a twin joining an
@@ -415,6 +421,19 @@ func removeTFEProxyVhost(engine, image, certDir, name string) error {
 	}
 	return ensureTFEProxy(engine, image, certDir, remaining)
 }
+
+// refreshTFETrustStoreCmd installs the shared TFE certificate into a TFE container's
+// own CA store. It must run before TFE builds the hashicorp/tfe-agent:now image at
+// boot, because TFE bakes whatever is in this store into that image — which is how
+// the internal run agents come to trust the hostname they register against.
+//
+// The same command serves every target now that the certificate is shared. The twin
+// previously appended `supervisorctl restart tfe:archivist` here, which always failed
+// (this image has no supervisord — see foundation.go) and, with its output sent to
+// /dev/null, surfaced only as an empty "Could not refresh twin TFE trust store"
+// warning while the copy itself had actually succeeded.
+const refreshTFETrustStoreCmd = "cp /etc/ssl/tfe/cert.pem " +
+	"/usr/local/share/ca-certificates/tfe-localhost.crt && update-ca-certificates 2>&1"
 
 // tfeProxyImageRef resolves the shared proxy's image reference.
 //

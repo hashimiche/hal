@@ -259,7 +259,7 @@ var twinCmd = &cobra.Command{
 			layout.CoreContainer,
 			"sh",
 			"-lc",
-			"cp /etc/ssl/tfe/cert.pem /usr/local/share/ca-certificates/tfe-twin-localhost.crt && update-ca-certificates >/dev/null 2>&1 && supervisorctl restart tfe:archivist >/dev/null 2>&1",
+			refreshTFETrustStoreCmd,
 		).CombinedOutput(); trustErr != nil {
 			fmt.Printf("⚠️  Could not refresh twin TFE trust store automatically: %s\n", strings.TrimSpace(string(trustOut)))
 		}

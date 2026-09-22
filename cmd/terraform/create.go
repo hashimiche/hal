@@ -283,7 +283,7 @@ var deployCmd = &cobra.Command{
 			tfeCoreContainer,
 			"sh",
 			"-lc",
-			"cp /etc/ssl/tfe/cert.pem /usr/local/share/ca-certificates/tfe-localhost.crt && update-ca-certificates 2>&1",
+			refreshTFETrustStoreCmd,
 		).CombinedOutput(); trustErr != nil {
 			warnings = append(warnings, fmt.Sprintf("⚠️  Could not refresh TFE trust store automatically: %s", strings.TrimSpace(string(trustOut))))
 		}

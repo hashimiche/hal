@@ -137,6 +137,11 @@ ensureTFEProxy(engine, image, certDir, vhosts []tfeProxyVhost) error
    `nginx -s reload`
 4. running but the published-port set is insufficient → recreate with the union
 
+Step 3's port check is a **superset** test, not equality: removing a target leaves
+its host port published until some later change forces a recreate. Harmless — nginx
+stops listening on it, so the port answers nothing — and far better than disrupting
+the surviving target's ingress to unpublish an idle port.
+
 Step 4 is not an optimisation choice, it is a hard engine constraint: **a published
 port cannot be added to a running container.** Verified on the live proxy —
 `podman port hal-tfe-proxy` shows `8443` and `8444` only, so a twin's `9443` cannot
@@ -442,3 +447,40 @@ it is the only check that proves the `resolver` directive is actually in effect.
   nearly free, since nginx is stateless. Rejected only because reload preserves
   in-flight connections and the branch costs three lines — but this is the
   fallback if the reload path proves flaky.
+
+---
+
+## Verification result
+
+Executed 2026-09-22 on macOS arm64 / rootless podman against TFE 2.0.5. **Every
+check above passed.**
+
+| Check | Result |
+|---|---|
+| `go build`, `go vet`, `go test`, `gofmt -l` | clean |
+| Completeness grep | only the intended legacy-cleanup lines in `delete.go` |
+| Primary alone: published ports | `8443`, `8444` — no `9443` |
+| Primary alone: vhosts | `primary.conf` only |
+| Shared cert | `O=HAL TFE Local Dev Environment, CN=tfe.localhost`, SANs `localhost, hal-tfe, tfe.localhost, hal-tfe-bis, tfe-bis.localhost` + `127.0.0.1` |
+| Second cert dir / second proxy | absent (`hal-tfe-bis-certs` gone, 0 `bis-proxy` containers) |
+| Generated config | `resolver 10.89.0.1 valid=10s ipv6=off` (podman gateway), `set $tfe_upstream` |
+| **502 regression (step 5)** | `hal-tfe` restarted, IP moved `10.89.0.43` → `.44`; proxy recovered to `204` in ~20s (the `valid=10s` TTL) **with no proxy restart**. Previously 502'd forever. |
+| Twin joins: ports | recreated to publish `8443`, `8444`, `9443` |
+| Twin joins: vhosts | `primary.conf` **and** `twin.conf` |
+| All three endpoints via one proxy | `tfe.localhost:8443` 204, `tfe-bis.localhost:9443` 204, `tfe.localhost:8444` 200 |
+| **Shared cert trusted for both hostnames** | from inside `hashicorp/tfe-agent:now`: `tfe.localhost` and `tfe-bis.localhost` both `Verify return code: 0 (ok)` |
+| `tfe-agent:now` contents | exactly **one** cert, the shared one — not a per-target cert |
+| **ADR 0001 regression (step 3)** | primary run after twin boot → `planned_and_finished`; `x509` count in `hal-tfe` logs: **0** |
+| Primary delete under live twin (step 7) | proxy **and** cert preserved, only `primary.conf` retracted, twin still `204` |
+| Primary recreate under live twin | twin's vhost preserved, both endpoints `204` |
+| Twin delete (step 6) | `twin.conf` removed, shared cert kept, primary `204` / admin `200` |
+
+Two findings the runtime test surfaced, both now fixed in this branch:
+
+1. The twin's trust refresh still carried the dead
+   `supervisorctl restart tfe:archivist`, so `create --target twin` kept printing the
+   empty "Could not refresh twin TFE trust store automatically:" warning. Both
+   targets now share one `refreshTFETrustStoreCmd`, and the warning is gone.
+2. `hal terraform status` listed the shared proxy for the twin but not for the
+   primary. It is a shared service that can fail on its own, so it is now reported
+   for both.

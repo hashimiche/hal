@@ -63,6 +63,7 @@ func printTFETargetDetailedStatus(engine, target string) {
 		{"Database (Postgres)", tfeDBContainer},
 		{"Cache (Redis)", tfeRedisContainer},
 		{"Object Storage (S3)", tfeS3Container},
+		{"Ingress Proxy (shared)", tfeProxyContainer},
 		{"TFE Core (Application)", tfeCoreContainer},
 	}
 
