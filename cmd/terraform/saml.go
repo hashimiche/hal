@@ -80,10 +80,11 @@ func tfeSAMLSPBaseURL(apiBaseURL, target string) string {
 
 // tfeSAMLProxyContainerForTarget returns the proxy container name for SCIM
 // container-to-container access.
-func tfeSAMLProxyContainerForTarget(target string) string {
-	if target == tfeTargetTwin {
-		return "hal-tfe-bis-proxy"
-	}
+//
+// Every target is served by the one shared ingress proxy, distinguished by vhost, so
+// this is the same container for primary and twin — only the port differs (see
+// tfeSAMLProxyPortForTarget).
+func tfeSAMLProxyContainerForTarget(_ string) string {
 	return tfeProxyContainer
 }
 

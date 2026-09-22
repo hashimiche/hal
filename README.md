@@ -340,7 +340,8 @@ hal terraform update
 hal terraform delete
 ```
 
-**Twin TFE instance** — reuses the primary ecosystem (PostgreSQL, Redis, S3)
+**Twin TFE instance** — reuses the primary ecosystem (PostgreSQL, Redis, S3,
+and the shared ingress proxy + TLS certificate)
 
 ```bash
 hal terraform create --target twin --twin-tag 2.0.5

@@ -263,17 +263,15 @@ func enableTFEAgent(engine, target string) error {
 		return fmt.Errorf("missing local TFE certificate: %w", err)
 	}
 
+	// Both hostnames resolve to the one shared ingress proxy, which serves a vhost per
+	// target. Derive its IP from the live hal-net subnet so it works on any host/engine.
 	addHostArg := ""
 	if parsed, parseErr := url.Parse(baseURL); parseErr == nil {
+		proxyIP := global.HalNetStaticIP(engine, tfeProxyHostNum)
 		if strings.EqualFold(parsed.Hostname(), tfePrimaryHostname) {
-			// Derive the proxy IP from the live hal-net subnet so it works on any host/engine.
-			addHostArg = tfePrimaryHostname + ":" + global.HalNetStaticIP(engine, tfePrimaryProxyHostNum)
+			addHostArg = tfePrimaryHostname + ":" + proxyIP
 		} else if strings.EqualFold(parsed.Hostname(), defaultTFETwinHostname) {
-			twinIP := tfeTwinProxyInternalIP
-			if twinIP == "" {
-				twinIP = global.HalNetStaticIP(engine, tfeTwinProxyHostNum)
-			}
-			addHostArg = defaultTFETwinHostname + ":" + twinIP
+			addHostArg = defaultTFETwinHostname + ":" + proxyIP
 		}
 	}
 
@@ -656,11 +654,9 @@ func init() {
 		"twin-tfe-admin-username",
 		"twin-tfe-admin-email",
 		"twin-tfe-admin-password",
-		"twin-proxy-nginx-version",
 		"twin-https-port",
 		"twin-hostname",
 		"twin-container-name",
-		"twin-proxy-ip",
 		"twin-db-password",
 		"twin-db-name",
 		"twin-s3-access-key",

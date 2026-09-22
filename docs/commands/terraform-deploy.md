@@ -46,8 +46,6 @@ Deploy the local Terraform Enterprise (TFE) stack for HAL labs.
 --twin-s3-access-key string         S3 access key for shared object storage (default "haladmin")
 --twin-s3-secret-key string         S3 secret key for shared object storage (default "hal9000FTW")
 --twin-password string              Twin TFE encryption password (default "hal-secret-encryption-password")
---twin-proxy-ip string              Static internal proxy IP on hal-net for twin hostname routing (default "10.89.3.55")
---twin-proxy-nginx-version string   Nginx image tag for the twin ingress proxy (default "alpine")
 --twin-s3-bucket string             S3 bucket name for twin TFE objects in shared object storage (default "tfe-bis-data")
 --twin-tfe-admin-email string       Initial twin TFE admin email used when bootstrapping via IACT (default "haladmin@localhost")
 --twin-tfe-admin-password string    Initial twin TFE admin password used when bootstrapping via IACT (default "hal9000FTW")

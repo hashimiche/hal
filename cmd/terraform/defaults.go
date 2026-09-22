@@ -41,18 +41,19 @@ const (
 	tfeMetricsHTTPSPort    = 9091
 	tfePrimaryBaseURL      = "https://tfe.localhost:8443"
 
-	// --- Ingress proxy static-IP host numbers on hal-net ---
-	// The proxy IP is derived dynamically from the live hal-net subnet via
-	// global.HalNetStaticIP(engine, hostNum) so it works on any host/engine.
-	// These host numbers are shared by create (primary), twin, and agent.
-	tfePrimaryProxyHostNum = 250
-	tfeTwinProxyHostNum    = 249
+	// --- Ingress proxy static-IP host number on hal-net ---
+	// A single shared proxy serves every TFE target (one vhost each), so there is
+	// exactly one host number. The IP is derived dynamically from the live hal-net
+	// subnet via global.HalNetStaticIP(engine, hostNum) so it works on any
+	// host/engine. Shared by create (primary), twin, and agent.
+	tfeProxyHostNum = 250
 
 	// --- Identity / credential defaults ---
 	// Flag defaults and !Changed() fallbacks across create, api-workflow,
 	// agent, vcs-workflow, saml.
 	defaultTFEOrg                = "hal"
 	defaultTFEProject            = "Dave"
+	defaultTFETwinContainer      = "hal-tfe-bis"
 	defaultTFEAdminUsername      = "haladmin"
 	defaultTFEAdminEmail         = "haladmin@localhost"
 	defaultTFEAdminPassword      = "hal9000FTW"
@@ -88,8 +89,12 @@ const (
 	defaultTFES3APIHostPort = 19000
 
 	// --- ~/.hal filesystem layout (create, delete, api-workflow, agent) ---
-	halStateDirName     = ".hal"
-	tfeCertsDirName     = "tfe-certs"
-	tfeProxyConfName    = "tfe-proxy.conf"
-	tfeAPITokenFileName = "tfe-app-api-token"
+	halStateDirName = ".hal"
+	// tfeCertsDirName holds the single TLS cert/key shared by every TFE target.
+	tfeCertsDirName = "tfe-certs"
+	// tfeProxyDirName holds the shared proxy's nginx.conf plus one vhost file per
+	// deployed target under tfeProxyVhostsDirName.
+	tfeProxyDirName       = "tfe-proxy"
+	tfeProxyVhostsDirName = "vhosts"
+	tfeAPITokenFileName   = "tfe-app-api-token"
 )

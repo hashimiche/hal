@@ -1,0 +1,464 @@
+package terraform
+
+// proxy.go owns the single nginx ingress proxy shared by every TFE target.
+//
+// One container (tfeProxyContainer) serves one vhost per deployed target, split on
+// server_name: tfe.localhost for the primary and tfe-bis.localhost for the twin.
+// The proxy is a shared service exactly like PostgreSQL / Redis / object storage —
+// see docs/adr/0002-shared-tfe-ingress-proxy-and-certificate.md.
+//
+// Before this, each target ran its own proxy on its own static IP with its own
+// config file. That duplication cost two outages: a stale cached upstream IP that
+// 502'd forever after a core restart, and a second TLS certificate that poisoned
+// the shared hashicorp/tfe-agent:now image.
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"hal/internal/global"
+)
+
+// Vhost names double as their config filenames under <proxyDir>/vhosts.
+const (
+	tfeProxyVhostPrimary = "primary"
+	tfeProxyVhostTwin    = "twin"
+)
+
+// tfeProxyConfMount is where the proxy directory is bind-mounted in the container.
+// A directory (not a single file) so adding or removing a vhost is visible to the
+// running nginx immediately, with no container recreation.
+const tfeProxyConfMount = "/etc/nginx/hal"
+
+// tfeProxyVhost describes one target's ingress. AdminPort is 0 when the target has
+// no admin endpoint (only the primary publishes one).
+type tfeProxyVhost struct {
+	Name       string // tfeProxyVhostPrimary | tfeProxyVhostTwin
+	ServerName string // tfe.localhost
+	Upstream   string // hal-tfe (container name, resolved at request time)
+	HTTPSPort  int    // 8443 — published on the host and listened on internally
+	AdminPort  int    // 8444, or 0
+}
+
+// hostPorts returns every host port this vhost needs published.
+func (v tfeProxyVhost) hostPorts() []int {
+	ports := []int{v.HTTPSPort}
+	if v.AdminPort != 0 {
+		ports = append(ports, v.AdminPort)
+	}
+	return ports
+}
+
+// tfeProxyPaths returns the proxy config directory, its nginx.conf and its vhost
+// directory on the host, creating the directories if needed.
+func tfeProxyPaths() (dir string, confPath string, vhostsDir string, err error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", "", err
+	}
+	dir = filepath.Join(homeDir, halStateDirName, tfeProxyDirName)
+	vhostsDir = filepath.Join(dir, tfeProxyVhostsDirName)
+	if err := os.MkdirAll(vhostsDir, 0o755); err != nil {
+		return "", "", "", fmt.Errorf("create proxy config dir: %w", err)
+	}
+	return dir, filepath.Join(dir, "nginx.conf"), vhostsDir, nil
+}
+
+// tfeProxyResolver returns the DNS server nginx must use to re-resolve upstreams.
+//
+// This is engine-specific and cannot be hardcoded: Docker runs an embedded resolver
+// at 127.0.0.11, while podman's aardvark-dns answers on the network gateway (a
+// container on hal-net gets `nameserver <gateway>` in /etc/resolv.conf). Using the
+// Docker address under podman would make every upstream unresolvable.
+func tfeProxyResolver(engine string) string {
+	if strings.Contains(strings.ToLower(engine), "podman") {
+		return global.HalNetStaticIP(engine, 1)
+	}
+	return "127.0.0.11"
+}
+
+// renderTFEProxyBaseConf builds the top-level nginx.conf, which holds only the
+// resolver and the vhost include.
+//
+// The `resolver ... valid=10s` pairs with the variable `proxy_pass` in each vhost
+// (see renderTFEProxyVhost) and is load-bearing twice over: it lets nginx pick up a
+// core container that restarted onto a new hal-net IP, and it stops nginx refusing
+// to start when a vhost's upstream does not currently exist.
+func renderTFEProxyBaseConf(engine string) string {
+	return fmt.Sprintf(`events {}
+http {
+	# Re-resolve upstreams instead of caching them for the worker's lifetime. See
+	# renderTFEProxyVhost for why every proxy_pass goes through a variable.
+	resolver %s valid=10s ipv6=off;
+	resolver_timeout 5s;
+
+	include %s/%s/*.conf;
+}
+`, tfeProxyResolver(engine), tfeProxyConfMount, tfeProxyVhostsDirName)
+}
+
+// renderTFEProxyVhost builds one target's server blocks.
+//
+// Every behaviour of the previous per-target configs is preserved verbatim, only
+// parameterised: proxy_ssl_verify off (TFE serves its own self-signed cert
+// internally), the Host/X-Forwarded-* headers TFE needs to build correct absolute
+// URLs, the empty Accept-Encoding (so responses stay uncompressed and sub_filter can
+// rewrite them), the _archivist/ rewrite that keeps plan/apply log links reachable
+// from the host, and both proxy_redirect rules.
+//
+// proxy_pass goes through a `set` variable deliberately. With a literal hostname
+// nginx resolves it once at startup and refuses to start at all if it does not
+// resolve — so a single vhost for a torn-down target would take down the whole
+// shared proxy, including the surviving target. Through a variable, resolution
+// happens per request against the resolver, and an absent upstream degrades to a
+// 502 confined to that one vhost.
+func renderTFEProxyVhost(v tfeProxyVhost) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, `# %s ingress — generated by hal, do not edit.
+server {
+	listen 443 ssl;
+	listen %d ssl;
+	server_name %s;
+
+	ssl_certificate /etc/ssl/tfe/cert.pem;
+	ssl_certificate_key /etc/ssl/tfe/key.pem;
+
+	location / {
+		set $tfe_upstream %s:8443;
+		proxy_pass https://$tfe_upstream;
+
+		proxy_set_header Host %s:%d;
+		proxy_set_header X-Forwarded-Host %s:%d;
+		proxy_set_header X-Forwarded-Port %d;
+		proxy_set_header X-Real-IP $remote_addr;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		proxy_set_header X-Forwarded-Proto https;
+		proxy_set_header Accept-Encoding "";
+
+		# TFE serves its own self-signed cert on the internal port.
+		proxy_ssl_verify off;
+
+		# TFE emits archivist object URLs without the published port. Rewrite them
+		# in JSON/UI responses so plan/apply log links stay reachable from the host.
+		# text/html is sub_filter's default type and is deliberately not repeated
+		# here: listing it explicitly is what made nginx log a duplicate MIME type
+		# warning on every start.
+		sub_filter_once off;
+		sub_filter_types application/json application/vnd.api+json text/plain;
+		sub_filter 'https://%s/_archivist/' 'https://%s:%d/_archivist/';
+
+		# Rewrite canonical redirects to the externally reachable port.
+		proxy_redirect ~^https://%s(?::443)?(/.*)$ https://%s:%d$1;
+		proxy_redirect ~^https://%s(?::8443)?(/.*)$ https://%s:%d$1;
+	}
+}
+`,
+		v.Name,
+		v.HTTPSPort, v.ServerName,
+		v.Upstream,
+		v.ServerName, v.HTTPSPort,
+		v.ServerName, v.HTTPSPort,
+		v.HTTPSPort,
+		v.ServerName, v.ServerName, v.HTTPSPort,
+		regexpEscapeHost(v.ServerName), v.ServerName, v.HTTPSPort,
+		regexpEscapeHost(v.Upstream), v.ServerName, v.HTTPSPort,
+	)
+
+	if v.AdminPort != 0 {
+		fmt.Fprintf(&b, `
+server {
+	listen %d ssl;
+	server_name %s;
+
+	ssl_certificate /etc/ssl/tfe/cert.pem;
+	ssl_certificate_key /etc/ssl/tfe/key.pem;
+
+	location / {
+		set $tfe_admin_upstream %s:%d;
+		proxy_pass https://$tfe_admin_upstream;
+
+		proxy_set_header Host %s:%d;
+		proxy_set_header X-Forwarded-Host %s:%d;
+		proxy_set_header X-Forwarded-Port %d;
+		proxy_set_header X-Real-IP $remote_addr;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		proxy_set_header X-Forwarded-Proto https;
+		proxy_set_header Accept-Encoding "";
+
+		proxy_ssl_verify off;
+	}
+}
+`,
+			v.AdminPort, v.ServerName,
+			v.Upstream, v.AdminPort,
+			v.ServerName, v.AdminPort,
+			v.ServerName, v.AdminPort,
+			v.AdminPort,
+		)
+	}
+
+	return b.String()
+}
+
+// regexpEscapeHost escapes the dots in a hostname so it is safe inside the
+// proxy_redirect regexes, which are otherwise matched with `.` as a wildcard.
+func regexpEscapeHost(host string) string {
+	return strings.ReplaceAll(host, ".", `\.`)
+}
+
+// primaryTFEProxyVhost is the primary target's ingress: the only one with an admin
+// endpoint.
+func primaryTFEProxyVhost() tfeProxyVhost {
+	return tfeProxyVhost{
+		Name:       tfeProxyVhostPrimary,
+		ServerName: tfePrimaryHostname,
+		Upstream:   tfeCoreContainer,
+		HTTPSPort:  tfeHTTPSPort,
+		AdminPort:  tfeAdminHTTPSPort,
+	}
+}
+
+// twinTFEProxyVhost is the twin target's ingress, on its own host port.
+func twinTFEProxyVhost(coreContainer, hostname string, httpsPort int) tfeProxyVhost {
+	return tfeProxyVhost{
+		Name:       tfeProxyVhostTwin,
+		ServerName: hostname,
+		Upstream:   coreContainer,
+		HTTPSPort:  httpsPort,
+	}
+}
+
+// ensureTFEProxy reconciles the shared proxy to exactly the given vhost set.
+//
+// It writes the base config and one file per vhost, deletes vhost files for targets
+// that are no longer present, then either reloads or recreates the container:
+//
+//   - not running            -> create, publishing exactly the ports the vhosts need
+//   - running, ports suffice -> nginx -t then nginx -s reload (keeps connections)
+//   - running, ports short   -> recreate with the union
+//
+// "ports suffice" is deliberately a superset test, not equality: when a target is
+// removed the proxy keeps publishing that target's host port until something else
+// forces a recreate. That is harmless — nginx stops listening on it, so the port
+// answers nothing — and it is strictly better than tearing down the surviving
+// target's ingress just to unpublish a port nobody is using. of ports
+//
+// The recreate branch is not a preference, it is an engine constraint: a published
+// port cannot be added to a running container, so a twin joining an
+// 8443/8444-only proxy must recreate it to publish 9443. nginx is stateless, so
+// recreating costs well under a second.
+func ensureTFEProxy(engine, image, certDir string, vhosts []tfeProxyVhost) error {
+	if len(vhosts) == 0 {
+		// Nothing left to serve — drop the proxy rather than leave it with no vhost.
+		_ = exec.Command(engine, "rm", "-f", tfeProxyContainer).Run()
+		return nil
+	}
+
+	dir, confPath, vhostsDir, err := tfeProxyPaths()
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(confPath, []byte(renderTFEProxyBaseConf(engine)), 0o644); err != nil {
+		return fmt.Errorf("write proxy config: %w", err)
+	}
+
+	keep := map[string]bool{}
+	for _, v := range vhosts {
+		keep[v.Name+".conf"] = true
+		dst := filepath.Join(vhostsDir, v.Name+".conf")
+		if err := os.WriteFile(dst, []byte(renderTFEProxyVhost(v)), 0o644); err != nil {
+			return fmt.Errorf("write %s vhost: %w", v.Name, err)
+		}
+	}
+	// Drop vhosts for targets that are gone, so their host ports are not published
+	// and nginx does not serve a name with nothing behind it.
+	if entries, readErr := os.ReadDir(vhostsDir); readErr == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".conf") && !keep[e.Name()] {
+				_ = os.Remove(filepath.Join(vhostsDir, e.Name()))
+			}
+		}
+	}
+
+	wanted := desiredTFEProxyPorts(vhosts)
+
+	if !global.IsContainerRunning(engine, tfeProxyContainer) {
+		return startTFEProxy(engine, image, certDir, dir, wanted)
+	}
+
+	published, portErr := publishedTFEProxyPorts(engine)
+	if portErr == nil && containsAllPorts(published, wanted) {
+		if out, err := exec.Command(engine, "exec", tfeProxyContainer, "nginx", "-t").CombinedOutput(); err != nil {
+			return fmt.Errorf("proxy config rejected by nginx -t, not reloading: %s", strings.TrimSpace(string(out)))
+		}
+		if out, err := exec.Command(engine, "exec", tfeProxyContainer, "nginx", "-s", "reload").CombinedOutput(); err != nil {
+			return fmt.Errorf("proxy reload failed: %s", strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+
+	// The published-port set has to change; only a recreate can do that.
+	_ = exec.Command(engine, "rm", "-f", tfeProxyContainer).Run()
+	return startTFEProxy(engine, image, certDir, dir, wanted)
+}
+
+// startTFEProxy creates the proxy container publishing the given host ports.
+func startTFEProxy(engine, image, certDir, proxyDir string, ports []int) error {
+	args := []string{
+		"run", "-d",
+		"--name", tfeProxyContainer,
+		"--network", global.HalNetName,
+		"--ip", global.HalNetStaticIP(engine, tfeProxyHostNum),
+		// Both hostnames are aliases on the one proxy. Aliases are free (unlike
+		// published ports) so the twin's name is registered up front and a twin
+		// joining later never needs the alias set to change.
+		"--network-alias", tfePrimaryHostname,
+		"--network-alias", defaultTFETwinHostname,
+	}
+	for _, p := range ports {
+		args = append(args, "-p", fmt.Sprintf("%d:%d", p, p))
+	}
+	args = append(args,
+		"-v", fmt.Sprintf("%s:/etc/ssl/tfe:ro", certDir),
+		"-v", fmt.Sprintf("%s:%s:ro", proxyDir, tfeProxyConfMount),
+		image,
+		"nginx", "-c", tfeProxyConfMount+"/nginx.conf", "-g", "daemon off;",
+	)
+
+	if out, err := exec.Command(engine, args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("start %s: %s", tfeProxyContainer, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// desiredTFEProxyPorts is the sorted, deduped set of host ports the vhosts need.
+func desiredTFEProxyPorts(vhosts []tfeProxyVhost) []int {
+	seen := map[int]bool{}
+	ports := []int{}
+	for _, v := range vhosts {
+		for _, p := range v.hostPorts() {
+			if p != 0 && !seen[p] {
+				seen[p] = true
+				ports = append(ports, p)
+			}
+		}
+	}
+	sort.Ints(ports)
+	return ports
+}
+
+// publishedTFEProxyPorts reads the host ports the running proxy actually publishes.
+func publishedTFEProxyPorts(engine string) ([]int, error) {
+	out, err := exec.Command(engine, "inspect", "-f",
+		"{{range $p, $conf := .NetworkSettings.Ports}}{{$p}} {{end}}", tfeProxyContainer).Output()
+	if err != nil {
+		return nil, err
+	}
+
+	ports := []int{}
+	for _, field := range strings.Fields(string(out)) {
+		spec := strings.SplitN(field, "/", 2)[0]
+		var p int
+		if _, scanErr := fmt.Sscanf(spec, "%d", &p); scanErr == nil && p != 0 {
+			ports = append(ports, p)
+		}
+	}
+	sort.Ints(ports)
+	return ports, nil
+}
+
+func containsAllPorts(have, want []int) bool {
+	set := map[int]bool{}
+	for _, p := range have {
+		set[p] = true
+	}
+	for _, p := range want {
+		if !set[p] {
+			return false
+		}
+	}
+	return true
+}
+
+// desiredTFEProxyVhosts returns the vhosts for the targets that are currently
+// deployed, judged by their core container. Used by paths that reconcile the proxy
+// without knowing which target they were invoked for.
+func desiredTFEProxyVhosts(engine string) []tfeProxyVhost {
+	vhosts := []tfeProxyVhost{}
+	if global.IsContainerRunning(engine, tfeCoreContainer) {
+		vhosts = append(vhosts, primaryTFEProxyVhost())
+	}
+	if layout, err := buildTFETwinLayout(); err == nil {
+		if global.IsContainerRunning(engine, layout.CoreContainer) {
+			vhosts = append(vhosts, twinTFEProxyVhost(layout.CoreContainer, tfeTwinHostname, tfeTwinHTTPSPort))
+		}
+	}
+	return vhosts
+}
+
+// removeTFEProxyVhost drops one target's vhost and reconciles the proxy, leaving any
+// other target serving. Used by both delete paths.
+func removeTFEProxyVhost(engine, image, certDir, name string) error {
+	_, _, vhostsDir, err := tfeProxyPaths()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(vhostsDir, name+".conf")); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove %s vhost: %w", name, err)
+	}
+
+	remaining := []tfeProxyVhost{}
+	for _, v := range desiredTFEProxyVhosts(engine) {
+		if v.Name != name {
+			remaining = append(remaining, v)
+		}
+	}
+	return ensureTFEProxy(engine, image, certDir, remaining)
+}
+
+// refreshTFETrustStoreCmd installs the shared TFE certificate into a TFE container's
+// own CA store. It must run before TFE builds the hashicorp/tfe-agent:now image at
+// boot, because TFE bakes whatever is in this store into that image — which is how
+// the internal run agents come to trust the hostname they register against.
+//
+// The same command serves every target now that the certificate is shared. The twin
+// previously appended `supervisorctl restart tfe:archivist` here, which always failed
+// (this image has no supervisord — see foundation.go) and, with its output sent to
+// /dev/null, surfaced only as an empty "Could not refresh twin TFE trust store"
+// warning while the copy itself had actually succeeded.
+const refreshTFETrustStoreCmd = "cp /etc/ssl/tfe/cert.pem " +
+	"/usr/local/share/ca-certificates/tfe-localhost.crt && update-ca-certificates 2>&1"
+
+// tfeProxyImageRef resolves the shared proxy's image reference.
+//
+// It falls back to the defaults per component because --tfe-proxy-image/--tfe-proxy-tag
+// are only bound on the create/update commands, while the delete and status commands
+// also reconcile the proxy (to retract a vhost). Reading the flag vars unguarded there
+// would yield ":" and fail the run.
+func tfeProxyImageRef() string {
+	image := strings.TrimSpace(tfeProxyImage)
+	if image == "" {
+		image = defaultTFEProxyImage
+	}
+	tag := strings.TrimSpace(tfeProxyNginxTag)
+	if tag == "" {
+		tag = defaultTFEProxyTag
+	}
+	return fmt.Sprintf("%s:%s", image, tag)
+}
+
+// sharedTFECertDir is the one cert directory every TFE target mounts at
+// /etc/ssl/tfe, and which the shared proxy serves from.
+func sharedTFECertDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, halStateDirName, tfeCertsDirName), nil
+}

@@ -11,7 +11,7 @@ This skill handles the lifecycle of a second local TFE instance â€” the "twin" â
 
 Use this skill when the user asks to:
 
-- provision a second TFE instance reusing the primary ecosystem (S3, Redis, Postgres)
+- provision a second TFE instance reusing the primary ecosystem (S3, Redis, Postgres, ingress proxy, TLS certificate)
 - check the status of the twin TFE instance
 - tear down the twin while preserving the primary
 - run api-workflow, vcs-workflow, or agent on the twin instance
@@ -45,7 +45,7 @@ When the user scopes other workflows to the twin, use `--target twin`:
 - Twin API helper container: `hal-tfe-bis-api`
 - Twin agent container: `hal-tfe-bis-agent`
 - Prerequisite: primary TFE must be running before enabling the twin
-- The twin reuses `hal-tfe-db`, `hal-tfe-redis`, `hal-tfe-s3` from the primary deployment
+- The twin reuses `hal-tfe-db`, `hal-tfe-redis`, `hal-tfe-s3`, `hal-tfe-proxy` from the primary deployment
 
 ## Key Flags
 
