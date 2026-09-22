@@ -8,12 +8,14 @@ name: CI
 # its feature/bugfix branch before merge, so re-running the checklist on the
 # merge commit is redundant. Mis-prefixed branches never run CI; when these jobs
 # are required status checks in branch protection, that also blocks them from
-# merging.
+# merging. Keep this branch list in sync with CONTRIBUTING.md's branch-naming
+# section and the PR template's branch checklist item.
 on:
   push:
     branches:
       - 'feature/**'
       - 'bugfix/**'
+      - 'docs/**'
 
 permissions:
   contents: read

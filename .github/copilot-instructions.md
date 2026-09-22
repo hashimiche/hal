@@ -63,6 +63,7 @@ Whenever CLI behavior, naming, or lifecycle semantics change:
 Every `hal` CLI change must land on a named branch before merging to `main`:
 - New capabilities: `feature/<short-description>`
 - Bug fixes or corrections: `bugfix/<short-description>`
+- Docs / internal only, no command behavior change: `docs/<short-description>`
 
 Before writing any code, ask the user to create or confirm the target branch.
 

@@ -254,7 +254,7 @@ For product-level delete flows, prefer deleting the known local ecosystem direct
     - Created on demand by `global.EnsureNetwork()` before any product that needs inter-container networking.
     - No subnet is enforced by default — the engine picks freely. On Rancher Desktop this can conflict with static proxy IPs needed by TFE.
     - `--network-subnet <cidr>` (global persistent flag) pins the subnet on first creation only. Example: `hal --network-subnet 10.89.3.0/24 tf create --enable`.
-    - `global.HalNetStaticIP(engine, hostNum)` inspects the live `hal-net` subnet at runtime and returns `<network-prefix>.<hostNum>`. TFE proxy uses host `.250`, twin proxy uses host `.249`. This makes static IPs portable across any subnet the engine assigned.
+    - `global.HalNetStaticIP(engine, hostNum)` inspects the live `hal-net` subnet at runtime and returns `<network-prefix>.<hostNum>`. The single shared `hal-tfe-proxy` uses host `.250` (see ADR 0002 — there is no separate twin/bis proxy, so no `.249` host is allocated). This makes static IPs portable across any subnet the engine assigned.
     - `global.HalNetName` and `global.HalNetSubnet` are exported constants/vars for use across packages.
 
 ## Maintenance Rule

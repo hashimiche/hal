@@ -72,10 +72,11 @@ With `--scim`, also wire Authentik outbound SCIM to provision users and teams in
 
 TFE only adds SSO users to *existing* teams whose names match the `MemberOf` SAML attribute. Teams are pre-created by `provisionTFESAMLTeams` during `saml enable`/`update`.
 
-**With `--scim`** (pending — not yet implemented):
-- TFE SCIM token created via `POST /api/v2/organizations/:org/scim-tokens`
-- Authentik outbound SCIM provider `tfe-scim-provider` targeting `https://hal-tfe-proxy:8443/api/scim/v2`
-- SCIM provider assigned as backchannel on `tfe-saml` application
+**With `--scim`**:
+- `PATCH /api/v2/admin/scim-settings {enabled:true}` (TFE 2.0+; requires SAML `provider_type: "saml"` already set, or TFE returns 422)
+- Site-admin scoped TFE SCIM token created via `POST /api/v2/admin/scim-tokens`
+- Authentik outbound SCIM provider `tfe-scim-provider` (`tfe-bis-scim-provider` for twin) targeting the shared `hal-tfe-proxy` — `https://hal-tfe-proxy:8443/scim/v2` for primary, `https://hal-tfe-proxy:9443/scim/v2` for twin
+- SCIM provider assigned as backchannel on the target's SAML application
 - Initial users+groups sync run immediately
 
 ## SCIM Behaviour
@@ -86,7 +87,7 @@ TFE only adds SSO users to *existing* teams whose names match the `MemberOf` SAM
 | Group created in Authentik | ✅ Yes (when `--scim` active) |
 | User added to / removed from group | ✅ Yes — Authentik 2026.2.3+ (when `--scim` active) |
 
-> `--scim` is pending implementation. Without it, TFE teams `admins` and `devs` are pre-created by `hal tf saml enable` with org-level access. SSO users land in the correct team automatically on first login via SAML group mapping.
+> Without `--scim`, TFE teams `admins` and `devs` are pre-created by `hal tf saml enable` with org-level access. SSO users land in the correct team automatically on first login via SAML group mapping.
 
 ## Side Effects
 - Creates/removes containers `hal-authentik-pg`, `hal-authentik-server`, `hal-authentik-worker`.
