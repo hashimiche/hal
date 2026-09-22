@@ -283,8 +283,10 @@ Flags:
 
 | Target | TFE base URL | ACS URL (portless, TFE_HOSTNAME) | SSO URL (through proxy) | SCIM endpoint (container-to-container) |
 |--------|-------------|----------------------------------|-------------------------|----------------------------------------|
-| primary | `https://tfe.localhost:8443` | `https://tfe.localhost/users/saml/auth` | `http://authentik.localhost:9102/…/sso/binding/redirect/` | `https://hal-tfe-proxy:8443/api/scim/v2` |
-| twin | `https://tfe-bis.localhost:9443` | `https://tfe-bis.localhost/users/saml/auth` | `http://authentik.localhost:9102/…/sso/binding/redirect/` | `https://hal-tfe-bis-proxy:9443/api/scim/v2` |
+| primary | `https://tfe.localhost:8443` | `https://tfe.localhost/users/saml/auth` | `http://authentik.localhost:9102/…/sso/binding/redirect/` | `https://hal-tfe-proxy:8443/scim/v2` |
+| twin | `https://tfe-bis.localhost:9443` | `https://tfe-bis.localhost/users/saml/auth` | `http://authentik.localhost:9102/…/sso/binding/redirect/` | `https://hal-tfe-proxy:9443/scim/v2` |
+
+Both rows go through the single shared `hal-tfe-proxy` (ADR 0002 — no separate `hal-tfe-bis-proxy`); only the port differs per target.
 
 ### What Gets Provisioned in Authentik
 
@@ -326,17 +328,18 @@ Via `PATCH /api/v2/admin/saml-settings`:
 | `attr_site_admin` | `SiteAdminRole` |
 | `site_admin_role` | `site-admins` |
 
-### SCIM (`--scim`) — pending, next session
+### SCIM (`--scim`) — implemented
 
-1. Creates a TFE org-scoped SCIM token via `POST /api/v2/organizations/:org/scim-tokens`.
-2. Configures Authentik outbound SCIM provider `tfe-scim-provider` pointing to  
-   `https://hal-tfe-proxy:8443/api/scim/v2` with `verify_ssl: false` (self-signed cert).
-3. Assigns SCIM provider as backchannel on the `tfe-saml` application.
-4. Runs `syncTFESCIMObjects` (users first, then groups) for initial consistency.
+0. Prerequisite: `provider_type: "saml"` must already be set in TFE's SAML settings, or TFE rejects the next step with a 422.
+1. `enableTFESCIMSettings`: `PATCH /api/v2/admin/scim-settings {enabled:true}` (TFE 2.0+ only; 404 silently skipped for older TFE).
+2. Creates a **site-admin scoped** TFE SCIM token via `POST /api/v2/admin/scim-tokens` (not the org-scoped TFE 1.x endpoint).
+3. Configures Authentik outbound SCIM provider (`tfe-scim-provider` / `tfe-bis-scim-provider` for twin) pointing to the target's row in the URLs table above — the TFE 2.0+ base path is `/scim/v2`, not `/api/scim/v2` — with `verify_certificates: false` (self-signed cert).
+4. Assigns SCIM provider as backchannel on the target's SAML application.
+5. Runs the initial objects sync (users first, then groups) for immediate consistency.
 
 Without `--scim`, teams `admins` and `devs` are pre-created in the target org by `provisionTFESAMLTeams` with org-level access. SSO users are added to their matching team automatically on first login via SAML `MemberOf` attribute.
 
-With `--scim` (once implemented), Authentik owns team creation and membership. New groups pushed by SCIM land as teams with no permissions — workspace/project access must still be assigned manually.
+With `--scim`, Authentik owns team creation and membership. New groups pushed by SCIM land as teams with no permissions — workspace/project access must still be assigned manually. Re-sync without a full re-provision: `hal tf saml update --scim --sync`.
 
 Group membership changes in Authentik propagate automatically (Authentik 2026.2.3+).
 
