@@ -1,6 +1,7 @@
 package terraform
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -230,6 +232,71 @@ func writableTaskWorkerTemplatePath(engine, image, hostDir string) (string, erro
 		return "", fmt.Errorf("write patched task-worker template: %w", err)
 	}
 	return dst, nil
+}
+
+// refreshTFETrustStoreCmd installs every trust anchor written by writeTFETrustAnchors into the
+// container's CA store. One cert per file is required: update-ca-certificates reads only the first
+// certificate out of a multi-cert file in /usr/local/share/ca-certificates.
+const refreshTFETrustStoreCmd = "cp /etc/ssl/tfe/" + tfeTrustAnchorPrefix +
+	"*.crt /usr/local/share/ca-certificates/ && update-ca-certificates 2>&1"
+
+// tfeTrustAnchorPrefix names the per-target anchor files written into a cert dir, which every TFE
+// target bind-mounts at /etc/ssl/tfe.
+const tfeTrustAnchorPrefix = "trust-"
+
+// writeTFETrustAnchors writes the self-signed cert of *every* local TFE target (primary and twin)
+// into certDir as one `trust-<container>.crt` file per target, ready for refreshTFETrustStoreCmd.
+// It returns the container names whose certs were found.
+//
+// Why every target and not just this one: each TFE container builds the image
+// `hashicorp/tfe-agent:now` at boot ("Building tfe-agent image") and bakes *its own* CA store into
+// that image. Primary and twin share that one tag, so whichever booted last wins — and the loser's
+// internal run agents then die on `x509: certificate signed by unknown authority` when registering
+// against its own hostname, leaving runs parked in plan_queued with the real error buried under the
+// task-worker log component. Making both targets trust both hostnames keeps the shared tag valid
+// whoever rebuilds it last.
+//
+// Note this is deliberately NOT done via TFE_TLS_CA_BUNDLE_FILE: in the task-worker template the
+// `cacertdata` injection sits inside the `kubernetes` run-pipeline branch only, and HAL uses the
+// `docker` driver, so that setting never reaches the agent container. Seeding the TFE container's own
+// CA store before TFE builds the agent image is what actually works.
+//
+// Absent certs are skipped, so this is correct before the twin exists and after it is torn down.
+// TFE's external agent path (cmd/terraform/agent.go) is unaffected — it already passes SSL_CERT_FILE
+// plus a cert bind mount for the container it starts itself.
+func writeTFETrustAnchors(certDir string) ([]string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	sources := map[string]string{
+		tfeCoreContainer: filepath.Join(homeDir, halStateDirName, tfeCertsDirName, "cert.pem"),
+	}
+	if layout, layoutErr := buildTFETwinLayout(); layoutErr == nil {
+		sources[layout.CoreContainer] = filepath.Join(layout.CertDir, "cert.pem")
+	}
+
+	names := make([]string, 0, len(sources))
+	for name, path := range sources {
+		pem, readErr := os.ReadFile(path)
+		if readErr != nil {
+			continue // target not deployed yet, or already torn down
+		}
+		if !bytes.HasSuffix(pem, []byte("\n")) {
+			pem = append(pem, '\n')
+		}
+		dst := filepath.Join(certDir, tfeTrustAnchorPrefix+name+".crt")
+		if writeErr := os.WriteFile(dst, pem, 0o644); writeErr != nil {
+			return nil, fmt.Errorf("write TFE trust anchor %s: %w", dst, writeErr)
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("no TFE certificate found to build trust anchors from")
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 func extractAtlasUserToken(raw string) string {

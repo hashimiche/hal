@@ -213,6 +213,13 @@ var deployCmd = &cobra.Command{
 			tfeArgs = append(tfeArgs, "-v", writableTmpl+":/etc/task-worker/config.hcl.tmpl:ro")
 		}
 
+		// Stage trust anchors for every local TFE hostname (primary + twin) into the cert dir, which is
+		// mounted at /etc/ssl/tfe above. They are installed into the container's CA store right after
+		// boot, below, and must land before TFE builds the shared hashicorp/tfe-agent:now image.
+		if _, anchorErr := writeTFETrustAnchors(certDir); anchorErr != nil {
+			warnings = append(warnings, fmt.Sprintf("⚠️  Could not stage TFE trust anchors (runs may fail to start an agent): %v", anchorErr))
+		}
+
 		tfeArgs = append(tfeArgs,
 			"-e", "TFE_OPERATIONAL_MODE=external",
 			"-e", fmt.Sprintf("TFE_HOSTNAME=%s", tfeHostname),
@@ -279,7 +286,7 @@ var deployCmd = &cobra.Command{
 			tfeCoreContainer,
 			"sh",
 			"-lc",
-			"cp /etc/ssl/tfe/cert.pem /usr/local/share/ca-certificates/tfe-localhost.crt && update-ca-certificates 2>&1",
+			refreshTFETrustStoreCmd,
 		).CombinedOutput(); trustErr != nil {
 			warnings = append(warnings, fmt.Sprintf("⚠️  Could not refresh TFE trust store automatically: %s", strings.TrimSpace(string(trustOut))))
 		}
