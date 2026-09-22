@@ -41,6 +41,7 @@ Every change lands on a named branch before merging to `main` — never commit t
 
 - New capabilities: `feature/<short-description>`
 - Bug fixes or corrections: `bugfix/<short-description>`
+- Docs / internal only, no command behavior change: `docs/<short-description>`
 
 The repository squash-merges PRs, so keep your branch focused on one logical
 change.
