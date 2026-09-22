@@ -22,7 +22,10 @@ var halNamedVolumes = []string{
 	"hal-vault-data",     // Vault file storage /vault/file VOLUME directive (cmd/vault/create.go)
 	"hal-tfe-db-data",    // TFE PostgreSQL data (cmd/terraform/create.go)
 	"hal-tfe-redis-data", // TFE Redis cache (cmd/terraform/create.go)
-	"hal-tfe-minio-data", // TFE MinIO object storage (cmd/terraform/create.go)
+	"hal-tfe-s3-data",    // TFE S3 object storage (cmd/terraform/create.go)
+	// legacy: pre-VersityGW MinIO volume, kept so `hal teardown` still reclaims
+	// it on machines that ran the old stack.
+	"hal-tfe-minio-data",
 }
 
 const tfeCLIHelperImage = "hal-tfe-cli:latest"

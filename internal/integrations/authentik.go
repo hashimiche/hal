@@ -28,8 +28,8 @@ const (
 	AuthentikDefaultTag   = "2026.5.6"
 
 	// Host ports — chosen to avoid all existing HAL port usage.
-	// 9000: hal-plus / MinIO internal
-	// 9001: hal-health / MinIO console internal
+	// 9000: hal-plus / TFE S3 gateway internal
+	// 9001: hal-health
 	// 9443: TFE twin HTTPS
 	AuthentikHTTPPort  = "9100"
 	AuthentikHTTPSPort = "9143"

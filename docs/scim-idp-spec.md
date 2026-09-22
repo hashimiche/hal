@@ -55,7 +55,7 @@ All three containers join `hal-net`. **No static IPs** — Docker DNS handles na
 | `9100` | `9100` | Authentik HTTP |
 | `9143` | `9143` | Authentik HTTPS |
 
-Port 9100/9143 avoids conflicts with 9000 (hal-plus/MinIO), 9001 (hal-health/MinIO console), 9443 (TFE twin HTTPS).
+Port 9100/9143 avoids conflicts with 9000 (hal-plus / TFE S3 gateway internal), 9001 (hal-health), 9443 (TFE twin HTTPS).
 
 `AUTHENTIK_LISTEN__HTTP=0.0.0.0:9100` **must** be set on the server container so the internal listening port matches the external port. Without this, Authentik listens on 9000 internally and the OIDC issuer URL becomes `http://authentik.localhost:9000/...` while the host port is 9100, breaking OIDC discovery.
 

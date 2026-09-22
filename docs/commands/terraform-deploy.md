@@ -27,9 +27,7 @@ Deploy the local Terraform Enterprise (TFE) stack for HAL labs.
 ```text
 -u, --update                       Reconcile an existing Terraform Enterprise deployment in place
 -h, --help                         help for deploy
---minio-api-port int           Host port mapped to MinIO S3 API container port 9000 (default 19000)
---minio-console-port int       Host port mapped to MinIO console container port 9001 (default 19001)
---minio-version string         MinIO image tag for TFE object storage (default "latest")
+--s3-api-port int              Host port mapped to the S3 API container port 9000 (default 19000)
 -p, --password string              TFE Encryption Password (default "hal-secret-encryption-password")
 --pg-version string            PostgreSQL version for TFE backend (default "17-alpine")
 --proxy-nginx-version string   Nginx image tag for the TFE ingress proxy (default "alpine")
@@ -45,12 +43,12 @@ Deploy the local Terraform Enterprise (TFE) stack for HAL labs.
 --twin-db-password string           PostgreSQL password used by the twin TFE backend (default "tfe_password")
 --twin-hostname string              TLS hostname used by the twin TFE instance (default "tfe-bis.localhost")
 --twin-https-port int               Host HTTPS port exposed by the twin TFE ingress proxy (default 9443)
---twin-minio-root-password string   MinIO root password for shared object storage (default "minioadmin")
---twin-minio-root-user string       MinIO root user for shared object storage (default "minioadmin")
+--twin-s3-access-key string         S3 access key for shared object storage (default "haladmin")
+--twin-s3-secret-key string         S3 secret key for shared object storage (default "hal9000FTW")
 --twin-password string              Twin TFE encryption password (default "hal-secret-encryption-password")
 --twin-proxy-ip string              Static internal proxy IP on hal-net for twin hostname routing (default "10.89.3.55")
 --twin-proxy-nginx-version string   Nginx image tag for the twin ingress proxy (default "alpine")
---twin-s3-bucket string             S3 bucket name for twin TFE objects in shared MinIO (default "tfe-bis-data")
+--twin-s3-bucket string             S3 bucket name for twin TFE objects in shared object storage (default "tfe-bis-data")
 --twin-tfe-admin-email string       Initial twin TFE admin email used when bootstrapping via IACT (default "haladmin@localhost")
 --twin-tfe-admin-password string    Initial twin TFE admin password used when bootstrapping via IACT (default "hal9000FTW")
 --twin-tfe-admin-username string    Initial twin TFE admin username used when bootstrapping via IACT (default "haladmin")

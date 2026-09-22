@@ -62,7 +62,7 @@ func printTFETargetDetailedStatus(engine, target string) {
 	}{
 		{"Database (Postgres)", tfeDBContainer},
 		{"Cache (Redis)", tfeRedisContainer},
-		{"Object Storage (MinIO)", tfeMinioContainer},
+		{"Object Storage (S3)", tfeS3Container},
 		{"TFE Core (Application)", tfeCoreContainer},
 	}
 
@@ -125,7 +125,7 @@ func printTFETwinDetailedStatus(engine string) {
 	}{
 		{"Shared Database (Postgres)", tfeDBContainer},
 		{"Shared Cache (Redis)", tfeRedisContainer},
-		{"Shared Object Storage (MinIO)", tfeMinioContainer},
+		{"Shared Object Storage (S3)", tfeS3Container},
 		{"Twin TFE Core", layout.CoreContainer},
 		{"Twin Ingress Proxy", layout.ProxyContainer},
 	}
