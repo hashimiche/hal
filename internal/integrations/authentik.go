@@ -25,7 +25,7 @@ const (
 	AuthentikWorkerContainer = "hal-authentik-worker"
 
 	AuthentikDefaultImage = "ghcr.io/goauthentik/server"
-	AuthentikDefaultTag   = "2026.5.6"
+	AuthentikDefaultTag   = "2026.8.3"
 
 	// Host ports — chosen to avoid all existing HAL port usage.
 	// 9000: hal-plus / TFE S3 gateway internal

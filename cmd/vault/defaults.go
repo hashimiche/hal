@@ -73,8 +73,8 @@ const (
 	// --- Image / tag flag defaults ---
 	defaultVaultImageCE     = "hashicorp/vault"
 	defaultVaultImageEnt    = "hashicorp/vault-enterprise"
-	defaultVaultTag         = "2.0.4"
-	defaultVaultEntTag      = "2.0.4-ent"
+	defaultVaultTag         = "2.1.2"
+	defaultVaultEntTag      = "2.1.2-ent"
 	defaultVaultEdition     = "ce"
 	defaultVaultHelperImage = "alpine"
 	defaultVaultHelperTag   = "3.24"

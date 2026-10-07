@@ -151,7 +151,7 @@ hal vault create --mode prod              # real `server -config`, integrated Ra
 ```bash
 # OIDC auth method (deploys Authentik as the IdP)
 hal vault oidc enable
-hal vault oidc enable --authentik-tag 2026.5.6  # pin the image tag
+hal vault oidc enable --authentik-tag 2026.8.3  # pin the image tag
 hal vault oidc enable --scim                     # also configure SCIM (Vault Enterprise only)
 hal vault oidc update
 hal vault oidc disable

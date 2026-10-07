@@ -32,7 +32,7 @@ Flags:
 |---|---|---|
 | `--scim` | `false` | [Vault Enterprise] Also configure SCIM provisioning from Authentik |
 | `--authentik-image` | `ghcr.io/goauthentik/server` | Authentik image name |
-| `--authentik-tag` | `2026.5.6` | Authentik image tag |
+| `--authentik-tag` | `2026.8.3` | Authentik image tag |
 
 ---
 
@@ -277,7 +277,7 @@ Flags:
 | `--tfe-org` | `hal-org` | TFE organization name |
 | `--tfe-token` | _(auto)_ | TFE admin API token (auto-bootstrapped if omitted) |
 | `--authentik-image` | `ghcr.io/goauthentik/server` | Authentik image |
-| `--authentik-tag` | `2026.5.6` | Authentik tag |
+| `--authentik-tag` | `2026.8.3` | Authentik tag |
 
 ### URLs (defaults)
 
