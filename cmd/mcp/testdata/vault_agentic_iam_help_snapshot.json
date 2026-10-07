@@ -1,0 +1,37 @@
+{
+  "flags": [
+    {
+      "description": "Authentik container image (only used when Authentik is not running yet) (default \"ghcr.io/goauthentik/server\")",
+      "name": "--authentik-image string"
+    },
+    {
+      "description": "Authentik image tag, 2026.8.0 or later (only used when Authentik is not running yet) (default \"2026.8.3\")",
+      "name": "--authentik-tag string"
+    },
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "MariaDB container image name (ignored when reusing the running shared hal-vault-mariadb) (default \"mariadb\")",
+      "name": "--vault-mariadb-image string"
+    },
+    {
+      "description": "MariaDB container image tag (ignored when reusing the running shared hal-vault-mariadb) (default \"11.8\")",
+      "name": "--vault-mariadb-tag string"
+    },
+    {
+      "description": "help for agentic-iam",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal vault agentic-iam --help"
+  ],
+  "topic": "vault agentic-iam",
+  "usage": ""
+}

@@ -277,7 +277,7 @@ The `--k8s` flag shares the same KinD cluster used by `hal vault k8s` and `hal v
 | Consumer | Command | Vault mount | Broker user |
 |----------|---------|-------------|-------------|
 | `vault-database` | `hal vault database` (MariaDB) | `database/` | `vaultadmin` |
-| `vault-agentic-iam` | `hal vault agentic-iam` (planned) | its own | its own |
+| `vault-agentic-iam` | [`hal vault agentic-iam`](vault-agentic-iam.md) | `agentic-db/` | `agentic-iam-broker` |
 
 - Root keeps the fixed lab password for the container's whole life, so a reused container can always be administered. Vault's `rotate-root` only ever rotates a consumer's broker.
 - A container that is stopped is restarted, not recreated, so the other consumers' data survives. A fresh container resets the consumer list.

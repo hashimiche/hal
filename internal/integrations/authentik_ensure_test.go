@@ -196,3 +196,20 @@ func TestSetApplicationGroupBindingsWithNoGroupsDeletesAll(t *testing.T) {
 		t.Errorf("bindings = %v, want only the other application's", f.bindings)
 	}
 }
+
+func TestApplicationExists(t *testing.T) {
+	f := newFakeAuthentik(t)
+	f.apps = append(f.apps, map[string]any{"slug": "hal-chat", "pbm_uuid": "pbm-1"})
+	c := f.client()
+	if ok, err := c.ApplicationExists("hal-chat"); err != nil || !ok {
+		t.Errorf("ApplicationExists(hal-chat) = %v, %v, want true", ok, err)
+	}
+	if ok, err := c.ApplicationExists("vault-agentic"); err != nil || ok {
+		t.Errorf("ApplicationExists(vault-agentic) = %v, %v, want false, nil", ok, err)
+	}
+	for _, call := range f.calls {
+		if !strings.HasPrefix(call, "GET ") {
+			t.Errorf("ApplicationExists made a write: %s", call)
+		}
+	}
+}

@@ -146,6 +146,7 @@ func printVaultFeatureStatus(engine string) {
 		{name: "ldap", status: boolState(checkContainer(engine, "hal-openldap"))},
 		{name: "database", status: ""},
 		{name: "oidc", status: boolState(checkContainer(engine, "hal-authentik-server"))},
+		{name: "agentic-iam", status: boolState(checkContainer(engine, global.AgenticIAMChatContainer) && checkContainer(engine, global.AgenticIAMAgentContainer))},
 	}
 
 	for _, f := range featureStates {
@@ -155,7 +156,7 @@ func printVaultFeatureStatus(engine string) {
 			fmt.Printf("      ↳ %-8s %s\n", "oracle", colorizeFeatureState(boolState(checkContainer(engine, "hal-vault-oracle-db"))))
 			continue
 		}
-		fmt.Printf("   ↳ %-8s %s\n", f.name, colorizeFeatureState(f.status))
+		fmt.Printf("   ↳ %-11s %s\n", f.name, colorizeFeatureState(f.status))
 	}
 }
 

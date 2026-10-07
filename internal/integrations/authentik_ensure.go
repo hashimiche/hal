@@ -426,6 +426,16 @@ func (c *AuthentikClient) applicationPBMUUID(slug string) (string, error) {
 	return app.PBMUUID, err
 }
 
+// ApplicationExists reports whether an application with this slug exists. It
+// only reads, for status commands.
+func (c *AuthentikClient) ApplicationExists(slug string) (bool, error) {
+	pbm, err := c.applicationPBMUUID(slug)
+	if err != nil {
+		return false, err
+	}
+	return pbm != "", nil
+}
+
 // ─── Scope mappings ───────────────────────────────────────────────────────────
 
 // GetManagedScopeMappingPKs returns the pks of Authentik's built-in scope mappings

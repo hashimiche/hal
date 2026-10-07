@@ -3,6 +3,7 @@ package creds
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"hal/internal/global"
@@ -63,15 +64,8 @@ var statusCmd = &cobra.Command{
 		}
 
 		// ── Vault OIDC + Authentik ────────────────────────────────────────────
-		oidcConsumers := global.GetSharedServiceConsumers(integrations.AuthentikSharedServiceKey)
-		oidcActive := false
-		for _, c := range oidcConsumers {
-			if c == "vault-oidc" {
-				oidcActive = true
-				break
-			}
-		}
-		if oidcActive || global.CheckContainer(engine, integrations.AuthentikServerContainer) {
+		oidcActive, authentikActive := authentikCredentialsShown(engine)
+		if oidcActive {
 			printed = true
 			fmt.Println("🔑 Vault OIDC — demo users")
 			fmt.Println("   alice / password  →  Vault policy: admin  (all paths)")
@@ -79,7 +73,9 @@ var statusCmd = &cobra.Command{
 			fmt.Println()
 			fmt.Println("   vault login -method=oidc")
 			fmt.Println()
-
+		}
+		if authentikActive {
+			printed = true
 			fmt.Println("🌐 Authentik IdP")
 			fmt.Printf("   URL      : http://authentik.localhost:%s/if/admin/\n", integrations.AuthentikHTTPPort)
 			fmt.Println("   Username : akadmin")
@@ -88,6 +84,17 @@ var statusCmd = &cobra.Command{
 				fmt.Printf("   Password : %s\n", adminPass)
 			} else {
 				fmt.Printf("   Password : (see %s)\n", integrations.AuthentikEnvPath())
+			}
+			fmt.Println()
+		}
+
+		// ── Vault Agentic IAM lab ────────────────────────────────────────────
+		if global.CheckContainer(engine, global.AgenticIAMChatContainer) {
+			printed = true
+			fmt.Println("🤖 Vault Agentic IAM lab — personas (log in to the chat)")
+			fmt.Printf("   Chat : %s\n", global.AgenticIAMChatURL)
+			for _, p := range agenticIAMPersonaCredentials() {
+				fmt.Printf("   %-7s / %s  →  %s\n", p.Username, p.Secret, p.Note)
 			}
 			fmt.Println()
 		}
@@ -240,15 +247,8 @@ func CollectActiveCredentials() (ActiveCredentials, error) {
 		}
 	}
 
-	oidcConsumers := global.GetSharedServiceConsumers(integrations.AuthentikSharedServiceKey)
-	oidcActive := false
-	for _, c := range oidcConsumers {
-		if c == "vault-oidc" {
-			oidcActive = true
-			break
-		}
-	}
-	if oidcActive || global.CheckContainer(engine, integrations.AuthentikServerContainer) {
+	oidcActive, authentikActive := authentikCredentialsShown(engine)
+	if oidcActive {
 		services = append(services, ServiceCredentials{
 			Service: "vault-oidc",
 			Label:   "Vault OIDC — demo users",
@@ -258,7 +258,8 @@ func CollectActiveCredentials() (ActiveCredentials, error) {
 			},
 			Commands: []string{"vault login -method=oidc"},
 		})
-
+	}
+	if authentikActive {
 		authentik := ServiceCredentials{
 			Service: "authentik",
 			Label:   "Authentik IdP",
@@ -272,6 +273,15 @@ func CollectActiveCredentials() (ActiveCredentials, error) {
 		}
 		authentik.Entries = []CredentialEntry{entry}
 		services = append(services, authentik)
+	}
+
+	if global.CheckContainer(engine, global.AgenticIAMChatContainer) {
+		services = append(services, ServiceCredentials{
+			Service: "vault-agentic-iam",
+			Label:   "Vault Agentic IAM lab — personas (log in to the chat)",
+			URL:     global.AgenticIAMChatURL,
+			Entries: agenticIAMPersonaCredentials(),
+		})
 	}
 
 	if global.CheckContainer(engine, "hal-openldap") {
@@ -339,6 +349,29 @@ func CollectActiveCredentials() (ActiveCredentials, error) {
 	}
 
 	return ActiveCredentials{AnyActive: len(services) > 0, Services: services}, nil
+}
+
+// authentikCredentialsShown tells which Authentik blocks to show. The Vault
+// OIDC demo users only when vault-oidc uses Authentik, or when Authentik runs
+// with no registered consumer (started before consumer counting): another lab,
+// such as the Agentic IAM lab, gives alice and bob other rights. The Authentik
+// admin whenever it runs.
+func authentikCredentialsShown(engine string) (oidc, authentik bool) {
+	consumers := global.GetSharedServiceConsumers(integrations.AuthentikSharedServiceKey)
+	running := global.CheckContainer(engine, integrations.AuthentikServerContainer)
+	oidc = slices.Contains(consumers, "vault-oidc") || (running && len(consumers) == 0)
+	return oidc, oidc || running
+}
+
+// agenticIAMPersonaCredentials lists the personas of the Agentic IAM lab:
+// Authentik users with the hard-coded lab password (ADR 0004).
+func agenticIAMPersonaCredentials() []CredentialEntry {
+	pw := integrations.AuthentikPersonaPassword
+	return []CredentialEntry{
+		{Name: "alice", Username: "alice", Secret: pw, Note: "finance: may delegate; reads results, forecasts and payroll"},
+		{Name: "bob", Username: "bob", Secret: pw, Note: "engineering: may delegate; no rights on the lab's data"},
+		{Name: "charlie", Username: "charlie", Secret: pw, Note: "sales: may not delegate to the demo agent"},
+	}
 }
 
 // vaultAuthMountExists returns true if the named auth mount is enabled in Vault.

@@ -201,7 +201,19 @@ hal vault pki disable
 # Audit logging (file-based by default)
 hal vault audit enable
 hal vault audit enable --loki    # also wire into the Promtail/Loki shared volume
+
+# Agentic IAM lab (Vault Enterprise 2.1.0+ licensed with Agentic IAM, ADR 0004):
+# a demo agent acts for personas logged in to a chat through Authentik; the IdP and Vault decide
+hal vault agentic-iam enable            # refuses, changing nothing, if a prerequisite is missing
+hal vault agentic-iam enable --dry-run  # prerequisite verdict + plan
+hal vault agentic-iam update            # re-apply and recreate both containers (new image)
+hal vault agentic-iam disable           # keeps shared Authentik/MariaDB for other labs, keeps the image
 ```
+
+The Agentic IAM chat is at http://agentic.localhost:8092. The personas are
+`alice`, `bob` and `charlie`, all with the password `password`. See
+[docs/commands/vault-agentic-iam.md](docs/commands/vault-agentic-iam.md) for
+the six scenario cases.
 
 **Observability** (opt-in, CRUD lifecycle)
 
