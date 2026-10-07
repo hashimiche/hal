@@ -7,6 +7,8 @@ package vault
 // (the Docker network name) live in internal/global and are referenced, never
 // redeclared.
 
+import "hal/internal/global"
+
 const (
 	// --- Containers / instances ---
 	vaultContainer        = "hal-vault"
@@ -143,4 +145,23 @@ const (
 	dbVSOMariaDBRole = "dba-role"
 	dbVSOOracleRole  = "oracle-dba-role"
 	dbVSOSecretName  = "hal-db-creds"
+
+	// --- Agentic IAM lab (hal vault agentic-iam, ADR 0004) ---
+	// One image built locally from internal/agenticiam runs as two containers
+	// on hal-net (contract: internal/agenticiam/app/README.md). Only the chat is
+	// published: the persona's browser opens it, and Authentik redirects back
+	// to it. The demo agent is reachable from hal-net only.
+	agenticIAMChatContainer  = global.AgenticIAMChatContainer
+	agenticIAMAgentContainer = global.AgenticIAMAgentContainer
+	// agenticIAMChatHostPort is the chat's host port: the first one free after
+	// the KinD mappings 8088-8091 (see writeHALKindConfig).
+	agenticIAMChatHostPort = 8092
+	// agenticIAMChatPublicURL is the chat's PUBLIC_URL. The browser goes from
+	// it to Authentik at http://authentik.localhost:9100 and back.
+	agenticIAMChatPublicURL = global.AgenticIAMChatURL
+	// Ports inside the containers (the image defaults).
+	agenticIAMChatPort  = 8080
+	agenticIAMAgentPort = 8081
+	// agenticIAMStateDirName holds the containers' env files under ~/.hal.
+	agenticIAMStateDirName = "agentic-iam"
 )

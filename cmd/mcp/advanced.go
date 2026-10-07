@@ -196,7 +196,7 @@ func validateCommand(proposed string) map[string]interface{} {
 		"health":    {"create", "update", "delete"},
 		"plus":      {"create", "status", "delete"},
 		"mcp":       {"create", "serve", "status", "delete"},
-		"vault":     {"create", "status", "delete", "update", "audit", "oidc", "jwt", "k8s", "ldap", "database", "db", "userpass", "up", "os", "pki", "obs"},
+		"vault":     {"create", "status", "delete", "update", "audit", "oidc", "jwt", "k8s", "ldap", "database", "db", "userpass", "up", "os", "pki", "obs", "agentic-iam", "agentic"},
 		"consul":    {"create", "status", "delete", "update", "obs"},
 		"nomad":     {"create", "status", "delete", "update", "job", "obs"},
 		"boundary":  {"create", "status", "delete", "update", "mariadb", "ssh", "obs"},
@@ -275,7 +275,7 @@ func buildDiagnostics(product string, tailLines int) (map[string]interface{}, er
 	}
 
 	containersByProduct := map[string][]string{
-		"vault":     {"hal-vault", "hal-openldap", "hal-authentik-server", "hal-authentik-worker", "hal-mariadb", "hal-gitlab"},
+		"vault":     {"hal-vault", "hal-openldap", "hal-authentik-server", "hal-authentik-worker", "hal-mariadb", "hal-gitlab", global.AgenticIAMChatContainer, global.AgenticIAMAgentContainer},
 		"consul":    {"hal-consul"},
 		"nomad":     {},
 		"boundary":  {"hal-boundary", "hal-boundary-target-mariadb"},

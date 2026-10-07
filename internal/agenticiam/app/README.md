@@ -18,6 +18,12 @@ podman run -d --name <chat>  --network hal-net -p <host port>:8080 -e ... localh
 podman run -d --name <agent> --network hal-net                     -e ... localhost/hal-agentic-iam:<hash> agent
 ```
 
+`hal vault agentic-iam enable` runs them as `hal-agentic-iam-chat` (published
+on host port 8092, `PUBLIC_URL=http://agentic.localhost:8092`) and
+`hal-agentic-iam-agent`. It passes the variables in `--env-file`s with mode
+`0600` under `~/.hal/agentic-iam/`, one per container, never on the command
+line (`cmd/vault/agentic_iam_containers.go`).
+
 ## Configuration: environment variables only
 
 A missing required variable stops the container at start, with all missing
@@ -46,7 +52,8 @@ names in one message (exit code 2).
 | `ACTOR_CLIENT_SECRET` | yes | | `hal-demo-agent` client secret. |
 | `ACTOR_USERNAME` | | `finance-agent` | The Authentik Actor of the demo agent. |
 | `ACTOR_APP_PASSWORD` | yes | | That Actor's app password. |
-| `VAULT_ADDR` | | `http://hal-vault:8200` | |
+| `VAULT_ADDR` | | `http://hal-vault:8200` | `https://hal-vault:8200` for a prod Vault (`hal vault create --mode prod`). |
+| `SSL_CERT_FILE` | | the system CA bundle | Python's standard variable. HAL sets it, for a prod Vault only, to HAL's self-signed Vault CA mounted read-only in the container. |
 | `DB_MOUNT` | | `agentic-db` | The lab's database secrets engine mount. |
 | `DB_ROLE_QUARTERLY_RESULTS` | | `quarterly-results` | Role for `SELECT` on `quarterly_results`. |
 | `DB_ROLE_FORECASTS` | | `forecasts` | Role for `SELECT` on `forecasts`. |

@@ -57,6 +57,8 @@ func BuildStatusSnapshot(engine string) ([]byte, error) {
 				"ldap":     BoolState(CheckContainer(engine, "hal-openldap")),
 				"database": BoolState((CheckContainer(engine, "hal-vault-mariadb") && VaultDatabaseUsesMariaDB()) || CheckContainer(engine, "hal-vault-oracle-db")),
 				"oidc":     BoolState(CheckContainer(engine, "hal-authentik-server")),
+				"agentic-iam": BoolState(CheckContainer(engine, AgenticIAMChatContainer) &&
+					CheckContainer(engine, AgenticIAMAgentContainer)),
 			},
 			"http://vault.localhost:8200"),
 

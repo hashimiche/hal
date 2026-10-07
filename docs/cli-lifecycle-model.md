@@ -26,7 +26,7 @@ When command behavior changes, keep this file and `.github/copilot-instructions.
 | `hal nomad` | `create`, `delete`, `status`, `obs`, `job` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature command `job` remains action-based. Observability artifacts are managed explicitly via `hal nomad obs <create|update|delete|status>`. |
 | `hal obs` | `create`, `delete`, `status` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. |
 | `hal terraform` (alias `hal tf`) | `create`, `delete`, `status`, `obs`, `agent`, `api-workflow` (alias `api`), `workspace` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Twin lifecycle is target-based via `--target primary|twin|both` on `create`/`update`/`delete`/`status`. Terraform observability artifacts are managed under `hal terraform obs <create|update|delete|status>`. |
-| `hal vault` | `create`, `delete`, `status`, `obs`, `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc`, `aap` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature lifecycle is action-based (`status|enable|disable|update`) with hidden compatibility flags. Observability artifacts are managed explicitly via `hal vault obs <create|update|delete|status>`. |
+| `hal vault` | `create`, `delete`, `status`, `obs`, `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc`, `aap`, `agentic-iam` (alias `agentic`) | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature lifecycle is action-based (`status|enable|disable|update`) with hidden compatibility flags. Observability artifacts are managed explicitly via `hal vault obs <create|update|delete|status>`. |
 | `hal mcp` | `create`, `update`, `delete`, `status`, `policy` | Product lifecycle is command-based (`create`/`update`/`delete`). `policy` is read-only today. |
 
 ## Target Command Model
@@ -61,6 +61,7 @@ Intent:
 | `hal vault aap` | `enabled` (preferred), plus `oidc` lifecycle `enable`, `update`, `disable`, `status` | Configure Vault JWT auth for local AAP OIDC integration. |
 | `hal vault database` | `enable`, `update`, `disable`, `status` | Same as above. `--k8s` flag extends enable/update/disable onto the shared KinD cluster using a dedicated `kubernetes-db/` Vault auth mount. The MariaDB backend uses the shared `hal-vault-mariadb` (see Shared Vault MariaDB Convention). |
 | `hal vault audit` | `enable`, `update`, `disable`, `status` | Same as above. |
+| `hal vault agentic-iam` (alias `agentic`) | `enable`, `update`, `disable`, `status` | ADR 0004. `enable` checks every prerequisite (Vault Enterprise 2.1.0+ licensed with Agentic IAM, a running Authentik 2026.8.0+, host port 8092 free) before changing anything, and refuses with the fix. `update` re-applies everything and always recreates the chat and demo agent containers. Consumer `vault-agentic-iam` of the shared Authentik and of `hal-vault-mariadb`. `disable` keeps the image (a build cache). |
 | `hal boundary mariadb` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |
 | `hal boundary ssh` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |
 | `hal vault obs` | `create`, `update`, `delete`, `status` | Observability artifacts are modeled as a managed feature resource. |
@@ -209,6 +210,9 @@ in `cmd/vault/helper.go`). All host port mappings are declared upfront:
 
 When adding a new `--k8s` feature, reserve the next available pair and add it
 to `writeHALKindConfig()` so the port is pre-mapped on any existing cluster.
+Host port `8092` is taken by the Agentic IAM chat (`hal-agentic-iam-chat`,
+`http://agentic.localhost:8092`), which is not on KinD: the next pair starts
+at `8093`.
 
 ### Network
 KinD nodes must be on `hal-net` so Vault and other HAL containers can reach the
@@ -237,7 +241,7 @@ GitLab (ADR 0004). Its key in `~/.hal/shared-services.json` is `vault-mariadb`.
 | Consumer | Owned by | Vault mount |
 |----------|----------|-------------|
 | `vault-database` | `hal vault database` (MariaDB backend) | `database/` |
-| `vault-agentic-iam` | `hal vault agentic-iam` (planned) | its own |
+| `vault-agentic-iam` | `hal vault agentic-iam` | `agentic-db/` |
 
 Rules for every consumer (helpers in `cmd/vault/database-mariadb.go`):
 
@@ -253,6 +257,30 @@ Rules for every consumer (helpers in `cmd/vault/database-mariadb.go`):
 `hal vault delete` is exempt: every consumer is a Vault lab, so it removes the
 container and clears the key. `hal boundary mariadb --with-vault` is not a
 consumer; it depends on `hal vault database`'s `database/creds/dba-role`.
+
+A `disable` acts on the shared container only when its consumer is
+registered: a lab that was never enabled leaves it alone, even with an empty
+consumer list (a container started before counting belongs to
+`hal vault database`).
+
+## Shared Authentik Consumers
+
+The Authentik stack (`hal-authentik-*`) is a shared service under the
+`authentik-idp` key. `enable` starts it only when it is absent and never
+restarts it under other consumers; `disable` stops it, volumes included, only
+when no other consumer remains.
+
+| Consumer | Owned by | Its Authentik objects |
+|----------|----------|-----------------------|
+| `vault-oidc` | `hal vault oidc` | `hashicorp-vault` app, groups `admin`/`user-ro`, alice, bob |
+| `vault-agentic-iam` | `hal vault agentic-iam` | apps `hal-chat`, `hal-demo-agent`, `vault-agentic`, actor `finance-agent`, groups `finance`/`engineering`/`sales`, charlie (alice and bob are shared) |
+| `tfe-saml` / `tfe-bis-saml` | `hal tf saml` | the TFE SAML apps |
+
+A consumer that needs a newer Authentik than the running one refuses with the
+fix (disable the other consumers so the next `enable` starts the new tag)
+rather than restarting it. `hal vault delete` deregisters both Vault consumers,
+and removes the Agentic IAM lab's objects when Authentik stays up for
+`hal tf saml`.
 
 ## Migration Policy
 

@@ -1,10 +1,12 @@
 package vault
 
 import (
+	"errors"
 	"fmt"
 	"hal/internal/global"
 	"hal/internal/integrations"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -18,12 +20,16 @@ import (
 // force-removed unconditionally.
 // hal-vault-mariadb is shared too, but every one of its consumers is a Vault lab,
 // so it stays in this list and delete clears its whole consumer registry.
+// The Agentic IAM lab's chat and demo agent go with Vault; its Authentik
+// consumer is handled with vault-oidc's below.
 var vaultEcosystem = []string{
 	vaultContainer,
 	openLDAPContainer,
 	phpLDAPAdminContainer,
 	vaultMariaDBContainer,
 	vaultOracleContainer,
+	agenticIAMChatContainer,
+	agenticIAMAgentContainer,
 }
 
 var vaultVolumes = []string{
@@ -82,14 +88,21 @@ var vaultDestroyCmd = &cobra.Command{
 		// 1b. Authentik is a shared IdP (also used by 'hal tf saml'), so it is
 		// deregistered and only torn down when no other product still depends on
 		// it — mirroring the GitLab shared-service model rather than force-removing
-		// a container another lab may be using.
+		// a container another lab may be using. Both Vault labs that use it,
+		// vault-oidc and the Agentic IAM lab, go with Vault: left registered, they
+		// would keep Authentik "in use" forever.
 		if global.DryRun {
-			fmt.Println("[DRY RUN] Would deregister vault-oidc from the Authentik shared service and stop the stack if unused")
+			fmt.Printf("[DRY RUN] Would deregister %s and %s from the Authentik shared service and stop the stack if unused\n",
+				oidcSharedServiceKey, integrations.AgenticIAMAuthentikConsumer)
+			fmt.Printf("[DRY RUN] Would remove ~/.hal/%s, and the Agentic IAM lab's Authentik objects if Authentik stays up\n", agenticIAMStateDirName)
 		} else {
-			remaining, regErr := global.RemoveSharedServiceConsumer(integrations.AuthentikSharedServiceKey, oidcSharedServiceKey)
-			if regErr != nil {
+			agenticWasConsumer := slices.Contains(global.GetSharedServiceConsumers(integrations.AuthentikSharedServiceKey), integrations.AgenticIAMAuthentikConsumer)
+			_, regErr := global.RemoveSharedServiceConsumer(integrations.AuthentikSharedServiceKey, oidcSharedServiceKey)
+			remaining, agenticErr := global.RemoveSharedServiceConsumer(integrations.AuthentikSharedServiceKey, integrations.AgenticIAMAuthentikConsumer)
+			if regErr = errors.Join(regErr, agenticErr); regErr != nil {
 				fmt.Printf("⚠️  Could not update shared service registry: %v\n", regErr)
 			}
+			releaseAgenticIAMOnVaultDelete(engine, agenticWasConsumer, remaining)
 			if len(remaining) == 0 {
 				if err := integrations.StopAuthentikStack(engine, true); err != nil {
 					fmt.Printf("⚠️  Warning during Authentik teardown: %v\n", err)

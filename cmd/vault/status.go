@@ -78,6 +78,7 @@ var vaultStatusCmd = &cobra.Command{
 			{"LDAP (OpenLDAP)", openLDAPContainer, "ldap"},
 			{"Database", vaultMariaDBContainer, "database"},
 			{"K8s (KinD)", "kind-control-plane", "k8s"},
+			{"Agentic IAM", agenticIAMChatContainer, "agentic-iam"},
 		}
 
 		for _, f := range features {

@@ -25,6 +25,7 @@ If obs comes after Vault, prefer `hal vault obs create` to backfill metrics/dash
 - Use audit-analysis when the user asks who did what, request tracing, incident review, or audit investigations.
 - Use jwt when the user asks about CI or machine auth with JWT, GitLab pipelines, or bound claims.
 - Use oidc when the user asks about human SSO, browser login, callback URL issues, or Authentik.
+- Use agentic-iam when the user asks about AI agents acting on behalf of users, OBO (on-behalf-of) tokens, token exchange, the Agent Registry, RAR / `authorization_details`, OAuth resource server profiles, or `hal vault agentic-iam`.
 - Use k8s when the user asks about Kubernetes auth, KinD, VSO, secret refresh demos, CSI projection, or a KinD node that is not on `hal-net`.
 - Use database when the user asks about database secrets, dynamic DB credentials, root rotation, or `hal vault database enable --k8s`.
 - Use ldap when the user asks about LDAP auth, LDAP secrets engine, dynamic users, static creds, or credential libraries.
@@ -45,6 +46,7 @@ If obs comes after Vault, prefer `hal vault obs create` to backfill metrics/dash
 
 - Sentinel policy packs (RGP/EGP) should be framed as Enterprise-only.
 - K8s CSI projection mode (`hal vault k8s enable --csi`) requires Enterprise in this lab.
+- The Agentic IAM lab (`hal vault agentic-iam enable`) requires Vault Enterprise 2.1.0+ and a license that includes the Agentic IAM terms; a valid 2.1.x license can lack them. `enable` checks this before changing anything and prints the fix.
 - If Enterprise-only asks arrive on CE, state the limitation and provide the explicit upgrade command path.
 
 ## Quick Triage Sequence

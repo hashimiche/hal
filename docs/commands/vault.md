@@ -56,6 +56,10 @@
   - Deploy Ubuntu VM and configure OS secret engine for Linux user password management
   - Spec: [vault-os.md](vault-os.md)
 
+- `hal vault agentic-iam` (alias `agentic`)
+  - [Vault Enterprise 2.1.0+, licensed with Agentic IAM] Deploy the Agentic IAM lab: a demo agent acting on behalf of personas logged in through Authentik, every access decided by the IdP and Vault
+  - Spec: [vault-agentic-iam.md](vault-agentic-iam.md)
+
 ## Local Lab Assumptions
 - Vault local endpoint defaults to `http://127.0.0.1:8200`
 - Typical local root token assumption: `root`

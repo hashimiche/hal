@@ -79,7 +79,7 @@ var AgenticIAMPersonas = []AgenticIAMPersona{
 // AgenticIAMAuthentikConfig is what the lab's Authentik configuration depends on.
 type AgenticIAMAuthentikConfig struct {
 	// ChatPublicURL is the chat's PUBLIC_URL as the browser reaches it, e.g.
-	// "http://localhost:8095". hal-chat accepts <ChatPublicURL>/callback as its
+	// "http://agentic.localhost:8092". hal-chat accepts <ChatPublicURL>/callback as its
 	// redirect URI and <ChatPublicURL>/ as its post-logout redirect URI, both
 	// matched strictly, and the Authentik portal tile launches <ChatPublicURL>/.
 	ChatPublicURL string
