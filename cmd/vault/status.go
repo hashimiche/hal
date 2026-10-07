@@ -83,6 +83,11 @@ var vaultStatusCmd = &cobra.Command{
 		for _, f := range features {
 			if f.Command == "database" {
 				mariaOut, mariaErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", vaultMariaDBContainer).Output()
+				// hal-vault-mariadb is shared: it backs this feature only while
+				// `hal vault database` is one of its consumers.
+				if mariaErr == nil && !global.VaultDatabaseUsesMariaDB() {
+					mariaOut, mariaErr = nil, fmt.Errorf("%s is only used by other labs", vaultMariaDBContainer)
+				}
 				postgresOut, postgresErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-vault-postgres").Output()
 				oracleOut, oracleErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", vaultOracleContainer).Output()
 				mariaStatus := strings.TrimSpace(string(mariaOut))

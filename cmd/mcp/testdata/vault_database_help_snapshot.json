@@ -57,11 +57,11 @@
       "name": "--username-prefix string"
     },
     {
-      "description": "MariaDB container image name (default \"mariadb\")",
+      "description": "MariaDB container image name (ignored when reusing the running shared hal-vault-mariadb) (default \"mariadb\")",
       "name": "--vault-mariadb-image string"
     },
     {
-      "description": "MariaDB container image tag (default \"11.8\")",
+      "description": "MariaDB container image tag (ignored when reusing the running shared hal-vault-mariadb) (default \"11.8\")",
       "name": "--vault-mariadb-tag string"
     },
     {

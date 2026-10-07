@@ -59,7 +59,7 @@ Intent:
 | `hal vault oidc` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault jwt` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault aap` | `enabled` (preferred), plus `oidc` lifecycle `enable`, `update`, `disable`, `status` | Configure Vault JWT auth for local AAP OIDC integration. |
-| `hal vault database` | `enable`, `update`, `disable`, `status` | Same as above. `--k8s` flag extends enable/update/disable onto the shared KinD cluster using a dedicated `kubernetes-db/` Vault auth mount. |
+| `hal vault database` | `enable`, `update`, `disable`, `status` | Same as above. `--k8s` flag extends enable/update/disable onto the shared KinD cluster using a dedicated `kubernetes-db/` Vault auth mount. The MariaDB backend uses the shared `hal-vault-mariadb` (see Shared Vault MariaDB Convention). |
 | `hal vault audit` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal boundary mariadb` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |
 | `hal boundary ssh` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |
@@ -229,6 +229,30 @@ lists cluster names with `{{.Label "io.x-k8s.kind.cluster"}}`, always
 force-removes leftover `kind-control-plane` nodes, and does not warn for that
 known template error.
 
+## Shared Vault MariaDB Convention
+
+`hal-vault-mariadb` is a shared service counted per consumer, like Authentik and
+GitLab (ADR 0004). Its key in `~/.hal/shared-services.json` is `vault-mariadb`.
+
+| Consumer | Owned by | Vault mount |
+|----------|----------|-------------|
+| `vault-database` | `hal vault database` (MariaDB backend) | `database/` |
+| `vault-agentic-iam` | `hal vault agentic-iam` (planned) | its own |
+
+Rules for every consumer (helpers in `cmd/vault/database-mariadb.go`):
+
+1. `enable` calls `ensureVaultMariaDB()`: a running container is reused, a
+   stopped one restarted, and only a missing one started fresh (which resets the
+   consumer list). Never run or remove the container directly.
+2. Each consumer owns its own Vault mount and broker user. Root keeps its fixed
+   lab password, so Vault's `rotate-root` only ever rotates a broker.
+3. `disable` revokes and unmounts its own mount, drops its own broker and data,
+   then calls `releaseVaultMariaDB()`, which removes the container only when no
+   other consumer remains.
+
+`hal vault delete` is exempt: every consumer is a Vault lab, so it removes the
+container and clears the key. `hal boundary mariadb --with-vault` is not a
+consumer; it depends on `hal vault database`'s `database/creds/dba-role`.
 
 ## Migration Policy
 

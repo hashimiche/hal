@@ -78,11 +78,13 @@ var vaultDatabaseCmd = &cobra.Command{
 			roleName      string
 			backendLabel  string
 			startArgs     []string
-			setupCmd      []string
+			brokerSQL     string
 		)
 
 		switch backend {
 		case "mariadb":
+			// hal-vault-mariadb is shared: its container is started or reused by
+			// ensureVaultMariaDB, never through startArgs.
 			backendLabel = "MariaDB"
 			containerName = vaultMariaDBContainer
 			hostAlias = vaultMariaDBHostAlias
@@ -92,19 +94,13 @@ var vaultDatabaseCmd = &cobra.Command{
 			createStmt = "CREATE USER '{{name}}'@'%' IDENTIFIED BY '{{password}}'; GRANT ALL PRIVILEGES ON *.* TO '{{name}}'@'%';"
 			revokeStmt = "DROP USER IF EXISTS '{{name}}'@'%';"
 			roleName = "dba-role"
-			setupCmd = []string{"mariadb", "-u", "root", "-p" + vaultMariaDBRootPassword, "-e", `
-				CREATE USER 'vaultadmin'@'%' IDENTIFIED BY 'temp-vault-pass';
-				GRANT ALL PRIVILEGES ON *.* TO 'vaultadmin'@'%' WITH GRANT OPTION;
+			// CREATE OR REPLACE: on a reused container an earlier enable left the
+			// broker with a password only Vault knew.
+			brokerSQL = fmt.Sprintf(`
+				CREATE OR REPLACE USER '%[1]s'@'%%' IDENTIFIED BY '%[2]s';
+				GRANT ALL PRIVILEGES ON *.* TO '%[1]s'@'%%' WITH GRANT OPTION;
 				FLUSH PRIVILEGES;
-			`}
-			startArgs = []string{
-				"run", "-d", "--name", vaultMariaDBContainer,
-				"--network", global.HalNetName,
-				"--network-alias", vaultMariaDBHostAlias,
-				"-p", fmt.Sprintf("%d:%d", vaultMariaDBPort, vaultMariaDBPort),
-				"-e", "MARIADB_ROOT_PASSWORD=" + vaultMariaDBRootPassword,
-				fmt.Sprintf("%s:%s", mariadbImage, mariadbVersion),
-			}
+			`, vaultMariaDBBrokerUser, vaultMariaDBBrokerBootstrapPassword)
 
 		case "oracle":
 			backendLabel = "Oracle Free"
@@ -183,7 +179,11 @@ var vaultDatabaseCmd = &cobra.Command{
 		// ==========================================
 		if databaseDisable || databaseUpdate {
 			if global.DryRun {
-				fmt.Printf("[DRY RUN] Would execute: %s rm -f %s\n", engine, containerName)
+				if backend == "mariadb" {
+					fmt.Printf("[DRY RUN] Would drop the %s broker, deregister %s and remove %s only if no other consumer remains\n", vaultMariaDBBrokerUser, global.VaultMariaDBConsumerDatabase, containerName)
+				} else {
+					fmt.Printf("[DRY RUN] Would execute: %s rm -f %s\n", engine, containerName)
+				}
 				fmt.Println("[DRY RUN] Would call API to force-revoke leases and unmount 'database/'")
 				if dbVSOEnabled {
 					fmt.Println("[DRY RUN] Would execute: kind delete cluster (db-vso cluster)")
@@ -218,8 +218,16 @@ var vaultDatabaseCmd = &cobra.Command{
 					fmt.Println("⚠️  Vault is offline. Skipped Vault-internal cleanup.")
 				}
 
-				fmt.Printf("⚙️  Removing %s container...\n", backendLabel)
-				_ = exec.Command(engine, "rm", "-f", containerName).Run()
+				if backend == "mariadb" {
+					// The broker is this feature's own. Drop it so a container kept
+					// for another consumer is not left with a superuser whose
+					// password only the unmounted database/ knew.
+					_ = runVaultMariaDBSQL(engine, fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%';", vaultMariaDBBrokerUser))
+					releaseVaultMariaDB(engine, global.VaultMariaDBConsumerDatabase)
+				} else {
+					fmt.Printf("⚙️  Removing %s container...\n", backendLabel)
+					_ = exec.Command(engine, "rm", "-f", containerName).Run()
+				}
 
 				if dbVSOEnabled {
 					disableDatabaseVSOCluster()
@@ -246,7 +254,11 @@ var vaultDatabaseCmd = &cobra.Command{
 			}
 
 			if global.DryRun {
-				fmt.Printf("[DRY RUN] Would execute Docker run command for %s.\n", backendLabel)
+				if backend == "mariadb" {
+					fmt.Printf("[DRY RUN] Would reuse %s if running, start it otherwise, and register %s\n", containerName, global.VaultMariaDBConsumerDatabase)
+				} else {
+					fmt.Printf("[DRY RUN] Would execute Docker run command for %s.\n", backendLabel)
+				}
 				if backend == "oracle" {
 					fmt.Printf("[DRY RUN] Would build %s:%s runtime image\n", vaultOracleRuntimeImage, vaultOracleRuntimeTag)
 					fmt.Printf("[DRY RUN] Would copy plugin from %s into vault plugins volume\n", oraclePluginPath)
@@ -264,27 +276,27 @@ var vaultDatabaseCmd = &cobra.Command{
 				}
 			}
 
-			// ---- Start database container ----
-			fmt.Printf("🚀 Booting %s database...\n", backendLabel)
-			_ = exec.Command(engine, "rm", "-f", containerName).Run()
+			// ---- Start (or, for shared MariaDB, reuse) database container ----
+			if backend == "mariadb" {
+				if _, err := ensureVaultMariaDB(engine, fmt.Sprintf("%s:%s", mariadbImage, mariadbVersion), global.VaultMariaDBConsumerDatabase); err != nil {
+					fmt.Printf("\n❌ %v\n", err)
+					return
+				}
+			} else {
+				fmt.Printf("🚀 Booting %s database...\n", backendLabel)
+				_ = exec.Command(engine, "rm", "-f", containerName).Run()
 
-			if out, err := exec.Command(engine, startArgs...).CombinedOutput(); err != nil {
-				fmt.Printf("❌ Failed to start %s: %v\n%s\n", backendLabel, err, string(out))
-				return
-			}
+				if out, err := exec.Command(engine, startArgs...).CombinedOutput(); err != nil {
+					fmt.Printf("❌ Failed to start %s: %v\n%s\n", backendLabel, err, string(out))
+					return
+				}
 
-			// ---- Wait for database to initialize ----
-			fmt.Printf("⏳ Waiting for %s to initialize...\n", backendLabel)
-			if backend == "oracle" {
+				// ---- Wait for database to initialize ----
+				fmt.Printf("⏳ Waiting for %s to initialize...\n", backendLabel)
 				fmt.Println("   (Oracle takes 60-120s)")
 				if err := waitForOracle(engine, containerName, 120); err != nil {
 					fmt.Printf("\n❌ %s failed to initialize within the time limit.\n", backendLabel)
 					fmt.Printf("   💡 Check logs: %s logs %s\n", engine, containerName)
-					return
-				}
-			} else {
-				if err := waitForMariaDB(engine, containerName, 30); err != nil {
-					fmt.Printf("\n❌ %s failed to initialize within the time limit.\n", backendLabel)
 					return
 				}
 			}
@@ -312,11 +324,15 @@ EOF`, vaultOracleSysPass, vaultOraclePDB, strings.TrimSpace(grantSQL))
 					fmt.Println("  ✅ Vault user privileges granted.")
 				}
 			} else {
-				fmt.Println("⚙️  Provisioning least-privileged 'vaultadmin' broker account...")
-				execArgs := append([]string{"exec", containerName}, setupCmd...)
-				err = exec.Command(engine, execArgs...).Run()
-				if err != nil {
-					fmt.Printf("❌ Failed to provision vaultadmin account: %v\n", err)
+				// Drop an earlier database/ mount before resetting the broker:
+				// Vault still holds the broker's password, so the old JIT users
+				// are revoked instead of being left in a reused container.
+				_ = client.Sys().RevokeForce("database/")
+				_ = client.Sys().Unmount("database")
+
+				fmt.Printf("⚙️  Provisioning least-privileged '%s' broker account...\n", vaultMariaDBBrokerUser)
+				if err := runVaultMariaDBSQL(engine, brokerSQL); err != nil {
+					fmt.Printf("❌ Failed to provision %s account: %v\n", vaultMariaDBBrokerUser, err)
 					return
 				}
 			}
@@ -360,8 +376,8 @@ EOF`, vaultOracleSysPass, vaultOraclePDB, strings.TrimSpace(grantSQL))
 				configData["password"] = vaultOracleVaultPass
 				configData["max_connection_lifetime"] = "60s"
 			} else {
-				configData["username"] = "vaultadmin"
-				configData["password"] = "temp-vault-pass"
+				configData["username"] = vaultMariaDBBrokerUser
+				configData["password"] = vaultMariaDBBrokerBootstrapPassword
 				configData["username_template"] = fmt.Sprintf("%s-{{random 10}}", dbUsernamePrefix)
 			}
 
@@ -491,6 +507,9 @@ func showDatabaseStatus(engine string, client *vault.Client, vaultErr error) {
 	fmt.Println("  [ MariaDB ]")
 	if mariaRunning {
 		fmt.Printf("    ✅ Container    : %s running (%s:%d)\n", vaultMariaDBContainer, vaultMariaDBHostAlias, vaultMariaDBPort)
+		if consumers := global.GetSharedServiceConsumers(global.SharedVaultMariaDBServiceKey); len(consumers) > 0 {
+			fmt.Printf("    ℹ️  Consumers    : %s\n", strings.Join(consumers, ", "))
+		}
 	} else {
 		fmt.Printf("    ⚪ Container    : not running\n")
 	}
@@ -542,7 +561,8 @@ func showDatabaseStatus(engine string, client *vault.Client, vaultErr error) {
 	if mariaRunning && mariaConfigured {
 		fmt.Println("   vault read database/creds/dba-role")
 		fmt.Println("   hal vault database disable                              (tear down mariadb)")
-	} else if !mariaRunning {
+	} else if !mariaRunning || !global.VaultDatabaseUsesMariaDB() {
+		// Running for another lab only: enable reuses the shared container.
 		fmt.Println("   hal vault database enable                               (deploy mariadb)")
 	} else {
 		fmt.Println("   hal vault database update                               (reset mariadb)")
@@ -824,8 +844,8 @@ func init() {
 	_ = vaultDatabaseCmd.Flags().MarkHidden("update")
 
 	vaultDatabaseCmd.Flags().StringVarP(&databaseBackend, "backend", "b", "mariadb", "Database backend to use (mariadb, oracle; pgsql planned)")
-	vaultDatabaseCmd.Flags().StringVar(&mariadbVersion, "vault-mariadb-tag", defaultVaultMariaDBTag, "MariaDB container image tag")
-	vaultDatabaseCmd.Flags().StringVar(&mariadbImage, "vault-mariadb-image", defaultVaultMariaDBImage, "MariaDB container image name")
+	vaultDatabaseCmd.Flags().StringVar(&mariadbVersion, "vault-mariadb-tag", defaultVaultMariaDBTag, "MariaDB container image tag (ignored when reusing the running shared hal-vault-mariadb)")
+	vaultDatabaseCmd.Flags().StringVar(&mariadbImage, "vault-mariadb-image", defaultVaultMariaDBImage, "MariaDB container image name (ignored when reusing the running shared hal-vault-mariadb)")
 	vaultDatabaseCmd.Flags().StringVar(&dbUsernamePrefix, "username-prefix", "v", "Prefix for dynamically generated database usernames (e.g. 'myapp' → 'myapp-AbCdEfGhIj')")
 
 	vaultDatabaseCmd.Flags().StringVar(&oracleFreeImage, "oracle-image", defaultOracleFreeImage, "Oracle Database Free container image")

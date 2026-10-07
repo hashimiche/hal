@@ -151,7 +151,7 @@ func printVaultFeatureStatus(engine string) {
 	for _, f := range featureStates {
 		if f.name == "database" {
 			fmt.Println("   ↳ database")
-			fmt.Printf("      ↳ %-8s %s\n", "mariadb", colorizeFeatureState(boolState(checkContainer(engine, "hal-vault-mariadb") || checkContainer(engine, "hal-vault-postgres"))))
+			fmt.Printf("      ↳ %-8s %s\n", "mariadb", colorizeFeatureState(boolState((checkContainer(engine, "hal-vault-mariadb") && global.VaultDatabaseUsesMariaDB()) || checkContainer(engine, "hal-vault-postgres"))))
 			fmt.Printf("      ↳ %-8s %s\n", "oracle", colorizeFeatureState(boolState(checkContainer(engine, "hal-vault-oracle-db"))))
 			continue
 		}

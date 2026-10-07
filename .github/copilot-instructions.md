@@ -28,6 +28,7 @@ You are an expert HashiCorp Vault, Terraform, and DevOps assistant. Your primary
 - Reuse the shared `hal-net` network and `hal-...` resource names.
 - Be careful with command names: the observability namespace is `obs`, not `observability`.
 - **Shared KinD cluster:** when a `--k8s` feature enables Vault Kubernetes auth, it must use a dedicated auth mount (never `kubernetes/` unless it is `hal vault k8s` itself). All `--k8s` enable paths must call `ensureHALKindCluster()` so nodes join `hal-net` (do not invoke `kind create` directly). See `docs/cli-lifecycle-model.md` Shared KinD Cluster Convention for the mount registry, co-tenant teardown, port map, and network rules.
+- **Shared Vault MariaDB:** `hal-vault-mariadb` is a shared service (registry key `vault-mariadb`, consumers `vault-database`, `vault-agentic-iam`). Bring it up with `ensureVaultMariaDB()` and tear it down with `releaseVaultMariaDB()` (`cmd/vault/database-mariadb.go`); never `run`/`rm` it directly. Each consumer owns its own Vault mount and broker user, and never changes root's password. `hal vault database disable` keeps the container while another consumer remains. See `docs/cli-lifecycle-model.md` Shared Vault MariaDB Convention.
 
 ## CLI Lifecycle Governance
 
