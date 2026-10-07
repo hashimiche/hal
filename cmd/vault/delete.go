@@ -16,6 +16,8 @@ import (
 // It is a shared service (also used by 'hal tf vcs-workflow'), so it is torn down
 // via teardownSharedGitLab() with a consumer/TFE-runtime check instead of being
 // force-removed unconditionally.
+// hal-vault-mariadb is shared too, but every one of its consumers is a Vault lab,
+// so it stays in this list and delete clears its whole consumer registry.
 var vaultEcosystem = []string{
 	vaultContainer,
 	openLDAPContainer,
@@ -66,6 +68,15 @@ var vaultDestroyCmd = &cobra.Command{
 					fmt.Printf("  ✅ Destroyed container: %s\n", container)
 				}
 			}
+		}
+
+		// 1a. hal-vault-mariadb is gone with the rest of the ecosystem. Drop its
+		// consumers too, so the registry never lists labs whose container is gone
+		// (a later disable would otherwise report it "still in use").
+		if global.DryRun {
+			fmt.Printf("[DRY RUN] Would clear the %s shared service consumers\n", vaultMariaDBContainer)
+		} else if err := global.ClearSharedService(global.SharedVaultMariaDBServiceKey); err != nil {
+			fmt.Printf("⚠️  Could not update shared service registry: %v\n", err)
 		}
 
 		// 1b. Authentik is a shared IdP (also used by 'hal tf saml'), so it is

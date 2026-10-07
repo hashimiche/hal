@@ -65,10 +65,14 @@ const (
 	vaultProdRaftMount   = "/vault/data"
 	vaultProdClusterPort = 8201
 
-	// --- Backend DB (MariaDB) ---
+	// --- Backend DB (MariaDB, shared: see database-mariadb.go) ---
 	vaultMariaDBHostAlias    = "mariadb.localhost"
 	vaultMariaDBPort         = 3306
 	vaultMariaDBRootPassword = "vaultroot"
+	// Broker user of `hal vault database`. Vault rotates its password right
+	// after the connection is written; the bootstrap value is only used before.
+	vaultMariaDBBrokerUser              = "vaultadmin"
+	vaultMariaDBBrokerBootstrapPassword = "temp-vault-pass"
 
 	// --- Image / tag flag defaults ---
 	defaultVaultImageCE     = "hashicorp/vault"

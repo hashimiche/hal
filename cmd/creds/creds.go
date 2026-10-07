@@ -114,11 +114,10 @@ var statusCmd = &cobra.Command{
 		}
 
 		// ── Vault Database (dynamic) ─────────────────────────────────────────
-		if global.CheckContainer(engine, "hal-vault-mariadb") {
+		if global.CheckContainer(engine, "hal-vault-mariadb") && global.VaultDatabaseUsesMariaDB() {
 			printed = true
 			fmt.Println("🗄️  Vault Database — dynamic credentials")
-			fmt.Println("   vault read database/creds/writer")
-			fmt.Println("   vault read database/creds/reader")
+			fmt.Println("   vault read database/creds/dba-role")
 			fmt.Println()
 		}
 
@@ -296,11 +295,11 @@ func CollectActiveCredentials() (ActiveCredentials, error) {
 		})
 	}
 
-	if global.CheckContainer(engine, "hal-vault-mariadb") {
+	if global.CheckContainer(engine, "hal-vault-mariadb") && global.VaultDatabaseUsesMariaDB() {
 		services = append(services, ServiceCredentials{
 			Service:  "vault-database",
 			Label:    "Vault Database — dynamic credentials",
-			Commands: []string{"vault read database/creds/writer", "vault read database/creds/reader"},
+			Commands: []string{"vault read database/creds/dba-role"},
 		})
 	}
 

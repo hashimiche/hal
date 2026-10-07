@@ -21,6 +21,7 @@ This skill covers the local Vault database secrets engine lab implemented by `ha
 - Dynamic role: `database/roles/dba-role`
 - Root connection user initially created: `vaultadmin`
 - Vault rotates the `vaultadmin` password so it becomes Vault-owned
+- `hal-vault-mariadb` is shared (consumer `vault-database`; the Agentic IAM lab is another): `enable` reuses it when running, `disable` keeps it while another consumer remains, and only `vault-database`'s own `database/` mount and `vaultadmin` broker are removed
 
 ### `--k8s` mode (adds KinD + VSO VaultDynamicSecret demo)
 
@@ -39,7 +40,7 @@ Use smart status mode if needed:
 
 Then use the correct lifecycle command:
 
-    hal vault database enable --backend mariadb --mariadb-version 11.8
+    hal vault database enable --backend mariadb --vault-mariadb-tag 11.8
     hal vault database enable --k8s
     hal vault database update
     hal vault database disable

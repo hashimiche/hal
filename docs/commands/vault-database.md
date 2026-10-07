@@ -7,6 +7,8 @@
 ## Purpose
 Deploy a database backend (MariaDB or Oracle) and configure Vault's dynamic database secrets engine so Vault mints short-lived, Just-In-Time (JIT) database credentials on demand. Optionally (`--k8s`) extends the workflow into a full KinD + Vault Secrets Operator demo where a live web app receives and rotates those credentials automatically via `VaultDynamicSecret`.
 
+> **Shared MariaDB:** `hal-vault-mariadb` is a shared service counted per consumer (ADR 0004), like Authentik and GitLab. This command registers as `vault-database`; the Agentic IAM lab registers as `vault-agentic-iam`, with its own Vault mount and broker user. `enable` reuses the container when it is running, and `disable` removes it only when no other consumer remains. See [Shared MariaDB](#shared-mariadb).
+
 > **Auth mount isolation:** the `--k8s` flag uses a dedicated `kubernetes-db/` Vault auth mount — never the shared `kubernetes/` mount used by `hal vault k8s`. This means `disable` is safe regardless of which other `--k8s` features are running, and the cluster is preserved if `app1`, `pki-demo`, or `pki-acme-demo` namespaces are still active.
 
 ## Related
@@ -26,21 +28,22 @@ Deploys the selected database backend and wires Vault's database secrets engine:
 
 | Step | What happens |
 |------|-------------|
-| 1 | Start database container on `hal-net` |
+| 1 | Start the database container on `hal-net`. MariaDB: reuse `hal-vault-mariadb` if it is already running, then register the `vault-database` consumer |
 | 2 | Wait for the database to be ready to accept connections |
-| 3 | Create a least-privileged broker account (`vaultadmin` for MariaDB, `vault` user for Oracle) |
-| 4 | Enable Vault database secrets engine at `database/` |
-| 5 | Configure the database connection (`database/config/<container-name>`) |
-| 6 | Rotate the broker account password — Vault takes exclusive ownership, nobody knows it |
-| 7 | Create a dynamic role with SQL creation/revocation statements (`database/roles/<role>`) |
-| 8 | Generate a test JIT credential to verify the full chain works |
-| 9 | Print the credential and a ready-to-paste `mysql` login command |
+| 3 | MariaDB: revoke and unmount an earlier `database/`, so its JIT users are dropped from a reused container |
+| 4 | Create a least-privileged broker account (`vaultadmin` for MariaDB, reset if it already exists; `vault` user for Oracle) |
+| 5 | Enable Vault database secrets engine at `database/` |
+| 6 | Configure the database connection (`database/config/<container-name>`) |
+| 7 | Rotate the broker account password — Vault takes exclusive ownership, nobody knows it |
+| 8 | Create a dynamic role with SQL creation/revocation statements (`database/roles/<role>`) |
+| 9 | Generate a test JIT credential to verify the full chain works |
+| 10 | Print the credential and a ready-to-paste `mysql` login command |
 
 ### Flags
 ```text
 -b, --backend string               Database backend (mariadb, oracle; pgsql planned) (default "mariadb")
-    --vault-mariadb-image string   MariaDB container image name (default "mariadb")
-    --vault-mariadb-tag string     MariaDB container image tag (default "11.8")
+    --vault-mariadb-image string   MariaDB container image name, ignored when the shared container is reused (default "mariadb")
+    --vault-mariadb-tag string     MariaDB container image tag, ignored when the shared container is reused (default "11.8")
     --username-prefix string       Prefix for generated usernames e.g. "myapp" → "myapp-AbCdEfGhIj" (default "v")
     --oracle-image string          Oracle Database Free image (default "gvenzl/oracle-free")
     --oracle-tag string            Oracle Database Free tag (default "slim")
@@ -69,7 +72,7 @@ hal vault database enable --k8s
 
 ## Lifecycle: `hal vault database update`
 
-Tears down the existing database environment and re-enables it from scratch. Equivalent to `disable` followed by `enable`. Use when the database container or Vault configuration has drifted.
+Tears down the existing database environment and re-enables it from scratch. Equivalent to `disable` followed by `enable`. Use when the database container or Vault configuration has drifted. With MariaDB, the container is recreated only when no other consumer holds it; otherwise it is reused and only this command's mount and broker are reset.
 
 ```bash
 hal vault database update
@@ -80,7 +83,7 @@ hal vault database update --k8s   # also reconciles the KinD cluster (recreates 
 
 ## Lifecycle: `hal vault database disable`
 
-Revokes all active Vault database leases, unmounts the `database/` engine, and removes the database container.
+Revokes all active Vault database leases, unmounts the `database/` engine, and removes the database container. With MariaDB, it also drops the `vaultadmin` broker and deregisters `vault-database`; `hal-vault-mariadb` is removed only when no other consumer remains.
 
 ```bash
 hal vault database disable
@@ -93,7 +96,7 @@ hal vault database disable --k8s   # also destroys the KinD cluster and cleans u
 
 Checks (shown by default when no lifecycle action is given):
 - Whether `database/` is mounted in Vault
-- MariaDB container running + Vault config exists
+- MariaDB container running (with its shared-service consumers) + Vault config exists
 - Oracle runtime image built, plugin present, container running, Vault config exists
 
 ```bash
@@ -267,16 +270,32 @@ The `--k8s` flag shares the same KinD cluster used by `hal vault k8s` and `hal v
 
 ---
 
+## Shared MariaDB
+
+`hal-vault-mariadb` is registered under the `vault-mariadb` key of `~/.hal/shared-services.json`. Each consumer owns its own Vault mount and broker user, so disabling one never breaks another.
+
+| Consumer | Command | Vault mount | Broker user |
+|----------|---------|-------------|-------------|
+| `vault-database` | `hal vault database` (MariaDB) | `database/` | `vaultadmin` |
+| `vault-agentic-iam` | `hal vault agentic-iam` (planned) | its own | its own |
+
+- Root keeps the fixed lab password for the container's whole life, so a reused container can always be administered. Vault's `rotate-root` only ever rotates a consumer's broker.
+- A container that is stopped is restarted, not recreated, so the other consumers' data survives. A fresh container resets the consumer list.
+- `hal boundary mariadb --with-vault` is not a consumer: it creates nothing in MariaDB and brokers `database/creds/dba-role`, so it needs `hal vault database` itself.
+- `hal vault delete` removes the container and clears the `vault-mariadb` consumers.
+
+---
+
 ## Side Effects
 
-- Starts `hal-vault-mariadb` (MariaDB) or `hal-vault-oracle-db` (Oracle) container on `hal-net`
+- Starts `hal-vault-mariadb` (MariaDB, reused when already running) or `hal-vault-oracle-db` (Oracle) container on `hal-net`
 - Mounts `database/` secrets engine in Vault
 - Writes `database/config/<container-name>` and `database/roles/<role-name>`
 - Rotates the broker account password — Vault holds exclusive ownership, it is not recoverable from outside Vault
 - `--k8s`: enables dedicated `kubernetes-db/` Vault auth mount, writes `db-app-read` policy and `db-app-role`
 - `--k8s`: installs `vault-secrets-operator` Helm release in namespace `vso`
 - `--k8s`: creates namespace `db-app`, service account `db-app-sa`, and all VSO CRDs
-- `disable` tears down all of the above
+- `disable` tears down all of the above, except `hal-vault-mariadb` while another consumer still uses it
 
 ---
 
@@ -288,8 +307,8 @@ Alias: hal vault db
 
 Flags:
   -b, --backend string               Database backend (mariadb, oracle; pgsql planned) (default "mariadb")
-      --vault-mariadb-image string   MariaDB container image name (default "mariadb")
-      --vault-mariadb-tag string     MariaDB container image tag (default "11.8")
+      --vault-mariadb-image string   MariaDB container image name, ignored on reuse (default "mariadb")
+      --vault-mariadb-tag string     MariaDB container image tag, ignored on reuse (default "11.8")
       --username-prefix string       Dynamic username prefix (default "v")
       --oracle-image string          Oracle Free image (default "gvenzl/oracle-free")
       --oracle-tag string            Oracle Free tag (default "slim")
