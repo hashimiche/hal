@@ -1,0 +1,4 @@
+# Direct dependencies of the Agentic IAM lab image (ADR 0004, decision 10).
+# requirements.txt is the hashed lock compiled from this file: see README.md.
+langchain-core==1.6.7
+PyMySQL==1.2.3
