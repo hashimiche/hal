@@ -1,7 +1,8 @@
 # 4. Agentic IAM lab: Authentik issues the OBO token, Vault decides
 
-- **Status:** Proposed. It becomes Accepted, or is amended, once the spike
-  (Implementation plan, step 0) has answered the open questions.
+- **Status:** Accepted on 2026-10-08. The spike answered every open question,
+  and the decisions it amended are listed under "Spike result". The lab passes
+  its runtime verification (see "Verification result").
 - **Date:** 2026-10-07
 - **Branch for implementation:** `feature/vault-agentic-iam`
 - **Numbering:** 0003 is taken by the host MCP server ADR on
@@ -418,23 +419,23 @@ embedded sources.
 
 ## Spike result
 
-Run on 2026-10-07 with Vault `2.1.1-ent` (dev mode, deployed by `hal vault
-create --edition ent`) and Authentik `2026.8.3` (deployed by `hal vault oidc
-enable --authentik-tag 2026.8.3`, which passed). The Authentik half is
-complete. The Vault half is **blocked by the license** (see below).
+The Authentik half ran on 2026-10-07 with Vault `2.1.1-ent` (dev mode) and
+Authentik `2026.8.3`. The Vault half was blocked by the license (see below), and
+ran on 2026-10-08 through the lab itself, with Vault `2.1.2-ent` under a license
+that lists the `Agentic IAM` feature.
 
 ### Answers
 
-1. **Does Vault accept the token?** Not verified yet (license). On paper it
-   should: the token is `RS256`, `typ: JWT` (accepted since 2.0.4), and carries
-   `jti` (the default `unique_id_claim`). `iss` is
-   `http://authentik.localhost:9100/application/o/vault-agentic/`, with a
-   trailing slash that Vault normalises.
-2. **RAR field names.** The RAR type specification says `type`, `path` and
-   `capabilities` (plus optional `allowed_parameters`, `denied_parameters`,
-   `required_parameters`). `path_constraint` / `action` belong to Auth0's own
-   request format, not to the claim Vault reads. The scope mappings emit
-   `type` / `path` / `capabilities`. Not verified against Vault yet.
+1. **Does Vault accept the token?** Yes, as issued. The token is `RS256`,
+   `typ: JWT` (accepted since 2.0.4), and carries `jti` (the default
+   `unique_id_claim`). The profile's `issuer_id` is stored without the trailing
+   slash of the token's `iss`, and the persona aliases use that normalised
+   issuer; both match.
+2. **RAR field names.** `type`, `path` and `capabilities`, as the RAR type
+   specification says (plus the optional `allowed_parameters`,
+   `denied_parameters` and `required_parameters`). `path_constraint` / `action`
+   belong to Auth0's own request format, not to the claim Vault reads. The scope
+   mappings emit `type` / `path` / `capabilities`, and Vault enforces them.
 3. **The actor.**
    - **The object.** A core Authentik `Actor` (`authentik.core.models.Actor`, a
      `User` subclass) with no parent: username `finance-agent`, type
@@ -455,9 +456,24 @@ complete. The Vault half is **blocked by the license** (see below).
    application, with the groups `finance` and `engineering` and
    `policy_engine_mode=any`. charlie (`sales`) gets HTTP 400 `invalid_grant`.
    The error description is generic; the reason is in Authentik's event log.
-5. **Which decision point refused.** Not verified yet (license). The 2.1.x
-   changelog mentions a `RAR_NO_MATCH` error code, which suggests that Vault
-   names at least the task-scope refusal.
+5. **Which decision point refused.** In its response, Vault names only the task
+   scope: `RAR_NO_MATCH: No valid authorization_details claim found matching
+   this request.` A refusal by the persona's own rights and a refusal by the
+   ceiling both answer a plain `permission denied`. The audit log tells all of
+   them apart:
+   - Every entry has `auth.entity_id` = the persona's entity and
+     `auth.metadata.actor_entity_name` = `finance-agent`, plus
+     `jwt_authorization_details`.
+   - An allowed request lists both the persona's policy and the ceiling policy
+     in `policy_results.granting_policies`.
+   - On a refusal by the persona's own rights (bob), `identity_policies` is
+     empty.
+   - On a refusal by the ceiling (alice, payroll), `identity_policies` holds a
+     policy that grants the path and the RAR names it, yet `allowed` is false.
+
+   The transparency panel therefore shows `decided_by` for the IdP and the task
+   scope. For the two other decision points it shows Vault's `permission
+   denied`, and the audit log is where they are told apart.
 6. **The Agent Registry** is mounted by default at `agent-registry/`
    (`agent_registry` type, builtin).
 
@@ -505,12 +521,45 @@ complete. The Vault half is **blocked by the license** (see below).
   issuer is derived from the request `Host`, so every caller (chat, demo agent,
   Vault's JWKS fetch) must use `authentik.localhost:9100` on `hal-net`.
 - **Versions.** `2.1.2` was released after this ADR was written. Decision 2 now
-  pins it; the Vault half of the spike will run on `2.1.2-ent`.
+  pins it, and the Vault half of the spike ran on `2.1.2-ent`.
+- **The broker's privilege (decision 6).** Vault's MySQL plugin needs the lab's
+  broker to hold `CREATE USER` on `*.*`, which in MariaDB lets it alter any
+  account, root included. The rule that no consumer touches root is therefore
+  kept by HAL's code, not enforced by MariaDB. This is acceptable for a
+  single-user lab.
 - **Shared MariaDB rules (step 2).** No consumer may point a Vault connection
   at the MariaDB root user or rotate it. Each consumer brings its own broker user.
   The lab's `disable` drops its broker user and the `acme` schema before releasing
   the container. `hal boundary mariadb --with-vault` is not a consumer: it
   depends on `database/creds/dba-role`, not on the container.
+
+## Verification result
+
+Run on 2026-10-08 against Vault `2.1.2-ent` (dev mode, licensed with Agentic
+IAM) and Authentik `2026.8.3`. Static checks are clean.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | `enable` from a fresh Enterprise Vault | ✅ Authentik started, MariaDB reused, chat URL printed |
+| 2 | Reuse of a running `hal vault database` | ✅ The `disable` keeps `hal-vault-mariadb` and `database/creds/dba-role`; it drops `acme`, the broker user and the `obo-*` users |
+| 3 | The six cases | ✅ All six give the expected outcome, before and after a `disable` / `enable` cycle |
+| 4 | Audit log | ✅ The persona is the entity and `finance-agent` the actor on every lab request (see Spike result, answer 5) |
+| 5 | Refusals (CE, unlicensed Enterprise, Authentik < 2026.8.0) | ✅ Actionable messages, nothing changed (2026-10-07) |
+| 6 | Neighbouring labs after the version bumps | ✅ `hal vault oidc`, with and without `--scim`, works and coexists with the lab. A `disable` keeps Authentik and the shared alice and bob, and deletes charlie and the lab's objects. ⏳ `hal tf saml` is not verified yet. |
+
+**Also verified:**
+- A second `enable` keeps containers that already run the same configuration.
+- `update` recreates the containers.
+
+**How the cases were driven.** The browser loop was not run in a real browser.
+A script did the persona login (chat → Authentik → chat) through Authentik's
+flow executor API, then called the chat's JSON API. The traces shown in the
+transparency panel were checked as JSON.
+
+**Not verified:**
+- the page itself in a browser
+- a Vault in `--mode prod` (TLS to Vault from the demo agent)
+- `hal vault delete` while `hal tf saml` keeps Authentik up
 
 ## References
 

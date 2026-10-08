@@ -5,12 +5,11 @@ from dataclasses import dataclass, field
 
 from .web import CallError, call_json
 
-# TODO(spike): open question 5 of ADR 0004, still blocked by the Vault license.
-# Vault may or may not say which decision point refused a request. Map the
-# markers of its error text to decision points here once the spike has seen
-# real 403s. Until a marker matches, decided_by stays None and the
-# transparency panel shows Vault's own words. The 2.1.x changelog names
-# RAR_NO_MATCH, a refusal by the token's authorization_details.
+# Markers in Vault's error text that name the decision point which refused a
+# request (ADR 0004, Spike result, answer 5). Vault 2.1.2 names only the task
+# scope (RAR_NO_MATCH). A refusal by the persona's own rights and one by the
+# ceiling both answer a plain "permission denied", so decided_by stays None and
+# the transparency panel shows Vault's own words; the audit log tells them apart.
 DECISION_MARKERS = {
     "rar_no_match": "task_scope",
 }
