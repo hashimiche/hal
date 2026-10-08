@@ -145,7 +145,7 @@ func TestRequirementsAreLockedWithHashes(t *testing.T) {
 			t.Errorf("not pinned with hashes: %.120s", line)
 		}
 	}
-	for _, direct := range []string{"langchain-core==", "pymysql=="} {
+	for _, direct := range []string{"pydantic-ai-slim==", "pymysql=="} {
 		if !strings.Contains(logical, "\n"+direct) {
 			t.Errorf("direct dependency %s missing from the lock", strings.TrimSuffix(direct, "=="))
 		}

@@ -1,16 +1,16 @@
-"""The model seam: the one place that decides which chat model drives the demo agent."""
+"""The model seam: the one place that decides which model drives the demo agent."""
 
-from langchain_core.language_models import BaseChatModel
+from pydantic_ai.models import Model
 
-from .fake_model import KeywordChatModel
+from .fake_model import keyword_model
 
 
-def chat_model() -> BaseChatModel:
+def chat_model() -> Model:
     """The demo agent's model.
 
-    Any LangChain chat model that supports tool calling (``bind_tools``) fits
-    here. Swapping in a real one is this line, plus its ``langchain-<provider>``
-    package in requirements.in. The deterministic fake keeps the six cases of
-    the lab reproducible (ADR 0004, decision 9).
+    Any PydanticAI model that supports tool calling fits here. Swapping in a
+    real one is this line, e.g. ``infer_model("anthropic:<model>")``, plus the
+    ``pydantic-ai-slim[<provider>]`` extra in requirements.in. The deterministic
+    fake keeps the six cases of the lab reproducible (ADR 0004, decision 9).
     """
-    return KeywordChatModel()
+    return keyword_model()

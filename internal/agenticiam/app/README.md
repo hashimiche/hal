@@ -74,8 +74,9 @@ Authentik derives its issuer from the `Host` header.
 | `get_payroll()` | `vault:payroll` | `<DB_MOUNT>/creds/<DB_ROLE_PAYROLL>` | `employee, department, annual_salary_kusd` |
 
 - `POST /plan {prompt}` returns `{scopes, answer}`: the scopes of the tools the
-  model calls first, before any data is read. With no scope, `answer` is the
-  model's reply and there is no task.
+  model calls first. Those calls wait for approval (PydanticAI's deferred
+  tools), so no data is read. With no scope, `answer` is the model's reply and
+  there is no task.
 - `POST /run {prompt, subject_token, scopes}` performs **one** token exchange
   (`subject_token` = the persona's `hal-chat` access token, `actor_token` = the
   demo agent's `hal-demo-agent` access token, `scope=openid <scopes>`), then runs
@@ -100,10 +101,12 @@ Authentik derives its issuer from the `Host` header.
 `idp`, `persona`, `ceiling`, `task_scope`, or `null` when nobody says.
 
 The trace and the answer never contain a token or a password, and neither does
-anything the model sees. The model is a deterministic fake behind LangChain's
-`bind_tools` interface (`agentic_iam/fake_model.py`). It falls for the
-injection planted in the Q2 commentary every time. `agentic_iam/model.py` is the
-one-line seam for a real model.
+anything the model sees: the OBO token stays in the run's dependency, which
+the model never sees. The demo agent is a PydanticAI agent (`pydantic-ai-slim`)
+and its model is a deterministic fake, a PydanticAI function model
+(`agentic_iam/fake_model.py`). It falls for the injection planted in the Q2
+commentary every time. `agentic_iam/model.py` is the one-line seam for a real
+model.
 
 ## Open: `TODO(spike)`
 
