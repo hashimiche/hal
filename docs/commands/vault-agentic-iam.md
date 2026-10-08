@@ -5,7 +5,7 @@
 
 ## Purpose
 Deploy the Agentic IAM lab. A persona logs in to a chat through Authentik. The
-demo agent, built on LangChain, acts on the persona's behalf with an OBO token
+demo agent, built on PydanticAI, acts on the persona's behalf with an OBO token
 that Authentik issues by token exchange. Vault Enterprise then decides every
 access the demo agent makes to the lab's data in MariaDB. Four decision points
 can refuse: the IdP, the persona's own rights, the ceiling and the task scope.

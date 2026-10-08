@@ -6,20 +6,22 @@ import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from pydantic_ai import ModelMessagesTypeAdapter
+from pydantic_ai.models.function import FunctionModel
+
 import fakes
 from agentic_iam.agent import CANNOT_ACT, AgentAPI, AgentConfig, DemoAgent
 from agentic_iam.env import ConfigError
-from agentic_iam.fake_model import KeywordChatModel
+from agentic_iam.fake_model import reply
 from agentic_iam.web import make_server
 
-# Every message the model saw, across the tests.
+# Every message the model saw, as JSON, across the tests.
 SEEN_BY_MODEL: list[str] = []
 
 
-class RecordingModel(KeywordChatModel):
-    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        SEEN_BY_MODEL.extend(str(m.content) for m in messages)
-        return super()._generate(messages, stop, run_manager, **kwargs)
+def recording(messages, info):
+    SEEN_BY_MODEL.append(ModelMessagesTypeAdapter.dump_json(messages).decode())
+    return reply(messages, info)
 
 
 # (case, persona, prompt, task scope, decisions of the tool calls). None: no tool call at all.
@@ -49,7 +51,7 @@ class AgentAPITest(unittest.TestCase):
             "VAULT_ADDR": self.lab.url,
         })
         agent = DemoAgent.from_config(config)
-        agent.model = RecordingModel()
+        agent.model = FunctionModel(recording)
         agent.db = self.db = fakes.FakeDatabase(self.lab)
 
         server = make_server(AgentAPI, agent, port=0, host="127.0.0.1")

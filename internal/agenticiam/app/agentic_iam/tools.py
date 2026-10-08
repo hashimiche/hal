@@ -1,15 +1,15 @@
 """The demo agent's tools: one per lab table, each covered by one scope.
 
 The model sees the tools' names, descriptions and arguments. What a tool does
-is a ``Runner`` supplied for the task, which holds the task's OBO token: the
-token never reaches the model.
+is the ``Runner`` that the run depends on, which holds the task's OBO token:
+the token never reaches the model.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from langchain_core.tools import BaseTool, StructuredTool
+from pydantic_ai import ApprovalRequired, FunctionToolset, RunContext
 
 
 @dataclass(frozen=True)
@@ -45,23 +45,28 @@ SCOPES = [spec.scope for spec in SPECS.values()]
 
 Runner = Callable[[ToolSpec, dict[str, Any]], str]
 
+# Sequential: the trace lists the tool calls in the order the model made them.
+TOOLS = FunctionToolset[Runner](sequential=True)
 
-def make_tools(run: Runner) -> list[BaseTool]:
-    def get_quarterly_results(quarter: str) -> str:
-        """Read Acme's financial results for one quarter, such as "Q3"."""
-        return run(QUARTERLY_RESULTS, {"quarter": quarter.strip().upper()})
 
-    def get_forecasts() -> str:
-        """Read Acme's revenue forecasts."""
-        return run(FORECASTS, {})
+@TOOLS.tool
+def get_quarterly_results(ctx: RunContext[Runner], quarter: str) -> str:
+    """Read Acme's financial results for one quarter, such as "Q3"."""
+    return ctx.deps(QUARTERLY_RESULTS, {"quarter": quarter.strip().upper()})
 
-    def get_payroll() -> str:
-        """Read Acme's payroll."""
-        return run(PAYROLL, {})
 
-    return [StructuredTool.from_function(f) for f in (get_quarterly_results, get_forecasts, get_payroll)]
+@TOOLS.tool
+def get_forecasts(ctx: RunContext[Runner]) -> str:
+    """Read Acme's revenue forecasts."""
+    return ctx.deps(FORECASTS, {})
+
+
+@TOOLS.tool
+def get_payroll(ctx: RunContext[Runner]) -> str:
+    """Read Acme's payroll."""
+    return ctx.deps(PAYROLL, {})
 
 
 def planning_only(spec: ToolSpec, args: dict[str, Any]) -> str:
-    """The Runner used while planning: deriving the task scope reads no data."""
-    raise RuntimeError(f"{spec.name} called while planning")
+    """The Runner used while planning: a tool call waits for the persona's consent and reads no data."""
+    raise ApprovalRequired()

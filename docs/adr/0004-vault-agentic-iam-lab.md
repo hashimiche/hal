@@ -3,6 +3,8 @@
 - **Status:** Accepted on 2026-10-08. The spike answered every open question,
   and the decisions it amended are listed under "Spike result". The lab passes
   its runtime verification (see "Verification result").
+- **Amended on 2026-10-08:** decision 9 moves the demo agent from LangChain to
+  PydanticAI.
 - **Date:** 2026-10-07
 - **Branch for implementation:** `feature/vault-agentic-iam`
 - **Numbering:** 0003 is taken by the host MCP server ADR on
@@ -73,7 +75,7 @@ a showcase of a safe agent on real infrastructure.
 ## Decision
 
 `hal vault agentic-iam` (alias `agentic`) deploys a complete Agentic IAM lab:
-- A demo agent built on LangChain acts for a persona logged in through Authentik.
+- A demo agent built on PydanticAI acts for a persona logged in through Authentik.
 - It holds an OBO token obtained by token exchange.
 - Vault Enterprise decides each access to lab data in MariaDB.
 - Four decision points each have a case that only they refuse.
@@ -208,16 +210,26 @@ the persona's rights and the ceiling allow.
   - Vault's decision for each tool call
   - the ephemeral MariaDB user and its TTL
 
-### 9. The demo agent uses LangChain with a deterministic fake model
+### 9. The demo agent uses PydanticAI with a deterministic fake model
 
-- **Code.** Python, depending on `langchain-core` only, not the `langchain`
-  meta-package.
-- **The fake model** implements LangChain's tool-calling chat model interface:
+- **Code.** Python, depending on `pydantic-ai-slim` only, not the `pydantic-ai`
+  meta-package, which brings the SDK of every model provider.
+- **The tool loop** is a PydanticAI agent. Each run is given the model and, as
+  its dependency, the runner that performs the task's tool calls with the OBO
+  token. The model never sees that dependency.
+- **Planning** (decision 7) runs the same agent, but every tool call waits for
+  approval. The run stops before any tool runs, and the scopes of the waiting
+  calls are the task scope that the persona is asked to consent to.
+- **Tool calls run one after another,** so the transparency panel lists them in
+  the order the model made them.
+- **The fake model** is a PydanticAI function model:
   - It routes prompts by keyword.
   - It falls for the Q2 injection every time.
   - For a request it does not understand, it answers with what it can do.
-- **A real model** is out of scope for v1. The interface is the seam that lets one
-  replace the fake later with a one-line change.
+- **A real model** is out of scope for v1. The model is a one-line seam: a real
+  one is that line, plus the provider's `pydantic-ai-slim` extra.
+- **LangChain was the first choice** and was replaced on 2026-10-08 (see
+  "Alternatives considered and rejected").
 
 ### 10. One Python image, built locally, everything pinned
 
@@ -228,8 +240,8 @@ the persona's rights and the ceiling allow.
   - Dependencies are frozen in a lock file with hashes. Nothing is `latest`.
 - **Caching.** The image tag is the hash of the embedded sources. HAL rebuilds
   only when the code changes, otherwise everything comes from the local cache.
-- **Dependencies** are kept to `langchain-core` and `PyMySQL`. HTTP and OAuth
-  use the standard library.
+- **Dependencies** are kept to `pydantic-ai-slim` and `PyMySQL`. The lab's own
+  HTTP and OAuth code uses the standard library.
 - **One image for both containers.** The chat and the demo agent run from the same
   image with different commands, so there is a single build.
 
@@ -272,6 +284,9 @@ refusing and allowing.
   notice. Both stay pinned, and a version bump means re-running the six cases.
 - **Persona passwords** are lab credentials, hard-coded like those of the other
   Authentik labs.
+- **Token usage.** PydanticAI counts the requests, tool calls and tokens of
+  each run (only estimated with the fake model). Exposing them as metrics, and in
+  Grafana, is left for a later version.
 - **No automated end-to-end check in v1.** The six cases are verified by hand
   (see Verification). Automated evals belong to a later end-to-end validation
   workstream.
@@ -389,8 +404,16 @@ embedded sources.
 - **Images published to ghcr**, from a separate repository like `hal-plus` or from
   this repository's release workflow like `hal-mcp`. Rejected for now: a registry
   outage at demo time, and a publishing step in the development loop.
-- **The demo agent in Go.** More uniform with HAL, but further from the LangChain
-  stack the customer uses.
+- **The demo agent in Go.** More uniform with HAL, but customers build their
+  agents in Python, where the agent frameworks are.
+- **LangChain (`langchain-core`)**, the first choice, made because the customer
+  POC runs a LangChain agent. It was replaced by PydanticAI on 2026-10-08:
+  - HAL is for every customer, not for that POC.
+  - For the same demo agent, LangChain locks 35 packages against 19, and the
+    image weighs 213 MB against 184 MB.
+  - PydanticAI's typed API maps directly onto the lab: a function model for the
+    fake, a run dependency for the OBO token, and tool calls that wait for
+    approval for the consent.
 - **A CLI chat with device code login.** Simpler and scriptable, but further from
   the chat interface of the POC.
 - **A static page holding the token in the browser.** One component fewer, but the
@@ -550,6 +573,8 @@ IAM) and Authentik `2026.8.3`. Static checks are clean.
 **Also verified:**
 - A second `enable` keeps containers that already run the same configuration.
 - `update` recreates the containers.
+- After the move to PydanticAI (decision 9), `update` rebuilt the image, and
+  the six cases gave the same outcomes and the same traces (2026-10-08).
 
 **How the cases were driven.** The browser loop was not run in a real browser.
 A script did the persona login (chat → Authentik → chat) through Authentik's
