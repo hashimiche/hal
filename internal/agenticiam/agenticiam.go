@@ -3,7 +3,8 @@
 //
 // The sources are embedded in the hal binary. The image tag is a hash of them,
 // so HAL rebuilds the image only when the code changes; otherwise it comes from
-// the local image cache. The image contract (commands, ports and environment
+// the local image cache. Each change leaves the previous image behind:
+// RemoveStaleImages removes it, RemoveImages removes them all. The image contract (commands, ports and environment
 // variables of both containers) is documented in app/README.md.
 package agenticiam
 
@@ -11,12 +12,14 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -92,6 +95,65 @@ func EnsureImage(engine string) error {
 		return fmt.Errorf("build %s: %w", ref, err)
 	}
 	return nil
+}
+
+// Images returns the images of ImageRepository in the local image store of
+// engine: ImageRef if it is built, and those built from earlier sources.
+func Images(engine string) ([]string, error) {
+	out, err := exec.Command(engine, "images", "--format", "{{.Repository}}:{{.Tag}}").Output()
+	if err != nil {
+		return nil, fmt.Errorf("list the images of %s: %w", ImageRepository, err)
+	}
+	return repositoryImages(string(out)), nil
+}
+
+// RemoveStaleImages removes the images built from earlier sources and keeps
+// ImageRef. It returns the images it removed.
+func RemoveStaleImages(engine string) ([]string, error) {
+	return removeImages(engine, ImageRef())
+}
+
+// RemoveImages removes every image of ImageRepository, ImageRef included. It
+// returns the images it removed.
+func RemoveImages(engine string) ([]string, error) {
+	return removeImages(engine, "")
+}
+
+// removeImages removes every image of ImageRepository but keep. It never
+// forces the removal, which would also remove the containers that run the
+// image: an image in use stays, and is reported.
+func removeImages(engine, keep string) ([]string, error) {
+	images, err := Images(engine)
+	if err != nil {
+		return nil, err
+	}
+	var removed []string
+	var errs []error
+	for _, ref := range images {
+		if ref == keep {
+			continue
+		}
+		if out, err := exec.Command(engine, "image", "rm", ref).CombinedOutput(); err != nil {
+			errs = append(errs, fmt.Errorf("remove %s: %v: %s", ref, err, strings.TrimSpace(string(out))))
+			continue
+		}
+		removed = append(removed, ref)
+	}
+	return removed, errors.Join(errs...)
+}
+
+// repositoryImages returns the tags of ImageRepository in the output of
+// `images --format {{.Repository}}:{{.Tag}}`. An untagged image cannot be
+// removed by name, so it is left out.
+func repositoryImages(list string) []string {
+	var images []string
+	for _, line := range strings.Split(list, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, ImageRepository+":") && line != ImageRepository+":<none>" {
+			images = append(images, line)
+		}
+	}
+	return images
 }
 
 // buildPlatform is the image platform matching this machine. On Apple Silicon,

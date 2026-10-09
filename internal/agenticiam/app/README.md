@@ -10,7 +10,8 @@ One image runs as two containers on `hal-net`:
 
 HAL embeds `Dockerfile`, `requirements.txt` and `agentic_iam/` in its binary
 (`internal/agenticiam`) and builds `localhost/hal-agentic-iam:<hash of those files>`
-at the first `enable`. This README, `requirements.in` and `tests/` are not
+at the first `enable`, and removes the images of earlier sources once the
+containers run the new one. This README, `requirements.in` and `tests/` are not
 embedded: editing them does not change the image.
 
 ```sh

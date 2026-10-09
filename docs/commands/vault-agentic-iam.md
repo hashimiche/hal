@@ -78,7 +78,7 @@ fix it, and nothing is changed.
 6. Containers. HAL builds the image if it is missing, writes the env files,
    then runs the demo agent and the chat. It waits for the chat's `/healthz`
    from the host, and for the demo agent's `/healthz` from inside the chat,
-   over `hal-net`.
+   over `hal-net`. Then it removes the images built from earlier sources.
 
 ### Disable sequence
 1. Remove both containers and `~/.hal/agentic-iam/`.
@@ -94,7 +94,7 @@ fix it, and nothing is changed.
 5. Authentik. HAL deregisters `vault-agentic-iam` and stops the stack, volumes
    included, if nobody is left.
 6. The image `localhost/hal-agentic-iam:<hash>` stays. It is a local build
-   cache.
+   cache. `hal delete` removes it.
 
 A `disable` on a lab that was never enabled is a no-op. It never touches a
 shared container the lab is not registered on.

@@ -38,7 +38,8 @@ Vault objects, the three Authentik applications and the shared-service consumers
   each with its fix. A refusal changes nothing.
 - `update` re-applies everything and recreates both containers (new image).
 - `disable` keeps Authentik and `hal-vault-mariadb` while another lab uses them,
-  and keeps the image (a local build cache).
+  and keeps the image (a local build cache). `enable` and `update` remove the
+  images built from earlier sources; `hal delete` removes them all.
 - Preview with `--dry-run`, which runs the read-only prerequisite checks for real.
 
 ### Step 3: Fix a refused prerequisite

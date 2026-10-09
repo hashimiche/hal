@@ -240,6 +240,10 @@ the persona's rights and the ceiling allow.
   - Dependencies are frozen in a lock file with hashes. Nothing is `latest`.
 - **Caching.** The image tag is the hash of the embedded sources. HAL rebuilds
   only when the code changes, otherwise everything comes from the local cache.
+- **Clean-up.** Once both containers run the current image, `enable` and
+  `update` remove the images built from earlier sources, so one image stays.
+  `disable` and `hal vault delete` keep it. `hal delete` removes it. Added on
+  2026-10-09: until then, every change of the sources left an image behind.
 - **Dependencies** are kept to `pydantic-ai-slim` and `PyMySQL`. The lab's own
   HTTP and OAuth code uses the standard library.
 - **One image for both containers.** The chat and the demo agent run from the same
