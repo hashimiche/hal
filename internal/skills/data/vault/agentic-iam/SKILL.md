@@ -27,6 +27,7 @@ point. Full spec: `docs/commands/vault-agentic-iam.md`.
 
 Status is read-only. It shows the prerequisites verdict, the containers, the
 Vault objects, the three Authentik applications and the shared-service consumers.
+Over HAL MCP, `get_vault_agentic_iam_status` returns the same status.
 
 ### Step 2: Choose the lifecycle action
 

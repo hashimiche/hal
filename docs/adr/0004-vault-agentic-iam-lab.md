@@ -5,6 +5,8 @@
   its runtime verification (see "Verification result").
 - **Amended on 2026-10-08:** decision 9 moves the demo agent from LangChain to
   PydanticAI.
+- **Amended on 2026-10-09:** decision 10 removes the images built from earlier
+  sources.
 - **Date:** 2026-10-07
 - **Branch for implementation:** `feature/vault-agentic-iam`
 - **Numbering:** 0003 is taken by the host MCP server ADR on
@@ -295,10 +297,14 @@ refusing and allowing.
   (see Verification). Automated evals belong to a later end-to-end validation
   workstream.
 - **Registration in existing lists:**
-  - `cmd/vault/status.go`
+  - `cmd/vault/status.go` and `cmd/status.go`
   - `internal/global/status_snapshot.go`
   - the `vaultEcosystem` teardown list in `cmd/vault/delete.go`
-  - `cmd/mcp/advanced.go`
+  - the image removal of `hal delete` in `cmd/teardown.go`
+  - the personas in `hal creds status` (`cmd/creds/creds.go`)
+  - `cmd/catalog.go`
+  - `cmd/mcp/advanced.go`, and the `get_vault_agentic_iam_status` tool in
+    `cmd/mcp/ops_api.go`
 - **Documentation updates** follow the Documentation Maintenance Rule of
   `docs/cli-lifecycle-model.md`, plus a new `docs/commands/vault-agentic-iam.md`.
 
