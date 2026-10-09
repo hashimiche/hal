@@ -369,7 +369,24 @@ func (l *agenticIAMLab) deployContainers(recreate bool) error {
 		return err
 	}
 	addr, caCert := agenticIAMVaultAddr(l.prod, vaultProdCertPath())
-	return startAgenticIAMContainers(l.engine, image, agenticIAMContainers(l.ak, dir, addr, caCert), recreate, ui.Step)
+	if err := startAgenticIAMContainers(l.engine, image, agenticIAMContainers(l.ak, dir, addr, caCert), recreate, ui.Step); err != nil {
+		return err
+	}
+	removeStaleAgenticIAMImages(l.engine)
+	return nil
+}
+
+// removeStaleAgenticIAMImages removes the images built from earlier sources,
+// now that both containers run the current one. A failure is only a warning:
+// the lab is up, and the next enable tries again.
+func removeStaleAgenticIAMImages(engine string) {
+	removed, err := agenticiam.RemoveStaleImages(engine)
+	for _, ref := range removed {
+		ui.Step("Removed %s, built from earlier sources", ref)
+	}
+	if err != nil {
+		ui.Step("⚠️  Could not remove the images built from earlier sources: %v", err)
+	}
 }
 
 // agenticIAMVaultDownError is the refusal when Vault cannot be reached.
@@ -543,6 +560,7 @@ func printAgenticIAMEnablePlan(lab *agenticIAMLab, update bool) {
 	fmt.Printf("[DRY RUN] Would configure Vault: profile %s, entities %s and %s, groups, policies, Agent Registry record %s, %s/ with 3 roles (broker password rotated)\n",
 		agenticIAMProfileName, agenticIAMPersonas[0].EntityName(), agenticIAMPersonas[1].EntityName(), agenticIAMAgentName, agenticDBMount)
 	fmt.Printf("[DRY RUN] Would build %s if it is not in the local image store\n", agenticiam.ImageRef())
+	fmt.Printf("[DRY RUN] Would remove the images of %s built from earlier sources, once both containers run the current one\n", agenticiam.ImageRepository)
 	if update {
 		fmt.Printf("[DRY RUN] Would recreate %s (hal-net only) and %s (published on %d)\n", agenticIAMAgentContainer, agenticIAMChatContainer, agenticIAMChatHostPort)
 	} else {

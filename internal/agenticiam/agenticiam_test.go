@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -64,6 +65,24 @@ func TestImageRef(t *testing.T) {
 	}
 	if !strings.HasSuffix(ImageRef(), ":"+SourceHash()) {
 		t.Fatalf("ImageRef() = %q is not tagged with SourceHash() %q", ImageRef(), SourceHash())
+	}
+}
+
+func TestRepositoryImages(t *testing.T) {
+	list := strings.Join([]string{
+		"localhost/hal-agentic-iam:4f1210aa90b2",
+		"<none>:<none>",
+		"docker.io/library/python:3.13-slim",
+		"localhost/hal-agentic-iam-other:58627d7e5d70",
+		"localhost/hal-agentic-iam:<none>",
+		"  localhost/hal-agentic-iam:16a00cb2b289  ",
+		"",
+	}, "\n")
+
+	got := repositoryImages(list)
+	want := []string{"localhost/hal-agentic-iam:4f1210aa90b2", "localhost/hal-agentic-iam:16a00cb2b289"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("repositoryImages() = %q, want %q", got, want)
 	}
 }
 

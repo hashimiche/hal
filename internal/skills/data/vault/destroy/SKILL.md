@@ -12,7 +12,7 @@ Handle hal vault delete requests with a stable lifecycle pattern.
 ## Primary Command
 
 - `hal vault delete` — product teardown, including the shared KinD cluster (no co-tenant guard)
-- `hal delete` / `hal daisy` — global teardown of all HAL containers, KinD nodes, volumes, and `hal-net`
+- `hal delete` / `hal daisy` — global teardown of all HAL containers, KinD nodes, volumes, the images HAL builds for `hal-tfe-cli` and the Agentic IAM lab, and `hal-net`
 
 ## Validation
 
