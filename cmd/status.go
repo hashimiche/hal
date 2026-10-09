@@ -146,16 +146,17 @@ func printVaultFeatureStatus(engine string) {
 		{name: "ldap", status: boolState(checkContainer(engine, "hal-openldap"))},
 		{name: "database", status: ""},
 		{name: "oidc", status: boolState(checkContainer(engine, "hal-authentik-server"))},
+		{name: "agentic-iam", status: boolState(checkContainer(engine, global.AgenticIAMChatContainer) && checkContainer(engine, global.AgenticIAMAgentContainer))},
 	}
 
 	for _, f := range featureStates {
 		if f.name == "database" {
 			fmt.Println("   ↳ database")
-			fmt.Printf("      ↳ %-8s %s\n", "mariadb", colorizeFeatureState(boolState(checkContainer(engine, "hal-vault-mariadb") || checkContainer(engine, "hal-vault-postgres"))))
+			fmt.Printf("      ↳ %-8s %s\n", "mariadb", colorizeFeatureState(boolState((checkContainer(engine, "hal-vault-mariadb") && global.VaultDatabaseUsesMariaDB()) || checkContainer(engine, "hal-vault-postgres"))))
 			fmt.Printf("      ↳ %-8s %s\n", "oracle", colorizeFeatureState(boolState(checkContainer(engine, "hal-vault-oracle-db"))))
 			continue
 		}
-		fmt.Printf("   ↳ %-8s %s\n", f.name, colorizeFeatureState(f.status))
+		fmt.Printf("   ↳ %-11s %s\n", f.name, colorizeFeatureState(f.status))
 	}
 }
 

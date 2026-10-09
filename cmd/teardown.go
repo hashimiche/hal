@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"hal/cmd/mcp"
+	"hal/internal/agenticiam"
 	"hal/internal/global"
 )
 
@@ -122,6 +123,12 @@ func runGlobalTeardown() globalTeardownResult {
 			if !strings.Contains(msg, "no such image") && !strings.Contains(msg, "image not known") {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("%s helper image removal failed: %s", containerEngine, strings.TrimSpace(string(out))))
 			}
+		}
+
+		// The Agentic IAM lab's images: every hal-* container is gone, so none
+		// is in use any more.
+		if _, err := agenticiam.RemoveImages(containerEngine); err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s Agentic IAM image removal failed: %v", containerEngine, err))
 		}
 	}
 

@@ -177,19 +177,8 @@ func runOIDCStatus(engine string, client *vault.Client, vaultErr error) {
 	fmt.Printf("  %s Vault KV sandbox  : %s/\n", icon(kvMounted), oidcKVMount)
 	fmt.Println()
 
-	// Authentik admin reference — useful for managing the IdP itself.
-	// The demo logins (alice/bob) belong to the enable summary; this block is
-	// the operator-facing admin reference and also lives in 'hal creds status'.
-	fmt.Println("🔑 Authentik admin (manage the IdP):")
-	fmt.Printf("   Admin UI : %s/if/admin/\n", integrations.AuthentikAdminURL())
-	fmt.Println("   Username : akadmin")
-	if pw := integrations.LoadAuthentikAdminPassword(); pw != "" {
-		fmt.Printf("   Password : %s\n", pw)
-	} else {
-		fmt.Printf("   Password : (see %s)\n", integrations.AuthentikEnvPath())
-	}
-	fmt.Println("   Reset    : docker exec hal-authentik-server ak changepassword akadmin")
-	fmt.Println()
+	// The demo logins (alice/bob) belong to the enable summary.
+	printAuthentikAdminReference()
 
 	fmt.Println("💡 Next Step:")
 	akt := integrations.IsAuthentikRunning(engine)
@@ -201,6 +190,22 @@ func runOIDCStatus(engine string, client *vault.Client, vaultErr error) {
 	default:
 		fmt.Println("   Environment partially degraded — run: hal vault oidc update")
 	}
+}
+
+// printAuthentikAdminReference prints how to manage the shared Authentik itself:
+// the operator-facing admin reference of every Authentik lab's status, which
+// also lives in 'hal creds status'.
+func printAuthentikAdminReference() {
+	fmt.Println("🔑 Authentik admin (manage the IdP):")
+	fmt.Printf("   Admin UI : %s/if/admin/\n", integrations.AuthentikAdminURL())
+	fmt.Println("   Username : akadmin")
+	if pw := integrations.LoadAuthentikAdminPassword(); pw != "" {
+		fmt.Printf("   Password : %s\n", pw)
+	} else {
+		fmt.Printf("   Password : (see %s)\n", integrations.AuthentikEnvPath())
+	}
+	fmt.Println("   Reset    : docker exec hal-authentik-server ak changepassword akadmin")
+	fmt.Println()
 }
 
 // ─── enable ───────────────────────────────────────────────────────────────────

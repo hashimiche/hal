@@ -9,6 +9,9 @@ Check deep status of Vault container, API, and ecosystem integrations.
 ## Behavior
 - Default when running `hal vault` with no subcommand.
 - Reports the container state plus the Vault API `initialized` / `sealed` fields.
+- Lists the ecosystem features: OIDC (Authentik), JWT (GitLab), LDAP, Database,
+  K8s (KinD) and Agentic IAM (`hal-agentic-iam-chat`). Run `hal vault <feature>`
+  for each one's own status.
 - For a production instance (`hal vault create --mode prod`), status probes the
   HTTPS endpoint and prints a pointer to `~/.hal/vault-prod/init.json`, where the
   root token and unseal key are stored (retrieve via `hal creds status`). If the

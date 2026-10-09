@@ -80,3 +80,12 @@ A: Access the live countdown page:
 A: Change TTL on a running demo (restarts Caddy, forces fresh ACME exchange):
 
     hal vault pki update --acme --acme-cert-ttl 2m
+
+## Example 8: Agentic IAM Request
+
+User: I want to show an AI agent reading secrets on behalf of a user, with token exchange.
+
+Assistant: That is the Agentic IAM lab, which needs Vault Enterprise 2.1.0+ with a license that includes the Agentic IAM terms. I route to the `agentic-iam` workflow and preview it, since the dry run checks the prerequisites without changing anything:
+
+    hal vault agentic-iam enable --dry-run
+    hal vault agentic-iam enable

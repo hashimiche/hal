@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	SharedGitLabServiceKey    = "gitlab"
-	SharedAuthentikServiceKey = "authentik-idp"
+	SharedGitLabServiceKey       = "gitlab"
+	SharedAuthentikServiceKey    = "authentik-idp"
+	SharedVaultMariaDBServiceKey = "vault-mariadb"
 
 	GitLabConsumerVaultJWT   = "vault-jwt"
 	GitLabConsumerVCSPrimary = "terraform-vcs-workflow-primary"
@@ -16,6 +17,12 @@ const (
 
 	AuthentikConsumerTFESAMLPrimary = "tfe-saml"
 	AuthentikConsumerTFESAMLTwin    = "tfe-bis-saml"
+
+	// Consumers of the shared hal-vault-mariadb container (ADR 0004). Each one
+	// owns its own Vault mount and broker user inside the container. Every
+	// consumer is a Vault lab, so hal vault delete clears the whole key.
+	VaultMariaDBConsumerDatabase   = "vault-database"
+	VaultMariaDBConsumerAgenticIAM = "vault-agentic-iam"
 
 	tfePrimaryRuntimeContainer = "hal-tfe"
 	tfeTwinRuntimeContainer    = "hal-tfe-bis"
@@ -160,6 +167,24 @@ func GetSharedServiceConsumers(service string) []string {
 		return nil
 	}
 	return state[service]
+}
+
+// VaultDatabaseUsesMariaDB reports whether `hal vault database` is a consumer of
+// the shared hal-vault-mariadb container. Status code checks it so the database
+// feature is not reported up while only another lab keeps the container running.
+// An empty registry counts as true: a container started before consumer counting
+// existed belongs to `hal vault database`.
+func VaultDatabaseUsesMariaDB() bool {
+	consumers := GetSharedServiceConsumers(SharedVaultMariaDBServiceKey)
+	if len(consumers) == 0 {
+		return true
+	}
+	for _, c := range consumers {
+		if c == VaultMariaDBConsumerDatabase {
+			return true
+		}
+	}
+	return false
 }
 
 // ResetSharedServicesFile removes ~/.hal/shared-services.json entirely.

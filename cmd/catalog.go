@@ -17,6 +17,7 @@ var catalogCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Println("🛡️  SECURITY & ACCESS")
 		fmt.Println("   - vault     Core Vault + OIDC, JWT, K8s (VSO/CSI), LDAP, Audit, Database")
+		fmt.Println("               agentic-iam: AI demo agent acting on behalf of personas (Enterprise)")
 		fmt.Println("               obs: Prometheus targets + Grafana dashboards")
 		fmt.Println("   - boundary  Control Plane + MariaDB & SSH Targets")
 		fmt.Println("               obs: Prometheus targets + Grafana dashboards")

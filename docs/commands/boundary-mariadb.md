@@ -12,6 +12,7 @@ Deploy a MariaDB database target for Boundary labs.
 ## Prerequisites
 - HAL CLI is available in your local environment.
 - The relevant product base deployment should be running when this command targets an existing stack.
+- `--with-vault`: `hal vault database enable` (MariaDB backend) must have run. The target attaches to the shared `hal-vault-mariadb` and brokers `database/creds/dba-role`; `enable` refuses when that role is missing. Boundary is not a consumer of the shared container: `hal vault database disable` removes the role, and the container when no other Vault lab uses it, even while this target points at them.
 ## Flags
 - Deprecated: older HAL docs may reference `hal boundary mariadb --force` or `hal boundary mariadb enable --with-vault --force`. Those forms have been removed from the CLI. Use `update` instead.
 - Command flags from `hal boundary mariadb --help`:

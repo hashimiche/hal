@@ -7,6 +7,8 @@ package vault
 // (the Docker network name) live in internal/global and are referenced, never
 // redeclared.
 
+import "hal/internal/global"
+
 const (
 	// --- Containers / instances ---
 	vaultContainer        = "hal-vault"
@@ -65,16 +67,20 @@ const (
 	vaultProdRaftMount   = "/vault/data"
 	vaultProdClusterPort = 8201
 
-	// --- Backend DB (MariaDB) ---
+	// --- Backend DB (MariaDB, shared: see database-mariadb.go) ---
 	vaultMariaDBHostAlias    = "mariadb.localhost"
 	vaultMariaDBPort         = 3306
 	vaultMariaDBRootPassword = "vaultroot"
+	// Broker user of `hal vault database`. Vault rotates its password right
+	// after the connection is written; the bootstrap value is only used before.
+	vaultMariaDBBrokerUser              = "vaultadmin"
+	vaultMariaDBBrokerBootstrapPassword = "temp-vault-pass"
 
 	// --- Image / tag flag defaults ---
 	defaultVaultImageCE     = "hashicorp/vault"
 	defaultVaultImageEnt    = "hashicorp/vault-enterprise"
-	defaultVaultTag         = "2.0.4"
-	defaultVaultEntTag      = "2.0.4-ent"
+	defaultVaultTag         = "2.1.2"
+	defaultVaultEntTag      = "2.1.2-ent"
 	defaultVaultEdition     = "ce"
 	defaultVaultHelperImage = "alpine"
 	defaultVaultHelperTag   = "3.24"
@@ -139,4 +145,23 @@ const (
 	dbVSOMariaDBRole = "dba-role"
 	dbVSOOracleRole  = "oracle-dba-role"
 	dbVSOSecretName  = "hal-db-creds"
+
+	// --- Agentic IAM lab (hal vault agentic-iam, ADR 0004) ---
+	// One image built locally from internal/agenticiam runs as two containers
+	// on hal-net (contract: internal/agenticiam/app/README.md). Only the chat is
+	// published: the persona's browser opens it, and Authentik redirects back
+	// to it. The demo agent is reachable from hal-net only.
+	agenticIAMChatContainer  = global.AgenticIAMChatContainer
+	agenticIAMAgentContainer = global.AgenticIAMAgentContainer
+	// agenticIAMChatHostPort is the chat's host port: the first one free after
+	// the KinD mappings 8088-8091 (see writeHALKindConfig).
+	agenticIAMChatHostPort = 8092
+	// agenticIAMChatPublicURL is the chat's PUBLIC_URL. The browser goes from
+	// it to Authentik at http://authentik.localhost:9100 and back.
+	agenticIAMChatPublicURL = global.AgenticIAMChatURL
+	// Ports inside the containers (the image defaults).
+	agenticIAMChatPort  = 8080
+	agenticIAMAgentPort = 8081
+	// agenticIAMStateDirName holds the containers' env files under ~/.hal.
+	agenticIAMStateDirName = "agentic-iam"
 )

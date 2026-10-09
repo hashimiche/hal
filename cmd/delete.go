@@ -21,6 +21,7 @@ var destroyCmd = &cobra.Command{
 		if global.DryRun {
 			fmt.Println("[DRY RUN] Would delete HAL KinD clusters")
 			fmt.Println("[DRY RUN] Would remove HAL containers on active Docker/Podman engines")
+			fmt.Println("[DRY RUN] Would remove the hal-tfe-cli helper image and the Agentic IAM lab's images")
 			fmt.Println("[DRY RUN] Would delete HAL Multipass VMs and purge")
 			fmt.Println("[DRY RUN] Would remove local observability state")
 			fmt.Println("[DRY RUN] Would remove HAL MCP config and managed binary artifacts")

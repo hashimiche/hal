@@ -252,6 +252,11 @@ func mcpOpsTools() []map[string]interface{} {
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
+			"name":        "get_vault_agentic_iam_status",
+			"description": "Return Vault Agentic IAM lab readiness (ADR 0004): prerequisites verdict, chat and demo agent containers, Vault objects, Authentik applications and shared-service consumers.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
 			"name":        "get_product_obs_status",
 			"description": "Return one product's observability integration readiness (its `hal <product> obs` Grafana/Prometheus/Loki wiring). Distinct from the standalone `hal obs` stack.",
 			"inputSchema": map[string]interface{}{
@@ -520,6 +525,12 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 			return opErrorForTool("get_vault_os_status", codeParseError, err.Error(), nil, []string{"hal vault os"}, nil, nil, nil), true
 		}
 		return handleStatusCommandTool("get_vault_os_status", []string{"vault", "os"}, []string{"hal vault os", "hal vault os enable"}, []string{"https://developer.hashicorp.com/vault/docs/secrets/ssh"}), true
+
+	case "get_vault_agentic_iam_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_vault_agentic_iam_status", codeParseError, err.Error(), nil, []string{"hal vault agentic-iam"}, nil, nil, nil), true
+		}
+		return handleStatusCommandTool("get_vault_agentic_iam_status", []string{"vault", "agentic-iam"}, []string{"hal vault agentic-iam", "hal vault agentic-iam enable --dry-run", "hal vault agentic-iam enable"}, []string{"https://developer.hashicorp.com/vault/ai/iam"}), true
 
 	case "get_product_obs_status":
 		if err := ensureOnlyKeys(args, map[string]bool{"product": true}); err != nil {
