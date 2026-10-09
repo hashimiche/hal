@@ -275,7 +275,7 @@ func buildDiagnostics(product string, tailLines int) (map[string]interface{}, er
 	}
 
 	containersByProduct := map[string][]string{
-		"vault":     {"hal-vault", "hal-openldap", "hal-authentik-server", "hal-authentik-worker", "hal-mariadb", "hal-gitlab", global.AgenticIAMChatContainer, global.AgenticIAMAgentContainer},
+		"vault":     {"hal-vault", "hal-openldap", "hal-authentik-server", "hal-authentik-worker", "hal-vault-mariadb", "hal-gitlab", global.AgenticIAMChatContainer, global.AgenticIAMAgentContainer},
 		"consul":    {"hal-consul"},
 		"nomad":     {},
 		"boundary":  {"hal-boundary", "hal-boundary-target-mariadb"},
