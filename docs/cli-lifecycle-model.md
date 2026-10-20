@@ -26,7 +26,7 @@ When command behavior changes, keep this file and `.github/copilot-instructions.
 | `hal nomad` | `create`, `delete`, `status`, `obs`, `job` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature command `job` remains action-based. Observability artifacts are managed explicitly via `hal nomad obs <create|update|delete|status>`. |
 | `hal obs` | `create`, `delete`, `status` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. |
 | `hal terraform` (alias `hal tf`) | `create`, `delete`, `status`, `obs`, `agent`, `api-workflow` (alias `api`), `workspace` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Twin lifecycle is target-based via `--target primary|twin|both` on `create`/`update`/`delete`/`status`. Terraform observability artifacts are managed under `hal terraform obs <create|update|delete|status>`. |
-| `hal vault` | `create`, `delete`, `status`, `obs`, `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc`, `aap`, `agentic-iam` (alias `agentic`) | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature lifecycle is action-based (`status|enable|disable|update`) with hidden compatibility flags. Observability artifacts are managed explicitly via `hal vault obs <create|update|delete|status>`. |
+| `hal vault` | `create`, `delete`, `status`, `obs`, `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc`, `pki`, `aap`, `agentic-iam` (alias `agentic`) | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. `--edition ent-hsm --mode prod` selects the create-owned SoftHSM runtime. Feature lifecycle is action-based (`status|enable|disable|update`) with hidden compatibility flags. Observability artifacts are managed explicitly via `hal vault obs <create|update|delete|status>`. |
 | `hal mcp` | `create`, `update`, `delete`, `status`, `policy` | Product lifecycle is command-based (`create`/`update`/`delete`). `policy` is read-only today. |
 
 ## Target Command Model
@@ -55,6 +55,7 @@ Intent:
 | Product feature command | Target lifecycle verbs | Notes |
 |---|---|---|
 | `hal vault k8s` | `enable`, `update`, `disable`, `status` | Keep HashiCorp-style engine/integration enablement model. |
+| `hal vault pki` | `enable`, `update`, `disable`, `status` | Owns the PKI mounts, managed key, and SoftHSM token state. It auto-detects a create-owned `ent-hsm` runtime; `--hsm` asserts it and `--no-hsm` opts out. |
 | `hal vault ldap` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault oidc` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault jwt` | `enable`, `update`, `disable`, `status` | Same as above. |
@@ -232,6 +233,25 @@ that command fails with `cannot index slice/array with type string`. Teardown
 lists cluster names with `{{.Label "io.x-k8s.kind.cluster"}}`, always
 force-removes leftover `kind-control-plane` nodes, and does not warn for that
 known template error.
+
+## Vault SoftHSM Runtime Ownership
+
+`hal vault create --edition ent-hsm --mode prod` selects an Enterprise HSM
+source image, builds `hal-vault-softhsm:latest`, and boots Vault with the
+PKCS#11 `kms_library` configuration present from its first start. The product
+lifecycle owns the runtime container, image, Raft volume, and production state.
+
+`hal vault pki` owns only the feature layer: the PKI mounts and roles, the Vault
+managed-key registration, and SoftHSM token data under the Vault data volume.
+It auto-selects managed-key-backed CAs when the running Vault version contains
+`ent.hsm`; `--hsm` is a hard assertion and `--no-hsm` forces software-backed
+CAs. HSM intent and runtime checks must complete before an update tears down a
+working PKI deployment.
+
+`hal vault pki disable` removes feature-owned HSM state but leaves the runtime
+container and image intact. `hal vault delete` removes the create-owned runtime
+image after the Vault container is gone. PKI code must never swap or rebuild the
+Vault container.
 
 ## Shared Vault MariaDB Convention
 
