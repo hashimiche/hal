@@ -25,6 +25,8 @@ This index maps the HAL command tree to one spec file per command area.
 - [Vault database](vault-database.md)
 - [Vault aap](vault-aap.md)
 - [Vault os](vault-os.md)
+- [Vault tpm proxy](vault-tpm-proxy.md)
+- [Vault tpm cli](vault-tpm-cli.md)
 - [Vault agentic-iam](vault-agentic-iam.md)
 - [Boundary](boundary.md)
 - [Boundary deploy](boundary-deploy.md)
