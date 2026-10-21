@@ -4,10 +4,13 @@ package vault
 // command package. Container/volume names, the dev endpoint+token, ports and every
 // image/tag flag default are declared once here so create, status, delete, audit,
 // database, os, ldap, oidc and k8s can never drift apart. Cross-product values
-// (the Docker network name) live in internal/global and are referenced, never
-// redeclared.
+// (the Docker network name) live in internal/global, and every fixed lab
+// credential in internal/labsecrets; both are referenced, never redeclared.
 
-import "hal/internal/global"
+import (
+	"hal/internal/global"
+	"hal/internal/labsecrets"
+)
 
 const (
 	// --- Containers / instances ---
@@ -29,7 +32,7 @@ const (
 
 	// --- Endpoints / token / port ---
 	vaultHTTPPort    = 8200
-	vaultRootToken   = "root"
+	vaultRootToken   = labsecrets.VaultDevRootToken
 	vaultLocalAPIURL = "http://127.0.0.1:8200"
 	vaultPublicURL   = "http://vault.localhost:8200"
 	vaultHealthURL   = "http://vault.localhost:8200/v1/sys/health"
@@ -70,11 +73,11 @@ const (
 	// --- Backend DB (MariaDB, shared: see database-mariadb.go) ---
 	vaultMariaDBHostAlias    = "mariadb.localhost"
 	vaultMariaDBPort         = 3306
-	vaultMariaDBRootPassword = "vaultroot"
+	vaultMariaDBRootPassword = labsecrets.VaultMariaDBRootPassword
 	// Broker user of `hal vault database`. Vault rotates its password right
 	// after the connection is written; the bootstrap value is only used before.
-	vaultMariaDBBrokerUser              = "vaultadmin"
-	vaultMariaDBBrokerBootstrapPassword = "temp-vault-pass"
+	vaultMariaDBBrokerUser              = labsecrets.VaultMariaDBBrokerUser
+	vaultMariaDBBrokerBootstrapPassword = labsecrets.VaultMariaDBBrokerBootstrapPassword
 
 	// --- Image / tag flag defaults ---
 	defaultVaultImageCE  = "hashicorp/vault"

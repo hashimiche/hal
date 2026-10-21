@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"hal/internal/labsecrets"
 )
 
 // vault_init_cache.go is the standard, HAL-wide store for the material produced
@@ -56,7 +58,9 @@ type VaultInit struct {
 }
 
 // CacheVaultInit writes the raw `vault operator init -format=json` output to
-// ~/.hal/vault-prod/init.json at mode 0600 (parent dir 0700).
+// ~/.hal/vault-prod/init.json at mode 0600 (parent dir 0700), and mirrors the
+// operator-facing material into the shared credential store (ADR 0005) so every
+// `status` surface reads it from one place.
 func CacheVaultInit(data []byte) error {
 	path := VaultInitCachePath()
 	if path == "" {
@@ -65,7 +69,22 @@ func CacheVaultInit(data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+
+	var vi VaultInit
+	if err := json.Unmarshal(data, &vi); err != nil {
+		return nil // init.json is written; the mirror is best-effort.
+	}
+	mirror := map[string]string{
+		labsecrets.KeyVaultRootToken: vi.RootToken,
+		labsecrets.KeyVaultCACert:    VaultProdCertPath(),
+	}
+	if len(vi.UnsealKeysB64) > 0 {
+		mirror[labsecrets.KeyVaultUnsealKey] = vi.UnsealKeysB64[0]
+	}
+	return labsecrets.Save(mirror)
 }
 
 // LoadCachedVaultInit reads and parses the saved init material. It returns an
@@ -99,5 +118,9 @@ func RemoveCachedVaultInit() error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	return nil
+	return labsecrets.Remove(
+		labsecrets.KeyVaultRootToken,
+		labsecrets.KeyVaultUnsealKey,
+		labsecrets.KeyVaultCACert,
+	)
 }

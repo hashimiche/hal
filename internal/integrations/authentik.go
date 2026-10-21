@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/labsecrets"
 	"hal/internal/ui"
 )
 
@@ -173,6 +174,11 @@ func LoadOrCreateAuthentikSecrets() (*AuthentikSecrets, error) {
 	if err := os.WriteFile(envPath, []byte(content), 0o600); err != nil {
 		return nil, fmt.Errorf("failed to write authentik env: %w", err)
 	}
+
+	// Mirror the one operator-facing value into the shared credential store
+	// (ADR 0005). HAL keeps this env file across a disable so the same akadmin
+	// password works on the next boot, so the mirror lives exactly as long.
+	_ = labsecrets.Save(map[string]string{labsecrets.KeyAuthentikAdminPassword: s.AdminPassword})
 
 	return s, nil
 }

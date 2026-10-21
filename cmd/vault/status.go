@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"hal/internal/global"
 	"hal/internal/integrations"
+	"hal/internal/labsecrets"
+	"hal/internal/labsecrets/live"
 
 	"github.com/spf13/cobra"
 )
@@ -162,6 +165,9 @@ var vaultStatusCmd = &cobra.Command{
 
 		if err != nil {
 			fmt.Println("  🟡 API is unreachable (Vault might still be booting up).")
+			// The container is up, so the credentials still stand — and an
+			// unreachable or sealed Vault is when the root token is wanted most.
+			printVaultCredentials(engine)
 			return
 		}
 		defer resp.Body.Close()
@@ -249,8 +255,20 @@ var vaultStatusCmd = &cobra.Command{
 			}
 		}
 
-		fmt.Println("\n💡 Tip: Run 'hal vault <feature>' for a detailed micro-status check.")
+		// ==========================================
+		// 4. CREDENTIALS (shared tree)
+		// ==========================================
+		printVaultCredentials(engine)
+
+		fmt.Println("💡 Tip: Run 'hal vault <feature>' for a detailed micro-status check.")
 	},
+}
+
+// printVaultCredentials prints Vault's branch of the shared credential tree:
+// the root token, then a block for each scenario currently enabled on it.
+func printVaultCredentials(engine string) {
+	fmt.Println("\n  [ Vault Credentials ]")
+	labsecrets.RenderSection(os.Stdout, live.Tree(engine), labsecrets.SectionVault)
 }
 
 func init() {

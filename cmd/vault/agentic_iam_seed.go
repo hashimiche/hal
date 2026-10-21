@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"hal/internal/labsecrets"
 )
 
 const (
@@ -26,17 +28,17 @@ const (
 
 	// Lab defaults for the broker user, for callers with no reason to pick
 	// their own. The password only lives until Vault's rotate-root.
-	agenticIAMDefaultBrokerUser     = "agentic-iam-broker"
-	agenticIAMDefaultBrokerPassword = "agentic-iam-temp-pass"
+	agenticIAMDefaultBrokerUser     = labsecrets.AgenticIAMBrokerUser
+	agenticIAMDefaultBrokerPassword = labsecrets.AgenticIAMBrokerBootstrapPassword
 )
 
 // MariaDB accounts the lab must never use as its broker, since the seed SQL
 // resets the broker's password: root, the system account, and the broker of
 // the database/ feature.
 var agenticIAMReservedDBUsers = map[string]bool{
-	"root":        true,
-	"vaultadmin":  true, // broker of `hal vault database` (database.go)
-	"mariadb.sys": true,
+	"root":                 true,
+	vaultMariaDBBrokerUser: true, // broker of `hal vault database` (database.go)
+	"mariadb.sys":          true,
 }
 
 var (

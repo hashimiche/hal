@@ -3,14 +3,19 @@ package creds
 import (
 	"fmt"
 	"os"
-	"slices"
-	"strings"
 
 	"hal/internal/global"
-	"hal/internal/integrations"
+	"hal/internal/labsecrets"
+	"hal/internal/labsecrets/live"
 
-	vault "github.com/hashicorp/vault/api"
 	"github.com/spf13/cobra"
+)
+
+const (
+	boundaryContainer        = "hal-boundary"
+	boundaryMariaDBContainer = "hal-boundary-target-mariadb"
+	boundarySSHInstance      = "hal-boundary-ssh"
+	boundaryURL              = "http://boundary.localhost:9200"
 )
 
 var Cmd = &cobra.Command{
@@ -30,147 +35,16 @@ var statusCmd = &cobra.Command{
 			return
 		}
 
-		printed := false
-
-		// ── Vault ────────────────────────────────────────────────────────────
-		vaultUp := global.CheckContainer(engine, "hal-vault")
-		if vaultUp {
-			printed = true
-			// Production mode (hal vault create --mode prod) serves HTTPS and uses a
-			// generated root token cached at ~/.hal/vault-prod/init.json; dev mode is
-			// plaintext HTTP with the well-known 'root' token.
-			if vi, err := global.LoadCachedVaultInit(); err == nil && vi.RootToken != "" {
-				fmt.Println("🔐 Vault (Enterprise, prod)")
-				fmt.Println("   URL        : https://vault.localhost:8200")
-				fmt.Printf("   Root token : %s\n", vi.RootToken)
-				if len(vi.UnsealKeysB64) > 0 {
-					fmt.Printf("   Unseal key : %s\n", vi.UnsealKeysB64[0])
-				}
-				fmt.Printf("   Saved to   : %s (mode 0600)\n", global.VaultInitCachePath())
-				fmt.Println()
-				fmt.Println("   export VAULT_ADDR='https://vault.localhost:8200'")
-				fmt.Printf("   export VAULT_TOKEN='%s'\n", vi.RootToken)
-				fmt.Printf("   export VAULT_CACERT='%s'\n", global.VaultProdCertPath())
-				fmt.Println()
-			} else {
-				fmt.Println("🔐 Vault")
-				fmt.Println("   URL        : http://vault.localhost:8200")
-				fmt.Println("   Root token : root")
-				fmt.Println()
-				fmt.Println("   export VAULT_ADDR='http://vault.localhost:8200'")
-				fmt.Println("   export VAULT_TOKEN='root'")
-				fmt.Println()
-			}
-		}
-
-		// ── Vault OIDC + Authentik ────────────────────────────────────────────
-		oidcActive, authentikActive := authentikCredentialsShown(engine)
-		if oidcActive {
-			printed = true
-			fmt.Println("🔑 Vault OIDC — demo users")
-			fmt.Println("   alice / password  →  Vault policy: admin  (all paths)")
-			fmt.Println("   bob   / password  →  Vault policy: user-ro  (kv-oidc/team1 read)")
-			fmt.Println()
-			fmt.Println("   vault login -method=oidc")
-			fmt.Println()
-		}
-		if authentikActive {
-			printed = true
-			fmt.Println("🌐 Authentik IdP")
-			fmt.Printf("   URL      : http://authentik.localhost:%s/if/admin/\n", integrations.AuthentikHTTPPort)
-			fmt.Println("   Username : akadmin")
-			adminPass := integrations.LoadAuthentikAdminPassword()
-			if adminPass != "" {
-				fmt.Printf("   Password : %s\n", adminPass)
-			} else {
-				fmt.Printf("   Password : (see %s)\n", integrations.AuthentikEnvPath())
-			}
-			fmt.Println()
-		}
-
-		// ── Vault Agentic IAM lab ────────────────────────────────────────────
-		if global.CheckContainer(engine, global.AgenticIAMChatContainer) {
-			printed = true
-			fmt.Println("🤖 Vault Agentic IAM lab — personas (log in to the chat)")
-			fmt.Printf("   Chat : %s\n", global.AgenticIAMChatURL)
-			for _, p := range agenticIAMPersonaCredentials() {
-				fmt.Printf("   %-7s / %s  →  %s\n", p.Username, p.Secret, p.Note)
-			}
-			fmt.Println()
-		}
-
-		// ── Vault LDAP ───────────────────────────────────────────────────────
-		if global.CheckContainer(engine, "hal-openldap") {
-			printed = true
-			fmt.Println("📂 Vault LDAP — demo users")
-			fmt.Println("   alice / password  →  group: admin")
-			fmt.Println("   bob   / password  →  group: readers")
-			fmt.Println()
-			fmt.Println("   vault login -method=ldap username=bob password=password")
-			fmt.Println()
-		}
-
-		// ── Vault UserPass ───────────────────────────────────────────────────
-		if vaultUp && vaultAuthMountExists("userpass") {
-			printed = true
-			fmt.Println("👤 Vault UserPass — demo user")
-			fmt.Println("   michaelScott / threat-level-midnight")
-			fmt.Println()
-			fmt.Println("   vault login -method=userpass username=michaelScott password=threat-level-midnight")
-			fmt.Println()
-		}
-
-		// ── Vault Database (dynamic) ─────────────────────────────────────────
-		if global.CheckContainer(engine, "hal-vault-mariadb") && global.VaultDatabaseUsesMariaDB() {
-			printed = true
-			fmt.Println("🗄️  Vault Database — dynamic credentials")
-			fmt.Println("   vault read database/creds/dba-role")
-			fmt.Println()
-		}
-
-		// ── Boundary ─────────────────────────────────────────────────────────
-		if global.CheckContainer(engine, "hal-boundary") {
-			printed = true
-			fmt.Println("🔒 Boundary")
-			fmt.Println("   URL      : http://boundary.localhost:9200")
-			fmt.Println("   Username : admin")
-			fmt.Println("   Password : password")
-			fmt.Println()
-			if global.MultipassInstanceExists("hal-boundary-ssh") {
-				fmt.Println("   SSH lab users (Boundary auth method: ssh-lab-auth)")
-				fmt.Println("     ssh-operator / password")
-				fmt.Println("     ssh-auditor  / password")
-				fmt.Println()
-			}
-			if global.CheckContainer(engine, "hal-boundary-target-mariadb") {
-				fmt.Println("   MariaDB target")
-				fmt.Println("     host: localhost:3306  user: admin  password: password")
-				fmt.Println()
-			}
-		}
-
-		// ── TFE ──────────────────────────────────────────────────────────────
-		if global.CheckContainer(engine, "hal-tfe") {
-			printed = true
-			token := global.LoadCachedTFEAPIToken()
-			fmt.Println("🏗️  Terraform Enterprise")
-			fmt.Println("   URL      : https://tfe.localhost")
-			fmt.Println("   Username : haladmin")
-			fmt.Println("   Password : hal9000FTW")
-			if token != "" {
-				fmt.Printf("   API token: %s\n", token)
-			} else {
-				fmt.Println("   API token: (run `hal terraform status` to retrieve)")
-			}
-			fmt.Println()
-		}
-
-		if !printed {
+		tree := activeTree(engine)
+		if !tree.Active() {
 			fmt.Println("No active lab services detected.")
 			fmt.Println("Start a service first, e.g.:")
 			fmt.Println("  hal vault create")
 			fmt.Println("  hal vault oidc enable")
+			return
 		}
+
+		labsecrets.Render(os.Stdout, tree)
 	},
 }
 
@@ -178,219 +52,61 @@ func init() {
 	Cmd.AddCommand(statusCmd)
 }
 
-// CredentialEntry is a single login/secret pair (or command-derived credential)
-// for an active lab service. These are non-secret demo values surfaced for
-// learning; the only live value is the cached TFE API token, mirroring what
-// `hal creds status` already prints to the terminal.
-type CredentialEntry struct {
-	Name     string `json:"name"`
-	Username string `json:"username,omitempty"`
-	Secret   string `json:"secret,omitempty"`
-	Note     string `json:"note,omitempty"`
-}
-
-// ServiceCredentials groups the access surface and credentials for one active service.
-type ServiceCredentials struct {
-	Service  string            `json:"service"`
-	Label    string            `json:"label"`
-	URL      string            `json:"url,omitempty"`
-	Entries  []CredentialEntry `json:"entries,omitempty"`
-	Commands []string          `json:"commands,omitempty"`
-}
-
 // ActiveCredentials is the structured form of `hal creds status`, suitable for
-// programmatic consumers (e.g. the read-only MCP credentials tool).
+// programmatic consumers (e.g. the read-only MCP credentials tool). It is the
+// same tree the terminal renders, so the two surfaces cannot drift.
 type ActiveCredentials struct {
 	AnyActive bool                 `json:"any_active"`
-	Services  []ServiceCredentials `json:"services"`
+	Services  []labsecrets.Section `json:"services"`
 }
 
 // CollectActiveCredentials returns the structured equivalent of `hal creds status`.
-// It mirrors the detection logic of the status command so both surfaces stay aligned.
 func CollectActiveCredentials() (ActiveCredentials, error) {
 	engine, err := global.DetectEngine()
 	if err != nil {
 		return ActiveCredentials{}, err
 	}
 
-	var services []ServiceCredentials
-
-	vaultUp := global.CheckContainer(engine, "hal-vault")
-	if vaultUp {
-		if vi, err := global.LoadCachedVaultInit(); err == nil && vi.RootToken != "" {
-			// Production mode: the live root token is withheld from this structured
-			// (MCP-facing) surface, mirroring how the live TFE API token is handled;
-			// operators retrieve it locally via `hal creds status`.
-			services = append(services, ServiceCredentials{
-				Service: "vault",
-				Label:   "Vault (Enterprise, prod)",
-				URL:     "https://vault.localhost:8200",
-				Entries: []CredentialEntry{
-					{Name: "Root token", Note: "run `hal creds status` to retrieve (saved in ~/.hal/vault-prod/init.json)"},
-				},
-				Commands: []string{
-					"export VAULT_ADDR='https://vault.localhost:8200'",
-					"export VAULT_CACERT='" + global.VaultProdCertPath() + "'",
-				},
-			})
-		} else {
-			services = append(services, ServiceCredentials{
-				Service: "vault",
-				Label:   "Vault",
-				URL:     "http://vault.localhost:8200",
-				Entries: []CredentialEntry{{Name: "Root token", Secret: "root"}},
-				Commands: []string{
-					"export VAULT_ADDR='http://vault.localhost:8200'",
-					"export VAULT_TOKEN='root'",
-				},
-			})
-		}
-	}
-
-	oidcActive, authentikActive := authentikCredentialsShown(engine)
-	if oidcActive {
-		services = append(services, ServiceCredentials{
-			Service: "vault-oidc",
-			Label:   "Vault OIDC — demo users",
-			Entries: []CredentialEntry{
-				{Name: "alice", Username: "alice", Secret: "password", Note: "Vault policy: admin (all paths)"},
-				{Name: "bob", Username: "bob", Secret: "password", Note: "Vault policy: user-ro (kv-oidc/team1 read)"},
-			},
-			Commands: []string{"vault login -method=oidc"},
-		})
-	}
-	if authentikActive {
-		authentik := ServiceCredentials{
-			Service: "authentik",
-			Label:   "Authentik IdP",
-			URL:     fmt.Sprintf("http://authentik.localhost:%s/if/admin/", integrations.AuthentikHTTPPort),
-		}
-		entry := CredentialEntry{Name: "akadmin", Username: "akadmin"}
-		if adminPass := integrations.LoadAuthentikAdminPassword(); adminPass != "" {
-			entry.Secret = adminPass
-		} else {
-			entry.Note = "see " + integrations.AuthentikEnvPath()
-		}
-		authentik.Entries = []CredentialEntry{entry}
-		services = append(services, authentik)
-	}
-
-	if global.CheckContainer(engine, global.AgenticIAMChatContainer) {
-		services = append(services, ServiceCredentials{
-			Service: "vault-agentic-iam",
-			Label:   "Vault Agentic IAM lab — personas (log in to the chat)",
-			URL:     global.AgenticIAMChatURL,
-			Entries: agenticIAMPersonaCredentials(),
-		})
-	}
-
-	if global.CheckContainer(engine, "hal-openldap") {
-		services = append(services, ServiceCredentials{
-			Service: "vault-ldap",
-			Label:   "Vault LDAP — demo users",
-			Entries: []CredentialEntry{
-				{Name: "alice", Username: "alice", Secret: "password", Note: "group: admin"},
-				{Name: "bob", Username: "bob", Secret: "password", Note: "group: readers"},
-			},
-			Commands: []string{"vault login -method=ldap username=bob password=password"},
-		})
-	}
-
-	if vaultUp && vaultAuthMountExists("userpass") {
-		services = append(services, ServiceCredentials{
-			Service:  "vault-userpass",
-			Label:    "Vault UserPass — demo user",
-			Entries:  []CredentialEntry{{Name: "michaelScott", Username: "michaelScott", Secret: "threat-level-midnight"}},
-			Commands: []string{"vault login -method=userpass username=michaelScott password=threat-level-midnight"},
-		})
-	}
-
-	if global.CheckContainer(engine, "hal-vault-mariadb") && global.VaultDatabaseUsesMariaDB() {
-		services = append(services, ServiceCredentials{
-			Service:  "vault-database",
-			Label:    "Vault Database — dynamic credentials",
-			Commands: []string{"vault read database/creds/dba-role"},
-		})
-	}
-
-	if global.CheckContainer(engine, "hal-boundary") {
-		boundary := ServiceCredentials{
-			Service: "boundary",
-			Label:   "Boundary",
-			URL:     "http://boundary.localhost:9200",
-			Entries: []CredentialEntry{{Name: "Admin", Username: "admin", Secret: "password"}},
-		}
-		if global.MultipassInstanceExists("hal-boundary-ssh") {
-			boundary.Entries = append(boundary.Entries,
-				CredentialEntry{Name: "ssh-operator", Username: "ssh-operator", Secret: "password", Note: "Boundary auth method: ssh-lab-auth"},
-				CredentialEntry{Name: "ssh-auditor", Username: "ssh-auditor", Secret: "password", Note: "Boundary auth method: ssh-lab-auth"},
-			)
-		}
-		if global.CheckContainer(engine, "hal-boundary-target-mariadb") {
-			boundary.Entries = append(boundary.Entries,
-				CredentialEntry{Name: "MariaDB target", Username: "admin", Secret: "password", Note: "host: localhost:3306"},
-			)
-		}
-		services = append(services, boundary)
-	}
-
-	if global.CheckContainer(engine, "hal-tfe") {
-		tfe := ServiceCredentials{
-			Service: "tfe",
-			Label:   "Terraform Enterprise",
-			URL:     "https://tfe.localhost",
-			Entries: []CredentialEntry{{Name: "Admin", Username: "haladmin", Secret: "hal9000FTW"}},
-		}
-		// The live TFE API token is intentionally NOT surfaced through this
-		// structured collector (consumed by the MCP tool). It remains available
-		// via `hal creds status` on the operator's own machine.
-		tfe.Entries = append(tfe.Entries, CredentialEntry{Name: "API token", Note: "run `hal creds status` to retrieve"})
-		services = append(services, tfe)
-	}
-
-	return ActiveCredentials{AnyActive: len(services) > 0, Services: services}, nil
+	tree := activeTree(engine)
+	return ActiveCredentials{AnyActive: tree.Active(), Services: tree.Sections}, nil
 }
 
-// authentikCredentialsShown tells which Authentik blocks to show. The Vault
-// OIDC demo users only when vault-oidc uses Authentik, or when Authentik runs
-// with no registered consumer (started before consumer counting): another lab,
-// such as the Agentic IAM lab, gives alice and bob other rights. The Authentik
-// admin whenever it runs.
-func authentikCredentialsShown(engine string) (oidc, authentik bool) {
-	consumers := global.GetSharedServiceConsumers(integrations.AuthentikSharedServiceKey)
-	running := global.CheckContainer(engine, integrations.AuthentikServerContainer)
-	oidc = slices.Contains(consumers, "vault-oidc") || (running && len(consumers) == 0)
-	return oidc, oidc || running
+// activeTree is the shared credential tree plus Boundary, which has no catalog
+// entry of its own yet.
+func activeTree(engine string) labsecrets.Tree {
+	tree := live.Tree(engine)
+	if boundary, ok := boundarySection(engine); ok {
+		tree.Sections = append(tree.Sections, boundary)
+	}
+	return tree
 }
 
-// agenticIAMPersonaCredentials lists the personas of the Agentic IAM lab:
-// Authentik users with the hard-coded lab password (ADR 0004).
-func agenticIAMPersonaCredentials() []CredentialEntry {
-	pw := integrations.AuthentikPersonaPassword
-	return []CredentialEntry{
-		{Name: "alice", Username: "alice", Secret: pw, Note: "finance: may delegate; reads results, forecasts and payroll"},
-		{Name: "bob", Username: "bob", Secret: pw, Note: "engineering: may delegate; no rights on the lab's data"},
-		{Name: "charlie", Username: "charlie", Secret: pw, Note: "sales: may not delegate to the demo agent"},
+// boundarySection describes a running Boundary controller, with the SSH lab
+// users and the MariaDB target when those exist.
+func boundarySection(engine string) (labsecrets.Section, bool) {
+	if !global.CheckContainer(engine, boundaryContainer) {
+		return labsecrets.Section{}, false
 	}
-}
 
-// vaultAuthMountExists returns true if the named auth mount is enabled in Vault.
-func vaultAuthMountExists(method string) bool {
-	cfg := vault.DefaultConfig()
-	if os.Getenv("VAULT_ADDR") == "" {
-		cfg.Address = "http://127.0.0.1:8200"
+	boundary := labsecrets.Section{
+		Key:     "boundary",
+		Icon:    "🔒",
+		Label:   "Boundary",
+		URL:     boundaryURL,
+		Entries: []labsecrets.Entry{{Name: "Admin", Username: "admin", Secret: "password"}},
 	}
-	client, err := vault.NewClient(cfg)
-	if err != nil {
-		return false
+
+	if global.MultipassInstanceExists(boundarySSHInstance) {
+		boundary.Entries = append(boundary.Entries,
+			labsecrets.Entry{Username: "ssh-operator", Secret: "password", Note: "Boundary auth method: ssh-lab-auth"},
+			labsecrets.Entry{Username: "ssh-auditor", Secret: "password", Note: "Boundary auth method: ssh-lab-auth"},
+		)
 	}
-	if os.Getenv("VAULT_TOKEN") == "" {
-		client.SetToken("root")
+	if global.CheckContainer(engine, boundaryMariaDBContainer) {
+		boundary.Entries = append(boundary.Entries,
+			labsecrets.Entry{Name: "MariaDB target", Username: "admin", Secret: "password", Note: "host: localhost:3306"},
+		)
 	}
-	auths, err := client.Sys().ListAuth()
-	if err != nil {
-		return false
-	}
-	_, ok := auths[strings.TrimSuffix(method, "/")+"/"]
-	return ok
+
+	return boundary, true
 }

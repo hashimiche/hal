@@ -13,8 +13,11 @@ package terraform
 // names, SAML service keys, CLI seed-file paths) intentionally stay with that
 // feature; they are already defined in exactly one place.
 //
-// The shared Docker network name lives in internal/global (global.HalNetName);
-// reference that directly rather than copying it here.
+// The shared Docker network name lives in internal/global (global.HalNetName),
+// and every fixed lab credential in internal/labsecrets; reference those
+// directly rather than copying them here.
+
+import "hal/internal/labsecrets"
 
 const (
 	// --- Primary TFE container + shared backend service names ---
@@ -54,21 +57,20 @@ const (
 	defaultTFEOrg                = "hal"
 	defaultTFEProject            = "Dave"
 	defaultTFETwinContainer      = "hal-tfe-bis"
-	defaultTFEAdminUsername      = "haladmin"
-	defaultTFEAdminEmail         = "haladmin@localhost"
-	defaultTFEAdminPassword      = "hal9000FTW"
-	defaultTFEEncryptionPassword = "hal-secret-encryption-password"
+	defaultTFEAdminUsername      = labsecrets.TFEAdminUsername
+	defaultTFEAdminEmail         = labsecrets.TFEAdminEmail
+	defaultTFEAdminPassword      = labsecrets.TFEAdminPassword
+	defaultTFEEncryptionPassword = labsecrets.TFEEncryptionPassword
 
 	// --- Shared backend service credentials / object storage config ---
 	// Used by create and twin.
-	tfeDBUser     = "tfe"
-	tfeDBPassword = "tfe_password"
+	tfeDBUser     = labsecrets.TFEDatabaseUser
+	tfeDBPassword = labsecrets.TFEDatabasePassword
 	tfeDBName     = "tfe"
-	// hal9000FTW is the shared lab password — the same value backs the TFE admin
-	// user (defaultTFEAdminPassword) and the GitLab root account. One password to
-	// remember for the whole lab; do not invent a new secret here.
-	tfeS3AccessKey = "haladmin"
-	tfeS3SecretKey = "hal9000FTW"
+	// The object storage credentials, like the admin ones above, come from
+	// internal/labsecrets.
+	tfeS3AccessKey = labsecrets.TFES3AccessKey
+	tfeS3SecretKey = labsecrets.TFES3SecretKey
 	tfeS3Bucket    = "tfe-data"
 	tfeS3Region    = "us-east-1"
 

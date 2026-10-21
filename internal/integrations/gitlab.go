@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/labsecrets"
 )
 
 // GitLabContainerName is the shared singleton container HAL runs for every
@@ -344,5 +345,7 @@ func StopSharedGitLabIfUnused(engine string) {
 		}
 		fmt.Println("  🧹 Stopped shared GitLab (no remaining consumers).")
 	}
+	// The next GitLab boots fresh, so any recorded root password is stale.
+	_ = labsecrets.Remove(labsecrets.KeyGitLabRootPassword)
 	_ = global.ClearSharedService(global.SharedGitLabServiceKey)
 }

@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"hal/internal/labsecrets"
 )
 
 // ─── Idempotent Authentik helpers ─────────────────────────────────────────────
@@ -22,8 +24,8 @@ import (
 // Field names follow the Authentik 2026.8 OpenAPI schema (/api/v3/schema/).
 
 // AuthentikPersonaPassword is the password of every persona HAL creates in
-// Authentik. Like the other Authentik labs, it is a hard-coded lab credential.
-const AuthentikPersonaPassword = "password"
+// Authentik.
+const AuthentikPersonaPassword = labsecrets.AuthentikPersonaPassword
 
 // AuthentikGrantTokenExchange is the RFC 8693 token exchange grant type.
 const AuthentikGrantTokenExchange = "urn:ietf:params:oauth:grant-type:token-exchange"
