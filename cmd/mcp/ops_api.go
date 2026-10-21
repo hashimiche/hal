@@ -13,6 +13,7 @@ import (
 
 	"hal/cmd/creds"
 	"hal/internal/global"
+	"hal/internal/labsecrets"
 )
 
 const (
@@ -183,7 +184,7 @@ func mcpOpsTools() []map[string]interface{} {
 		},
 		{
 			"name":        "get_active_credentials",
-			"description": "Return structured per-service credentials for currently running lab services (URLs, usernames, demo passwords, and the cached TFE API token) — the structured equivalent of `hal creds status`.",
+			"description": "Return the credential tree of the currently running lab products, each with its enabled scenarios nested underneath: `data.{any_active,services[]}` where a service carries `{service,label,url,entries[{name,username,secret,note}],commands[],scenarios[]}` and every nested scenario has that same shape. Includes the generated TFE API token and the root token of a prod Vault — the structured equivalent of `hal creds status`.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
@@ -1510,8 +1511,8 @@ func handleTFEVCSWorkflowStatus() mcpToolCallResult {
 			// lab_credentials are non-secret demo values already printed by the CLI
 			// and are intentionally surfaced here (lab-scoped, redaction-exempt).
 			"lab_credentials": map[string]interface{}{
-				"gitlab":    map[string]string{"username": "root", "password": "hal9000FTW"},
-				"tfe_admin": map[string]string{"username": "haladmin", "password": "hal9000FTW"},
+				"gitlab":    map[string]string{"username": labsecrets.GitLabRootUsername, "password": labsecrets.GitLabRootPassword},
+				"tfe_admin": map[string]string{"username": labsecrets.TFEAdminUsername, "password": labsecrets.TFEAdminPassword},
 			},
 			"ready": ready,
 			"notes": "Values reflect hal defaults; flags at 'hal terraform vcs-workflow enable' can override them. Twin target is not surfaced by this tool in v1.",

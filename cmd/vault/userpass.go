@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"hal/internal/global"
+	"hal/internal/labsecrets"
 
 	vault "github.com/hashicorp/vault/api"
 	"github.com/spf13/cobra"
@@ -58,7 +59,7 @@ var vaultUserpassCmd = &cobra.Command{
 				fmt.Println("   hal vault userpass enable")
 			} else {
 				fmt.Println("   Demo is ready! Log in as the demo user:")
-				fmt.Println("   vault login -method=userpass username=michaelScott password=threat-level-midnight")
+				fmt.Printf("   vault login -method=userpass username=%s password=%s\n", labsecrets.VaultUserPassUsername, labsecrets.VaultUserPassPassword)
 				fmt.Println("\n   Inspect the token metadata that persisted through auth:")
 				fmt.Println("   vault token lookup")
 				fmt.Println("\n   To remove this auth method, run:")
@@ -84,7 +85,7 @@ var vaultUserpassCmd = &cobra.Command{
 					fmt.Println("⚙️  Connecting to Vault API for cleanup...")
 					_ = client.Sys().DisableAuth("userpass")
 					_ = client.Sys().DeletePolicy("userpass-demo")
-					if s, _ := client.Logical().Write("identity/lookup/entity", map[string]any{"name": "michaelScott"}); s != nil {
+					if s, _ := client.Logical().Write("identity/lookup/entity", map[string]any{"name": labsecrets.VaultUserPassUsername}); s != nil {
 						if id, ok := s.Data["id"].(string); ok {
 							_, _ = client.Logical().Delete("identity/entity/id/" + id)
 						}
@@ -115,7 +116,7 @@ var vaultUserpassCmd = &cobra.Command{
 
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would enable userpass auth method.")
-				fmt.Println("[DRY RUN] Would create demo policy and michaelScott with token metadata.")
+				fmt.Printf("[DRY RUN] Would create demo policy and %s with token metadata.\n", labsecrets.VaultUserPassUsername)
 				return
 			}
 
@@ -140,9 +141,9 @@ path "*" { capabilities = ["create", "read", "update", "delete", "list"] }
 			}
 
 			// 3. Create the userpass credential
-			fmt.Println("⚙️  Creating userpass user 'michaelScott'...")
-			_, err = client.Logical().Write("auth/userpass/users/michaelScott", map[string]any{
-				"password":       "threat-level-midnight",
+			fmt.Printf("⚙️  Creating userpass user '%s'...\n", labsecrets.VaultUserPassUsername)
+			_, err = client.Logical().Write("auth/userpass/users/"+labsecrets.VaultUserPassUsername, map[string]any{
+				"password":       labsecrets.VaultUserPassPassword,
 				"token_policies": "userpass-demo",
 			})
 			if err != nil {
@@ -159,7 +160,7 @@ path "*" { capabilities = ["create", "read", "update", "delete", "list"] }
 			// identity/lookup/entity or vault token lookup (entity_id field).
 			fmt.Println("⚙️  Creating Identity entity with metadata tags...")
 			entitySecret, err := client.Logical().Write("identity/entity", map[string]any{
-				"name": "michaelScott",
+				"name": labsecrets.VaultUserPassUsername,
 				"metadata": map[string]string{
 					"branch":   "scranton",
 					"company":  "dunder-mifflin",
@@ -185,7 +186,7 @@ path "*" { capabilities = ["create", "read", "update", "delete", "list"] }
 			}
 			accessor := auths["userpass/"].Accessor
 			_, err = client.Logical().Write("identity/entity-alias", map[string]any{
-				"name":           "michaelScott",
+				"name":           labsecrets.VaultUserPassUsername,
 				"canonical_id":   entityID,
 				"mount_accessor": accessor,
 			})
@@ -195,9 +196,9 @@ path "*" { capabilities = ["create", "read", "update", "delete", "list"] }
 			}
 
 			// 6. Verify by logging in
-			fmt.Println("⚙️  Verifying auth by logging in as michaelScott...")
-			_, err = client.Logical().Write("auth/userpass/login/michaelScott", map[string]any{
-				"password": "threat-level-midnight",
+			fmt.Printf("⚙️  Verifying auth by logging in as %s...\n", labsecrets.VaultUserPassUsername)
+			_, err = client.Logical().Write("auth/userpass/login/"+labsecrets.VaultUserPassUsername, map[string]any{
+				"password": labsecrets.VaultUserPassPassword,
 			})
 			if err != nil {
 				fmt.Printf("❌ Login verification failed: %v\n", err)
@@ -207,8 +208,8 @@ path "*" { capabilities = ["create", "read", "update", "delete", "list"] }
 			fmt.Println("\n✅ Userpass Auth Method Configured!")
 			global.RefreshHalHealth(engine)
 			fmt.Println("---------------------------------------------------------")
-			fmt.Println("👤 Username    : michaelScott")
-			fmt.Println("🔑 Password    : threat-level-midnight")
+			fmt.Printf("👤 Username    : %s\n", labsecrets.VaultUserPassUsername)
+			fmt.Printf("🔑 Password    : %s\n", labsecrets.VaultUserPassPassword)
 			fmt.Println("🪪 Entity ID   : " + entityID)
 			fmt.Println("📋 Entity Metadata (persists on every login):")
 			fmt.Println("     branch:           scranton")
@@ -216,9 +217,9 @@ path "*" { capabilities = ["create", "read", "update", "delete", "list"] }
 			fmt.Println("     role:             regional-manager")
 			fmt.Println("     fun_fact:         thats-what-she-said")
 			fmt.Println("\n💡 Try it yourself:")
-			fmt.Println("   vault login -method=userpass username=michaelScott password=threat-level-midnight")
+			fmt.Printf("   vault login -method=userpass username=%s password=%s\n", labsecrets.VaultUserPassUsername, labsecrets.VaultUserPassPassword)
 			fmt.Println("   vault read identity/entity/id/" + entityID)
-			fmt.Println("   vault write identity/lookup/entity name=michaelScott")
+			fmt.Printf("   vault write identity/lookup/entity name=%s\n", labsecrets.VaultUserPassUsername)
 			fmt.Println("---------------------------------------------------------")
 		}
 	},

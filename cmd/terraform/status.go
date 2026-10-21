@@ -2,10 +2,13 @@ package terraform
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
 	"hal/internal/global"
+	"hal/internal/labsecrets"
+	"hal/internal/labsecrets/live"
 
 	"github.com/spf13/cobra"
 )
@@ -33,21 +36,39 @@ var statusCmd = &cobra.Command{
 		fmt.Printf("%-14s %-13s %-31s %s\n", "Product", "State", "Endpoint", "Version")
 		fmt.Println("------------------------------")
 
+		tree := live.Tree(engine)
+
 		switch target {
 		case tfeTargetPrimary:
 			printTFETargetStatus(engine, tfeTargetPrimary)
 			printTFETargetDetailedStatus(engine, tfeTargetPrimary)
+			printTFECredentials(tree, labsecrets.SectionTFE)
 		case tfeTargetTwin:
 			printTFETargetStatus(engine, tfeTargetTwin)
 			printTFETargetDetailedStatus(engine, tfeTargetTwin)
+			printTFECredentials(tree, labsecrets.SectionTFETwin)
 		case tfeTargetBoth:
 			printTFETargetStatus(engine, tfeTargetPrimary)
 			printTFETargetDetailedStatus(engine, tfeTargetPrimary)
+			printTFECredentials(tree, labsecrets.SectionTFE)
 			fmt.Println("------------------------------")
 			printTFETargetStatus(engine, tfeTargetTwin)
 			printTFETargetDetailedStatus(engine, tfeTargetTwin)
+			printTFECredentials(tree, labsecrets.SectionTFETwin)
 		}
 	},
+}
+
+// printTFECredentials prints one TFE's credential block from the shared tree.
+// A target that is not running has no section, and nothing is printed.
+func printTFECredentials(tree labsecrets.Tree, sectionKey string) {
+	if _, ok := tree.Section(sectionKey); !ok {
+		return
+	}
+
+	fmt.Println("\nCredentials")
+	fmt.Println("------------------------------")
+	labsecrets.RenderSection(os.Stdout, tree, sectionKey)
 }
 
 func printTFETargetDetailedStatus(engine, target string) {

@@ -40,3 +40,27 @@ _Avoid_: session scope, RAR (that is the mechanism that carries it)
 One of the four places that can refuse the demo agent an access: the IdP, the
 persona's own rights, the ceiling, and the task scope.
 _Avoid_: layer, gate, check
+
+### Lab secrets
+
+**Lab secret**:
+A value HAL chooses so that a lab can boot: a username, a password, a token. It
+is fixed when HAL decides it up front, and generated when the lab mints it at
+boot.
+_Avoid_: credential (too broad), password (only one kind of lab secret)
+
+**Operator login**:
+The lab secret a person types to reach a lab. The rest are typed only by
+containers.
+_Avoid_: demo credential, admin credential, user credential
+
+**Scenario**:
+A feature enabled on a product, such as OIDC or the VCS workflow. It has its own
+operator logins and its own lifecycle, but no life of its own without its
+product.
+_Avoid_: feature, integration, lab (that is the whole thing the user runs)
+
+**Product license**:
+The HashiCorp license a product boots with. It is not a lab secret: HAL never
+stores one and never shows one.
+_Avoid_: key, entitlement, secret

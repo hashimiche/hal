@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/labsecrets"
 
 	vault "github.com/hashicorp/vault/api"
 	"github.com/spf13/cobra"
@@ -202,19 +203,19 @@ var vaultOSCmd = &cobra.Command{
 			// Uses parent-managed rotation: mgmt-user has sudo access to chpasswd only,
 			// and performs password rotations for demouser and appadmin on Vault's behalf.
 			fmt.Println("⚙️  Configuring VM users and SSH access...")
-			setupScript := `
+			setupScript := fmt.Sprintf(`
 				# Create management account used by Vault to rotate other users
-				sudo useradd -m -s /bin/bash mgmt-user 2>/dev/null || true
-				echo 'mgmt-user:mgmt-password-789' | sudo chpasswd
+				sudo useradd -m -s /bin/bash %[1]s 2>/dev/null || true
+				echo '%[1]s:%[2]s' | sudo chpasswd
 
 				# Create target accounts whose passwords Vault will manage
-				sudo useradd -m -s /bin/bash demouser 2>/dev/null || true
-				sudo useradd -m -s /bin/bash appadmin 2>/dev/null || true
-				echo 'demouser:initial-password-123' | sudo chpasswd
-				echo 'appadmin:admin-password-456' | sudo chpasswd
+				sudo useradd -m -s /bin/bash %[3]s 2>/dev/null || true
+				sudo useradd -m -s /bin/bash %[5]s 2>/dev/null || true
+				echo '%[3]s:%[4]s' | sudo chpasswd
+				echo '%[5]s:%[6]s' | sudo chpasswd
 
 				# Grant mgmt-user passwordless sudo for chpasswd only (required by Vault OS plugin)
-				echo 'mgmt-user ALL=NOPASSWD:/usr/sbin/chpasswd' | sudo tee /etc/sudoers.d/vault-mgmt > /dev/null
+				echo '%[1]s ALL=NOPASSWD:/usr/sbin/chpasswd' | sudo tee /etc/sudoers.d/vault-mgmt > /dev/null
 				sudo chmod 0440 /etc/sudoers.d/vault-mgmt
 
 				# Enable SSH password authentication.
@@ -223,7 +224,11 @@ var vaultOSCmd = &cobra.Command{
 				# overwrite that file directly rather than trying to win with a higher-numbered file.
 				echo 'PasswordAuthentication yes' | sudo tee /etc/ssh/sshd_config.d/60-cloudimg-settings.conf > /dev/null
 				sudo systemctl restart ssh
-			`
+			`,
+				labsecrets.VaultOSMgmtUser, labsecrets.VaultOSMgmtPassword,
+				labsecrets.VaultOSDemoUser, labsecrets.VaultOSDemoSeedPassword,
+				labsecrets.VaultOSAppAdmin, labsecrets.VaultOSAppAdminSeedPassword,
+			)
 			execArgs := []string{"exec", vaultOSInstance, "--", "bash", "-c", setupScript}
 			if out, err := exec.Command("multipass", execArgs...).CombinedOutput(); err != nil {
 				fmt.Printf("❌ Failed to configure VM: %v\nOutput: %s\n", err, string(out))
@@ -297,9 +302,9 @@ var vaultOSCmd = &cobra.Command{
 			// demouser / appadmin: target accounts. Vault rotates their passwords via mgmt-user.
 			fmt.Println("⚙️  Registering accounts...")
 
-			if _, err = client.Logical().Write("os/hosts/demo-vm/accounts/mgmt-user", map[string]interface{}{
-				"username":          "mgmt-user",
-				"password":          "mgmt-password-789",
+			if _, err = client.Logical().Write("os/hosts/demo-vm/accounts/"+labsecrets.VaultOSMgmtUser, map[string]interface{}{
+				"username":          labsecrets.VaultOSMgmtUser,
+				"password":          labsecrets.VaultOSMgmtPassword,
 				"verify_connection": false,
 			}); err != nil {
 				fmt.Printf("❌ Failed to register mgmt-user: %v\n", err)
@@ -307,10 +312,10 @@ var vaultOSCmd = &cobra.Command{
 			}
 			fmt.Println("   ✅ mgmt-user registered (parent account)")
 
-			if _, err = client.Logical().Write("os/hosts/demo-vm/accounts/demouser", map[string]interface{}{
-				"username":           "demouser",
-				"password":           "initial-password-123",
-				"parent_account_ref": "mgmt-user",
+			if _, err = client.Logical().Write("os/hosts/demo-vm/accounts/"+labsecrets.VaultOSDemoUser, map[string]interface{}{
+				"username":           labsecrets.VaultOSDemoUser,
+				"password":           labsecrets.VaultOSDemoSeedPassword,
+				"parent_account_ref": labsecrets.VaultOSMgmtUser,
 				"verify_connection":  false,
 			}); err != nil {
 				fmt.Printf("❌ Failed to register demouser: %v\n", err)
@@ -318,10 +323,10 @@ var vaultOSCmd = &cobra.Command{
 			}
 			fmt.Println("   ✅ demouser registered")
 
-			if _, err = client.Logical().Write("os/hosts/demo-vm/accounts/appadmin", map[string]interface{}{
-				"username":           "appadmin",
-				"password":           "admin-password-456",
-				"parent_account_ref": "mgmt-user",
+			if _, err = client.Logical().Write("os/hosts/demo-vm/accounts/"+labsecrets.VaultOSAppAdmin, map[string]interface{}{
+				"username":           labsecrets.VaultOSAppAdmin,
+				"password":           labsecrets.VaultOSAppAdminSeedPassword,
+				"parent_account_ref": labsecrets.VaultOSMgmtUser,
 				"verify_connection":  false,
 			}); err != nil {
 				fmt.Printf("❌ Failed to register appadmin: %v\n", err)
@@ -331,7 +336,7 @@ var vaultOSCmd = &cobra.Command{
 
 			// 10. Rotate demouser password to verify end-to-end connectivity
 			fmt.Println("⚙️  Testing end-to-end password rotation for demouser...")
-			if _, err = client.Logical().Write("os/hosts/demo-vm/accounts/demouser/rotate", nil); err != nil {
+			if _, err = client.Logical().Write("os/hosts/demo-vm/accounts/"+labsecrets.VaultOSDemoUser+"/rotate", nil); err != nil {
 				fmt.Printf("❌ Rotation failed: %v\n", err)
 				fmt.Println("   💡 The plugin could not SSH into the VM. Check:")
 				fmt.Println("      1. VM is reachable: nc -z " + vmIP + " 22")
@@ -340,7 +345,7 @@ var vaultOSCmd = &cobra.Command{
 				return
 			}
 
-			secret, err := client.Logical().Read("os/hosts/demo-vm/accounts/demouser/creds")
+			secret, err := client.Logical().Read("os/hosts/demo-vm/accounts/" + labsecrets.VaultOSDemoUser + "/creds")
 			if err != nil || secret == nil {
 				fmt.Printf("❌ Failed to read credentials after rotation: %v\n", err)
 				return
