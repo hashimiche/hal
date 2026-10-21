@@ -27,22 +27,22 @@ func RenderSection(w io.Writer, t Tree, key string) bool {
 
 func renderSection(w io.Writer, s Section, depth int) {
 	pad := strings.Repeat("   ", depth+1)
-	fmt.Fprintf(w, "%s%s %s\n", strings.Repeat("   ", depth), s.Icon, s.Label)
+	_, _ = fmt.Fprintf(w, "%s%s %s\n", strings.Repeat("   ", depth), s.Icon, s.Label)
 
 	width := labelWidth(s)
 	if s.URL != "" {
-		fmt.Fprintf(w, "%s%s : %s\n", pad, padRight("URL", width), s.URL)
+		_, _ = fmt.Fprintf(w, "%s%s : %s\n", pad, padRight("URL", width), s.URL)
 	}
 	for _, entry := range s.Entries {
-		fmt.Fprintf(w, "%s%s\n", pad, renderEntry(entry, width, pairWidth(s)))
+		_, _ = fmt.Fprintf(w, "%s%s\n", pad, renderEntry(entry, width, pairWidth(s)))
 	}
 	if len(s.Commands) > 0 {
-		fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w)
 		for _, command := range s.Commands {
-			fmt.Fprintf(w, "%s%s\n", pad, command)
+			_, _ = fmt.Fprintf(w, "%s%s\n", pad, command)
 		}
 	}
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 
 	for _, nested := range s.Sections {
 		renderSection(w, nested, depth+1)
