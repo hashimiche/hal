@@ -107,8 +107,8 @@ http {
 // parameterised: proxy_ssl_verify off (TFE serves its own self-signed cert
 // internally), the Host/X-Forwarded-* headers TFE needs to build correct absolute
 // URLs, the empty Accept-Encoding (so responses stay uncompressed and sub_filter can
-// rewrite them), the _archivist/ rewrite that keeps plan/apply log links reachable
-// from the host, and both proxy_redirect rules.
+// rewrite them), the rewrite of portless absolute URLs that keeps plan/apply logs
+// and the state viewer reachable from the host, and both proxy_redirect rules.
 //
 // proxy_pass goes through a `set` variable deliberately. With a literal hostname
 // nginx resolves it once at startup and refuses to start at all if it does not
@@ -143,14 +143,17 @@ server {
 		# TFE serves its own self-signed cert on the internal port.
 		proxy_ssl_verify off;
 
-		# TFE emits archivist object URLs without the published port. Rewrite them
-		# in JSON/UI responses so plan/apply log links stay reachable from the host.
+		# TFE builds absolute URLs from the portless TFE_HOSTNAME, so they point at
+		# :443, which only exists inside the container network. Rewrite every one of
+		# them in JSON/UI responses, not just archivist links: the state viewer
+		# fetches /api/state-versions/<id>/hosted_json_state, a Rails URL. The match
+		# needs the slash right after the host, so already-ported URLs are untouched.
 		# text/html is sub_filter's default type and is deliberately not repeated
 		# here: listing it explicitly is what made nginx log a duplicate MIME type
 		# warning on every start.
 		sub_filter_once off;
 		sub_filter_types application/json application/vnd.api+json text/plain;
-		sub_filter 'https://%s/_archivist/' 'https://%s:%d/_archivist/';
+		sub_filter 'https://%s/' 'https://%s:%d/';
 
 		# Rewrite canonical redirects to the externally reachable port.
 		proxy_redirect ~^https://%s(?::443)?(/.*)$ https://%s:%d$1;
