@@ -5,12 +5,12 @@ description: Deploy and test Vault Enterprise TPM auth inside a Multipass VM, ei
 
 # Hal Vault TPM
 
-Two demos share one Multipass VM (`hal-vault-tpm`), one `swtpm` socket, and `auth/tpm/`.
+One command, `hal vault tpm`, with two demos on one Multipass VM (`hal-vault-tpm`), one `swtpm` socket, and `auth/tpm/`. Spec: `docs/commands/vault-tpm.md`.
 
-- `hal vault tpm proxy` — Vault Proxy auto-auth. Spec: `docs/commands/vault-tpm-proxy.md`.
-- `hal vault tpm cli` — `vault tpm attest` then `vault login -method=tpm`. Spec: `docs/commands/vault-tpm-cli.md`.
+- `hal vault tpm enable --proxy` — Vault Proxy auto-auth.
+- `hal vault tpm enable --cli` — `vault tpm attest` then `vault login -method=tpm`.
 
-`hal vault tpm` prints both statuses. Enabling one does not remove the other. Disabling one removes the VM only when the other demo is gone. `hal vault delete` always removes the VM.
+`hal vault tpm` prints both statuses. `enable`, `update`, and `disable` need `--proxy`, `--cli`, or both. Enabling one does not remove the other. Disabling one removes the VM only when the other demo is gone. `hal vault delete` always removes the VM.
 
 ## Lab Assumptions
 
@@ -24,6 +24,7 @@ Two demos share one Multipass VM (`hal-vault-tpm`), one `swtpm` socket, and `aut
 ## Proxy test
 
 ```bash
+hal vault tpm enable --proxy
 multipass shell hal-vault-tpm
 sudo -u demo VAULT_ADDR=unix:///run/vault-proxy/demo.sock vault kv get secret/tpm-demo
 ```
@@ -31,6 +32,7 @@ sudo -u demo VAULT_ADDR=unix:///run/vault-proxy/demo.sock vault kv get secret/tp
 ## CLI test
 
 ```bash
+hal vault tpm enable --cli
 sudo -u demo env -u VAULT_TOKEN \
   VAULT_ADDR=https://127.0.0.1:8200 \
   VAULT_CACERT=/var/lib/vault-agent/demo/tls/vault-ca.pem \

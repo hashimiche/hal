@@ -10,54 +10,7 @@ import (
 	"hal/internal/global"
 
 	vaultapi "github.com/hashicorp/vault/api"
-	"github.com/spf13/cobra"
 )
-
-var (
-	tpmCLIEnable  bool
-	tpmCLIDisable bool
-	tpmCLIUpdate  bool
-)
-
-var vaultTPMCLICmd = &cobra.Command{
-	Use:   "cli [status|enable|disable|update]",
-	Short: "Log in with the Vault CLI TPM auth method inside a Multipass VM",
-	Args:  cobra.MaximumNArgs(1),
-	Run:   runVaultTPMCLI,
-}
-
-func runVaultTPMCLI(cmd *cobra.Command, args []string) {
-	if err := parseLifecycleAction(args, &tpmCLIEnable, &tpmCLIDisable, &tpmCLIUpdate); err != nil {
-		fmt.Printf("❌ %v\n", err)
-		return
-	}
-	if err := validateVaultTPMApp(tpmProxyApp); err != nil {
-		fmt.Printf("❌ %v\n", err)
-		return
-	}
-
-	if err := exec.Command("multipass", "version").Run(); err != nil {
-		fmt.Println("❌ Error: Multipass is not installed or not running.")
-		fmt.Println("   💡 Install Multipass: https://multipass.run/install")
-		return
-	}
-
-	client, vaultErr := GetHealthyClient()
-
-	if !tpmCLIEnable && !tpmCLIDisable && !tpmCLIUpdate {
-		printVaultTPMCLIStatus(client, vaultErr)
-		return
-	}
-
-	if tpmCLIDisable {
-		disableVaultTPMCLI(client, vaultErr)
-		return
-	}
-
-	if tpmCLIEnable || tpmCLIUpdate {
-		enableVaultTPMCLI(client, vaultErr)
-	}
-}
 
 func printVaultTPMCLIStatus(client *vaultapi.Client, vaultErr error) {
 	fmt.Println("🔍 Checking Vault TPM CLI...")
@@ -96,21 +49,21 @@ func printVaultTPMCLIStatus(client *vaultapi.Client, vaultErr error) {
 	fmt.Println("\n💡 Next Step:")
 	switch {
 	case !vmExists && !authMounted:
-		fmt.Println("   hal vault tpm cli enable")
+		fmt.Println("   hal vault tpm enable --cli")
 	case cliReady:
 		fmt.Printf("   multipass shell %s\n", vaultTPMInstance)
 		fmt.Println("   " + vaultTPMCLILoginCommand())
 		fmt.Println("   " + vaultTPMCLIReadCommand())
-		fmt.Println("   hal vault tpm cli disable")
+		fmt.Println("   hal vault tpm disable --cli")
 	default:
-		fmt.Println("   hal vault tpm cli update")
+		fmt.Println("   hal vault tpm update --cli")
 	}
 }
 
-func disableVaultTPMCLI(client *vaultapi.Client, vaultErr error) {
+func disableVaultTPMCLI(client *vaultapi.Client, vaultErr error, alsoProxy bool) {
 	if global.DryRun {
 		fmt.Printf("[DRY RUN] Would remove %s\n", vaultTPMCLIStateDir(tpmProxyApp))
-		if !tpmProxyActive() {
+		if alsoProxy || !tpmProxyActive() {
 			fmt.Printf("[DRY RUN] Would disable auth/tpm and delete Multipass VM %s\n", vaultTPMInstance)
 		}
 		return
@@ -119,9 +72,9 @@ func disableVaultTPMCLI(client *vaultapi.Client, vaultErr error) {
 	if tpmVMExists() {
 		_, _ = exec.Command("multipass", "exec", vaultTPMInstance, "--", "sudo", "rm", "-rf", vaultTPMCLIStateDir(tpmProxyApp)).CombinedOutput()
 	}
-	if tpmProxyActive() {
+	if !alsoProxy && tpmProxyActive() {
 		fmt.Println("✅ CLI state removed. The proxy demo is still on this VM.")
-		fmt.Println("   hal vault tpm proxy")
+		fmt.Println("   hal vault tpm")
 		return
 	}
 	teardownVaultTPMLab(client, vaultErr)
@@ -231,20 +184,4 @@ sudo -u %[1]s env -u VAULT_TOKEN VAULT_ADDR=%[6]s VAULT_CACERT=%[7]s \
 		return fmt.Errorf("login succeeded but the demo secret was not readable\n%s", strings.TrimSpace(string(out)))
 	}
 	return nil
-}
-
-func init() {
-	vaultTPMCLICmd.Flags().BoolVarP(&tpmCLIEnable, "enable", "e", false, "Attest the guest TPM and log in with the Vault CLI")
-	vaultTPMCLICmd.Flags().BoolVarP(&tpmCLIDisable, "disable", "d", false, "Remove CLI attest state. Removes the VM when the proxy is absent")
-	vaultTPMCLICmd.Flags().BoolVarP(&tpmCLIUpdate, "update", "u", false, "Re-attest and log in again on the existing VM")
-	_ = vaultTPMCLICmd.Flags().MarkHidden("enable")
-	_ = vaultTPMCLICmd.Flags().MarkHidden("disable")
-	_ = vaultTPMCLICmd.Flags().MarkHidden("update")
-
-	vaultTPMCLICmd.Flags().StringVar(&tpmProxyImage, "ubuntu-image", defaultVaultTPMUbuntuImage, "Ubuntu image for the Multipass VM")
-	vaultTPMCLICmd.Flags().StringVar(&tpmProxyCPUs, "vm-cpus", defaultVaultTPMVMCPUs, "Number of CPUs for the VM")
-	vaultTPMCLICmd.Flags().StringVar(&tpmProxyMem, "vm-mem", defaultVaultTPMVMMem, "Amount of RAM for the VM")
-	vaultTPMCLICmd.Flags().StringVar(&tpmProxyApp, "app", defaultVaultTPMApp, "Linux user that runs vault login")
-
-	vaultTPMCmd.AddCommand(vaultTPMCLICmd)
 }

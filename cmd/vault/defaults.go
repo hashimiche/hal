@@ -14,7 +14,7 @@ const (
 	vaultContainer        = "hal-vault"
 	vaultMariaDBContainer = "hal-vault-mariadb"
 	vaultOSInstance       = "hal-vault-os"  // Multipass VM
-	vaultTPMInstance      = "hal-vault-tpm" // Multipass VM for TPM auth proxy
+	vaultTPMInstance      = "hal-vault-tpm" // Multipass VM for TPM auth
 	openLDAPContainer     = "hal-openldap"
 	phpLDAPAdminContainer = "hal-phpldapadmin"
 	// Feature/demo containers spun up by individual auth-method commands
@@ -101,8 +101,9 @@ const (
 	defaultVaultOSVMCPUs      = "1"
 	defaultVaultOSVMMem       = "1G"
 
-	// TPM auth proxy lab (hal vault tpm proxy). The guest runs swtpm and
-	// `vault proxy`; Vault itself stays in the hal-vault container.
+	// TPM auth lab (hal vault tpm). The guest runs swtpm. --proxy adds
+	// `vault proxy`; --cli logs in with the Vault CLI. Vault itself stays
+	// in the hal-vault container.
 	defaultVaultTPMUbuntuImage = "24.04"
 	defaultVaultTPMVMCPUs      = "1"
 	defaultVaultTPMVMMem       = "1G"

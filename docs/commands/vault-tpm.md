@@ -1,12 +1,17 @@
-# HAL Vault TPM Proxy Command Spec
+# HAL Vault TPM Command Spec
 
 ## Command
-- `hal vault tpm proxy`
+- `hal vault tpm [status|enable|disable|update]`
 
-`hal vault tpm` with no subcommand shows proxy and CLI status. The CLI demo is [vault-tpm-cli.md](vault-tpm-cli.md). Both demos share the `hal-vault-tpm` VM, `swtpm`, and `auth/tpm/`.
+Two demos share the `hal-vault-tpm` VM, `swtpm`, and `auth/tpm/`.
+
+- `--proxy` — Vault Proxy auto-auth. The proxy attests, then serves the Vault API on a Unix socket with that token filled in.
+- `--cli` — enroll the TPM, attest a client certificate, and log in with `vault login -method=tpm`.
+
+`hal vault tpm` with no flags shows both. Pass `--proxy` or `--cli` to show one. `enable`, `update`, and `disable` require at least one of those flags. Enabling one does not remove the other.
 
 ## Purpose
-Stand up a Multipass Ubuntu VM that runs `swtpm` and Vault Proxy. The proxy attests to Vault Enterprise TPM auth, then serves the Vault API on a Unix socket with that token filled in. Shelling into the VM and reading a secret is the test.
+Stand up a Multipass Ubuntu VM that runs `swtpm` and enroll that TPM with Vault Enterprise.
 
 ## Related
 - Parent namespace: [vault.md](vault.md)
@@ -14,58 +19,70 @@ Stand up a Multipass Ubuntu VM that runs `swtpm` and Vault Proxy. The proxy atte
 ## Prerequisites
 - Multipass is installed and running (https://multipass.run/install)
 - Vault Enterprise 2.2 or newer is running in prod mode (`hal vault create --mode prod`)
-- The guest must be able to reach the host on port 8200. The VM forwards `127.0.0.1:8200` to that port so the proxy can use the prod certificate, which includes `127.0.0.1`
+- The guest must be able to reach the host on port 8200. The VM forwards `127.0.0.1:8200` to that port so the demos can use the prod certificate, which includes `127.0.0.1`
 
 ## Flags
 ```text
-      --app string            Linux user that owns the proxy socket (default "demo")
+      --proxy                 Vault Proxy auto-auth on the guest Unix socket
+      --cli                   Attest with the Vault CLI and log in with -method=tpm
+      --app string            Linux user that owns the proxy socket and runs vault login (default "demo")
       --ubuntu-image string   Ubuntu image for the Multipass VM (default "24.04")
       --vm-cpus string        Number of CPUs for the VM (default "1")
       --vm-mem string         Amount of RAM for the VM (default "1G")
-  -h, --help                  help for proxy
+  -h, --help                  help for tpm
 ```
 - Global flags: `--debug`, `--dry-run`, `--verbose`
+- Hidden compatibility flags: `--enable`, `--disable`, `--update`
 
 ## Side Effects
-- Creates a Multipass VM named `hal-vault-tpm`
+- Creates or reuses a Multipass VM named `hal-vault-tpm`
 - Installs `swtpm` and a Vault CLI build matching the running server
 - Enables the `tpm` auth method, role `demo-app` (or `<app>-app`), policy `tpm-demo`, and KV secret `secret/data/tpm-demo`
 - Enrolls the software TPM at `identity/tpm`
-- Starts `vault proxy` with TPM auto-auth. The API is at `/run/vault-proxy/demo.sock`
+- `--proxy` starts `vault proxy` with TPM auto-auth. The API is at `/run/vault-proxy/demo.sock`
+- `--cli` writes attest state to `/var/lib/vault-cli/demo/tpm`
 
 ## Lifecycle Actions
 
 ### Status (Default)
 ```bash
-hal vault tpm proxy
+hal vault tpm
+hal vault tpm status --proxy
+hal vault tpm status --cli
 ```
-Displays whether the VM exists, whether `auth/tpm/` is mounted, and whether `vault-proxy` is active.
+Displays whether the VM exists, whether `auth/tpm/` is mounted, and whether the selected demo is ready.
 
 ### Enable
 ```bash
-hal vault tpm proxy enable
+hal vault tpm enable --proxy
+hal vault tpm enable --cli
 ```
-1. Launches Ubuntu 24.04 via Multipass
+1. Launches Ubuntu 24.04 via Multipass, or reuses `hal-vault-tpm` if the other demo already created it
 2. Starts `swtpm` on `/run/swtpm/swtpm.sock` and forwards guest `127.0.0.1:8200` to the host Vault
 3. Enables TPM auth, writes the role, policy, and demo secret
-4. Enrolls the guest TPM and starts Vault Proxy
-5. Reads `secret/tpm-demo` through the proxy socket before reporting success
+4. Enrolls the guest TPM
+5. `--proxy` starts Vault Proxy and reads `secret/tpm-demo` through the proxy socket
+6. `--cli` runs `vault tpm attest`, then `vault login -method=tpm`, and reads `secret/tpm-demo` with that token
+
+Pass both flags to enable both demos in one command.
 
 ### Disable
 ```bash
-hal vault tpm proxy disable
+hal vault tpm disable --proxy
+hal vault tpm disable --cli
 ```
-1. Stops `vault-proxy` and removes its unit and config
-2. When the CLI demo is not attested, disables `auth/tpm`, deletes policy `tpm-demo`, deletes the demo secret and enrolled `identity/tpm` records, and deletes the `hal-vault-tpm` VM
-3. When the CLI demo is still attested, leaves the VM and the auth method in place
+- `--proxy` stops `vault-proxy` and removes its unit and config. When the CLI demo is not attested, it also disables `auth/tpm`, deletes policy `tpm-demo`, deletes the demo secret and enrolled `identity/tpm` records, and deletes the `hal-vault-tpm` VM.
+- `--cli` removes `/var/lib/vault-cli/<app>/tpm`. When Vault Proxy is not running, it tears the lab down the same way.
+- When the other demo is still in place, the VM and the auth method stay.
 
 `hal vault delete` always removes the VM.
 
 ### Update
 ```bash
-hal vault tpm proxy update
+hal vault tpm update --proxy
+hal vault tpm update --cli
 ```
-Re-runs enable on the existing VM. It does not remove the CLI demo.
+Re-runs enable for the selected demo on the existing VM. Updating one does not remove the other.
 
 ## Example Workflow
 ```bash
@@ -75,7 +92,7 @@ export VAULT_LICENSE_PATH=/path/to/vault.hclic
 hal vault create --mode prod --edition ent \
   --vault-image localhost/vault-enterprise --vault-tag 2.2.0-rc1-ent
 
-hal vault tpm proxy enable
+hal vault tpm enable --proxy
 
 multipass shell hal-vault-tpm
 sudo -u demo VAULT_ADDR=unix:///run/vault-proxy/demo.sock vault kv get secret/tpm-demo
@@ -83,10 +100,30 @@ sudo -u demo VAULT_ADDR=unix:///run/vault-proxy/demo.sock vault kv get secret/tp
 
 The proxy forces its TPM auto-auth token onto the request. No token is copied by hand.
 
+```bash
+hal vault tpm enable --cli
+
+sudo -u demo env -u VAULT_TOKEN \
+  VAULT_ADDR=https://127.0.0.1:8200 \
+  VAULT_CACERT=/var/lib/vault-agent/demo/tls/vault-ca.pem \
+  vault login -method=tpm \
+  -tpm-state-dir=/var/lib/vault-cli/demo/tpm \
+  -tpm-device-path=/run/swtpm/swtpm.sock \
+  role_name=demo-app
+sudo -u demo env -u VAULT_TOKEN \
+  VAULT_ADDR=https://127.0.0.1:8200 \
+  VAULT_CACERT=/var/lib/vault-agent/demo/tls/vault-ca.pem \
+  vault kv get secret/tpm-demo
+```
+
 ## How It Works
 Vault Enterprise 2.2 TPM auth issues a certificate for a key that stays inside the TPM. Vault Proxy's `tpm_cert` block runs that attestation against `auth/tpm`, renews the certificate, and `auto_auth` method `tpm` logs in with it. `api_proxy.use_auto_auth_token = "force"` injects the token on the Unix listener.
 
 The TPM is `swtpm` inside the guest. Its command socket is `/run/swtpm/swtpm.sock`. Vault's client opens a Unix socket as a TPM simulator, so Multipass does not have to attach a virtual TPM device.
+
+## Notes
+- The role allows the enrolled TPM id (`tpm_ids`) and grants policy `tpm-demo` for one hour.
+- `device_path` `/run/swtpm/swtpm.sock` is the simulator socket Vault's TPM client dials.
 
 ## Troubleshooting
 

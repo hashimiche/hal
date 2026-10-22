@@ -57,9 +57,8 @@
   - Spec: [vault-os.md](vault-os.md)
 
 - `hal vault tpm`
-  - TPM auth labs on one Multipass VM
-  - `proxy`: Vault Proxy auto-auth. Spec: [vault-tpm-proxy.md](vault-tpm-proxy.md)
-  - `cli`: `vault login -method=tpm`. Spec: [vault-tpm-cli.md](vault-tpm-cli.md)
+  - TPM auth labs on one Multipass VM. `--proxy` is Vault Proxy auto-auth. `--cli` is `vault login -method=tpm`
+  - Spec: [vault-tpm.md](vault-tpm.md)
 
 - `hal vault agentic-iam` (alias `agentic`)
   - [Vault Enterprise 2.1.0+, licensed with Agentic IAM] Deploy the Agentic IAM lab: a demo agent acting on behalf of personas logged in through Authentik, every access decided by the IdP and Vault

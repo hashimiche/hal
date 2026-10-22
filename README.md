@@ -183,11 +183,11 @@ hal vault database disable --k8s                                # tear down DB +
 hal vault ldap enable --openldap-version 1.5.0 --phpldapadmin-version 0.9.0
 
 # TPM auth inside a Multipass VM (Enterprise 2.2+, prod mode). Proxy and CLI share one VM.
-hal vault tpm proxy enable
+hal vault tpm enable --proxy
 multipass shell hal-vault-tpm
 sudo -u demo VAULT_ADDR=unix:///run/vault-proxy/demo.sock vault kv get secret/tpm-demo
 
-hal vault tpm cli enable
+hal vault tpm enable --cli
 sudo -u demo env -u VAULT_TOKEN VAULT_ADDR=https://127.0.0.1:8200 \
   VAULT_CACERT=/var/lib/vault-agent/demo/tls/vault-ca.pem \
   vault login -method=tpm -tpm-state-dir=/var/lib/vault-cli/demo/tpm \

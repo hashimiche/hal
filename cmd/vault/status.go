@@ -150,7 +150,7 @@ var vaultStatusCmd = &cobra.Command{
 		if exec.Command("multipass", "info", vaultTPMInstance).Run() == nil {
 			fmt.Printf("  🟢 %-18s : Up   (hal vault tpm)\n", "TPM lab")
 		} else {
-			fmt.Printf("  ⚪ %-18s : Down (hal vault tpm proxy enable)\n", "TPM lab")
+			fmt.Printf("  ⚪ %-18s : Down (hal vault tpm enable --proxy)\n", "TPM lab")
 		}
 
 		// ==========================================
