@@ -150,6 +150,12 @@ var vaultStatusCmd = &cobra.Command{
 			}
 		}
 
+		if exec.Command("multipass", "info", vaultTPMInstance).Run() == nil {
+			fmt.Printf("  🟢 %-18s : Up   (hal vault tpm)\n", "TPM lab")
+		} else {
+			fmt.Printf("  ⚪ %-18s : Down (hal vault tpm enable --proxy)\n", "TPM lab")
+		}
+
 		// ==========================================
 		// 2. CORE APP LAYER (API Health)
 		// ==========================================

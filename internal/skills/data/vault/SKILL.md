@@ -29,6 +29,7 @@ If obs comes after Vault, prefer `hal vault obs create` to backfill metrics/dash
 - Use k8s when the user asks about Kubernetes auth, KinD, VSO, secret refresh demos, CSI projection, or a KinD node that is not on `hal-net`.
 - Use database when the user asks about database secrets, dynamic DB credentials, root rotation, or `hal vault database enable --k8s`.
 - Use ldap when the user asks about LDAP auth, LDAP secrets engine, dynamic users, static creds, or credential libraries.
+- Use tpm when the user asks about TPM auth, a TPM-backed machine identity, `vault proxy` with `tpm_cert`, `vault login -method=tpm`, or `hal vault tpm`. `--proxy` is Vault Proxy auto-auth. `--cli` is `vault login -method=tpm`.
 - Use pki when the user asks about PKI engines, Root CA, Intermediate CA, certificate issuance, cert-manager, ACME, Caddy auto-renewal, or `hal vault pki`.
 - Use create when the user asks for initial Vault bring-up, CE vs Enterprise selection, or obs backfill.
 - Use delete when the user asks for full Vault ecosystem teardown.
