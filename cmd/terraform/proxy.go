@@ -96,6 +96,10 @@ http {
 	resolver %s valid=10s ipv6=off;
 	resolver_timeout 5s;
 
+	# nginx defaults to 1m, which rejects large payloads (e.g. big plan JSON) with a
+	# 413. Set once here so every vhost inherits it.
+	client_max_body_size 100m;
+
 	include %s/%s/*.conf;
 }
 `, tfeProxyResolver(engine), tfeProxyConfMount, tfeProxyVhostsDirName)
