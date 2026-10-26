@@ -5,6 +5,16 @@ user's machine, and lets that user, or an LLM acting for them, inspect and drive
 
 ## Language
 
+### HAL Plus
+
+**HAL Plus**:
+HAL's own chat interface, where a person gets lessons about the lab.
+_Avoid_: HAL+, halplus, agent
+
+**Lesson**:
+The answer HAL Plus gives for one HashiCorp mechanism: what it is, how to configure it, the hal commands that show it on the lab, and the reference documents.
+_Avoid_: agent, route, scenario (a scenario is a feature enabled on a product)
+
 ### Agentic IAM lab
 
 **Agentic IAM lab**:
