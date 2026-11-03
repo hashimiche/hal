@@ -5,6 +5,20 @@ user's machine, and lets that user, or an LLM acting for them, inspect and drive
 
 ## Language
 
+### HAL Plus
+
+**HAL Plus**:
+HAL's own chat interface, where a person gets lessons about the lab.
+_Avoid_: HAL+, halplus, agent
+
+**Lesson**:
+The answer HAL Plus gives, centered on one topic, and optionally a second. It says what the mechanism is, how to configure it, the hal commands that show it on the lab, and the reference documents.
+_Avoid_: agent, route, topic, scenario (a scenario is a feature enabled on a product)
+
+**Topic**:
+What HAL Plus gives the model about one product or one scenario: what the mechanism is, how the lab stages it, and two or three documents.
+_Avoid_: scenario, lesson, skill, Copilot skill, behavior pack, fiche
+
 ### Agentic IAM lab
 
 **Agentic IAM lab**:
