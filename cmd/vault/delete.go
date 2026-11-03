@@ -155,6 +155,15 @@ var vaultDestroyCmd = &cobra.Command{
 			}
 		}
 
+		// 2b. The TPM auth lab is a Multipass VM, not a container.
+		if global.DryRun {
+			fmt.Printf("[DRY RUN] Would execute: multipass delete %s && multipass purge\n", vaultTPMInstance)
+		} else if exec.Command("multipass", "info", vaultTPMInstance).Run() == nil {
+			fmt.Printf("⚙️  Removing Multipass VM %s...\n", vaultTPMInstance)
+			_ = exec.Command("multipass", "delete", vaultTPMInstance).Run()
+			_ = exec.Command("multipass", "purge").Run()
+		}
+
 		// 3. Destroy all associated volumes
 		for _, volume := range vaultVolumes {
 			if global.DryRun {
