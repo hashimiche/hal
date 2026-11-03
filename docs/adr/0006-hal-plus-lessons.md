@@ -2,8 +2,7 @@
 
 - **Status:** Accepted on 2026-10-26.
 - **Branch for this record:** `docs/adr-hal-plus`
-- **Numbering:** 0003 is taken by the host MCP server ADR on
-  `docs/adr-mcp-architecture`, not yet merged.
+- **Numbering:** 0003 is the host MCP server ADR, `docs/adr/0003-host-mcp-server-exposing-hal.md`.
 - **Working notes:** decided in a design interview on 2026-10-26. Terms are
   defined in `CONTEXT.md` under "HAL Plus".
 
@@ -57,7 +56,10 @@ docs:
 before the lesson is written. `actions` are the commands that change the lab.
 `docs` is two or three titles, URLs, and anchors. The prose under the header
 says what the mechanism is and how the lab stages it. Operator logins are not
-written in the file. A topic that needs one lists `hal creds` under `read`.
+written in the file. A topic that needs one lists `hal creds status` under `read`.
+`hal creds` alone only prints its help. When no service is running, `hal creds
+status` answers "No active lab services detected", and the lesson then says to
+start the service first.
 
 The same files are embedded in the `hal` binary. The host MCP server exposes
 each topic as a resource. A coding agent reads `docs/topics` in a checkout.
@@ -74,12 +76,23 @@ If an anchor cannot be fetched, the lesson still runs, the URL stays, and one
 line says the excerpt could not be read.
 
 A command from `actions` runs only after one dialog that shows the argv. There
-is no "always allow". HAL Plus implements MCP elicitation, so that dialog is
-also the server's question when ADR 0003 asks for one. The model never sees a
-`confirmed: true`. The two-step fallback is not used. `hal delete` and `hal plus
-delete` are never run, even if a topic lists them. The lesson prints the command
-and warns that the current chat will be cut and the session lost. That refusal
-lives in HAL Plus. Other MCP clients keep ADR 0003's rule.
+is no "always allow". HAL Plus implements MCP elicitation, and that dialog is
+the server's own question: over HTTP, ADR 0003 has the server ask for every
+`hal_run`, with the exact argv. The question waits 5 minutes, then the server
+cancels it and nothing runs. The server is the only guard, so a bug in HAL Plus
+cannot run a command nobody answered for. The model never sees a
+`confirmed: true`. The two-step fallback is not used, because HAL Plus always
+declares elicitation. `hal delete`, `hal plus delete`, `hal mcp delete` and `hal
+daisy` are never run, even if a topic lists them: they are the commands ADR 0003
+annotates `ends-http-session`. The lesson prints the command, with no button, and
+warns that the current chat will be cut and the session lost. That refusal lives
+in HAL Plus, as a hard-coded list on top of the annotation. Other MCP clients keep
+ADR 0003's rule.
+
+Execution has no time limit set by HAL Plus. The server sends progress to keep the
+connection open. If the daemon restarts during a run, the UI says it was
+interrupted and to check the status, and the client initializes again with the
+same token.
 
 When no topic matches, the lesson still explains, and the command field says
 that HAL has no command for it.
@@ -95,12 +108,14 @@ disposable. A product license is never shown, and never stored.
 The HAL Plus container needs a network path to the document hosts. A dead anchor
 is fixed in the topic file.
 
-ADR 0003's draft says `SKILL.md` remains the knowledge and stops defining which
-commands exist. The knowledge moves to `docs/topics`, served as MCP resources
-from the embedded files. The cobra tree remains the command catalog. That
-sentence in ADR 0003 is revised when that draft is next edited. The
-`hal-plus` behavior packs are removed in the same work as the topic move, or
-the two copies diverge again.
+The knowledge lives in `docs/topics`, served as MCP resources from the embedded
+files (ADR 0003, decision 3). The cobra tree is the command catalog. `SKILL.md`
+files no longer play either role. The `hal-plus` behavior packs are removed in the
+same work as the topic move, or the two copies diverge again.
+
+HAL Plus reads the lab state through `hal_read ["status","--json"]`. The
+`hal-health` sidecar, `hal health` and the `hal-mcp` image are removed (ADR 0003,
+phase 4).
 
 `internal/skills` and `.github/copilot/skills` are deleted after the move, and
 the doc-sync rules that name them point at `docs/topics` instead.
