@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"hal/internal/labsecrets"
 )
 
 func tfeAPITokenCachePath() string {
@@ -26,6 +28,8 @@ func LoadCachedTFEAPIToken() string {
 	return strings.TrimSpace(string(body))
 }
 
+// CacheTFEAPIToken saves the token TFE boots its automation with, and mirrors
+// it into the shared credential store (ADR 0005).
 func CacheTFEAPIToken(token string) error {
 	path := tfeAPITokenCachePath()
 	if path == "" {
@@ -34,7 +38,10 @@ func CacheTFEAPIToken(token string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(strings.TrimSpace(token)+"\n"), 0o600)
+	if err := os.WriteFile(path, []byte(strings.TrimSpace(token)+"\n"), 0o600); err != nil {
+		return err
+	}
+	return labsecrets.Save(map[string]string{labsecrets.KeyTFEAPIToken: token})
 }
 
 func RemoveCachedTFEAPIToken() error {
@@ -46,5 +53,7 @@ func RemoveCachedTFEAPIToken() error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	return nil
+	// Only the token: this is also called when a cached token stops working,
+	// which says nothing about the admin password the lab booted with.
+	return labsecrets.Remove(labsecrets.KeyTFEAPIToken)
 }

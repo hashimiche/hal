@@ -37,7 +37,7 @@
     },
     "capability": { "type": "string" },
     "resource": { "type": "string" },
-    "data": { "type": ["object", "array", "string", "number", "boolean", "null"] },
+    "data": { "description": "Tool-specific payload. get_vault_pki_status preserves data.execution for conventional PKI and adds optional data.pqc_execution for independent read-only PQC readiness; consumers must tolerate additive fields. Neither execution is cryptographic authentication proof.", "type": ["object", "array", "string", "number", "boolean", "null"] },
     "recommended_commands": {
       "type": "array",
       "items": { "type": "string", "pattern": "^(hal|vault|boundary|consul|nomad|terraform|kubectl|curl|jq)\\b" }

@@ -1,0 +1,141 @@
+{
+  "flags": [
+    {
+      "description": "Deploy Vault ACME endpoint + Caddy demo on KinD (enable/update only)",
+      "name": "--acme"
+    },
+    {
+      "description": "TTL for certs issued to Caddy via ACME (short = visible auto-renewal in the web page) (default \"5m\")",
+      "name": "--acme-cert-ttl string"
+    },
+    {
+      "description": "Allowed domains for 'hal-role' (default \"hal.local,cluster.local,svc.cluster.local\")",
+      "name": "--allowed-domains string"
+    },
+    {
+      "description": "Jetstack cert-manager Helm chart version (empty = latest)",
+      "name": "--cert-manager-version string"
+    },
+    {
+      "description": "Enable debug output",
+      "name": "--debug"
+    },
+    {
+      "description": "Simulate the execution without changing state",
+      "name": "--dry-run"
+    },
+    {
+      "description": "With --k8s/--acme update: also rebuild Root CA and Intermediate CA from scratch",
+      "name": "--force"
+    },
+    {
+      "description": "Require HSM-backed CAs; errors if Vault is not an HSM build (HSM mode is auto-detected otherwise)",
+      "name": "--hsm"
+    },
+    {
+      "description": "Vault mount path for the Intermediate CA (default \"pki-int\")",
+      "name": "--int-mount string"
+    },
+    {
+      "description": "Max TTL for the Intermediate CA (2 years) (default \"17520h\")",
+      "name": "--int-ttl string"
+    },
+    {
+      "description": "Deploy cert-manager PKI demo on Kubernetes (--pqc implies its own NGINX deployment)",
+      "name": "--k8s"
+    },
+    {
+      "description": "KinD node image (used only when creating a new cluster) (default \"kindest/node:v1.36.1\")",
+      "name": "--kind-node-image string"
+    },
+    {
+      "description": "Maximum TTL for leaf certificates issued by 'hal-role' (default \"24h\")",
+      "name": "--max-cert-ttl string"
+    },
+    {
+      "description": "Subnet for the hal-net Docker network on first creation (e.g. 10.89.3.0/24)",
+      "name": "--network-subnet string"
+    },
+    {
+      "description": "Force software-backed CAs even when Vault is an HSM build",
+      "name": "--no-hsm"
+    },
+    {
+      "description": "Use isolated ML-DSA-65 mutual TLS and ML-KEM-768 lab (implies Kubernetes)",
+      "name": "--pqc"
+    },
+    {
+      "description": "PQC workload certificate TTL (10s to 24h); automatically rotates at half lifetime (default \"10s\")",
+      "name": "--pqc-cert-ttl string"
+    },
+    {
+      "description": "Actual Kubernetes Service DNS domain (default \"cluster.local\")",
+      "name": "--pqc-cluster-domain string"
+    },
+    {
+      "description": "Stock NGINX image with njs and ML-DSA/ML-KEM-768 TLS support (default \"docker.io/library/nginx@sha256:1dd3048a04f4b76ebd706c1bbb9df7d9d53b4f8253b32ce14467088c9b5ada0f\")",
+      "name": "--pqc-image string"
+    },
+    {
+      "description": "Vault mount path for the Root CA (default \"pki-root\")",
+      "name": "--root-mount string"
+    },
+    {
+      "description": "Max TTL for the Root CA (5 years) (default \"43800h\")",
+      "name": "--root-ttl string"
+    },
+    {
+      "description": "PKCS#11 key label for the HMAC key (default \"hal-pki-root-hmac-key\")",
+      "name": "--softhsm-hmac-label string"
+    },
+    {
+      "description": "PKCS#11 key label for the CA signing key (default \"hal-pki-root-key\")",
+      "name": "--softhsm-key-label string"
+    },
+    {
+      "description": "Vault managed-key name registered at sys/managed-keys/pkcs11/<name> (default \"hal-kms-root\")",
+      "name": "--softhsm-managed-key string"
+    },
+    {
+      "description": "SoftHSM2 user PIN (default \"1234\")",
+      "name": "--softhsm-pin string"
+    },
+    {
+      "description": "SoftHSM2 SO (security officer) PIN (default \"0000\")",
+      "name": "--softhsm-so-pin string"
+    },
+    {
+      "description": "SoftHSM2 token label used during --init-token (default \"hal-hsm-token\")",
+      "name": "--softhsm-token-label string"
+    },
+    {
+      "description": "Caddy container image name (ACME/--acme demo) (default \"caddy\")",
+      "name": "--vault-pki-caddy-image string"
+    },
+    {
+      "description": "Caddy container image tag (ACME/--acme demo) (default \"alpine\")",
+      "name": "--vault-pki-caddy-tag string"
+    },
+    {
+      "description": "Demo backend container image name (cert-manager/--k8s demo) (default \"nginx\")",
+      "name": "--vault-pki-web-backend-image string"
+    },
+    {
+      "description": "Demo backend container image tag (cert-manager/--k8s demo) (default \"alpine\")",
+      "name": "--vault-pki-web-backend-tag string"
+    },
+    {
+      "description": "Show every sub-step instead of a single collapsing progress line",
+      "name": "--verbose"
+    },
+    {
+      "description": "help for pki",
+      "name": "-h, --help"
+    }
+  ],
+  "recommended_commands": [
+    "hal vault pki --help"
+  ],
+  "topic": "vault pki",
+  "usage": ""
+}

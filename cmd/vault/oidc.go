@@ -6,6 +6,7 @@ import (
 
 	"hal/internal/global"
 	"hal/internal/integrations"
+	"hal/internal/labsecrets"
 	"hal/internal/ui"
 
 	vault "github.com/hashicorp/vault/api"
@@ -177,19 +178,8 @@ func runOIDCStatus(engine string, client *vault.Client, vaultErr error) {
 	fmt.Printf("  %s Vault KV sandbox  : %s/\n", icon(kvMounted), oidcKVMount)
 	fmt.Println()
 
-	// Authentik admin reference — useful for managing the IdP itself.
-	// The demo logins (alice/bob) belong to the enable summary; this block is
-	// the operator-facing admin reference and also lives in 'hal creds status'.
-	fmt.Println("🔑 Authentik admin (manage the IdP):")
-	fmt.Printf("   Admin UI : %s/if/admin/\n", integrations.AuthentikAdminURL())
-	fmt.Println("   Username : akadmin")
-	if pw := integrations.LoadAuthentikAdminPassword(); pw != "" {
-		fmt.Printf("   Password : %s\n", pw)
-	} else {
-		fmt.Printf("   Password : (see %s)\n", integrations.AuthentikEnvPath())
-	}
-	fmt.Println("   Reset    : docker exec hal-authentik-server ak changepassword akadmin")
-	fmt.Println()
+	// The demo logins (alice/bob) belong to the enable summary.
+	printAuthentikAdminReference()
 
 	fmt.Println("💡 Next Step:")
 	akt := integrations.IsAuthentikRunning(engine)
@@ -201,6 +191,22 @@ func runOIDCStatus(engine string, client *vault.Client, vaultErr error) {
 	default:
 		fmt.Println("   Environment partially degraded — run: hal vault oidc update")
 	}
+}
+
+// printAuthentikAdminReference prints how to manage the shared Authentik itself:
+// the operator-facing admin reference of every Authentik lab's status, which
+// also lives in 'hal creds status'.
+func printAuthentikAdminReference() {
+	fmt.Println("🔑 Authentik admin (manage the IdP):")
+	fmt.Printf("   Admin UI : %s/if/admin/\n", integrations.AuthentikAdminURL())
+	fmt.Printf("   Username : %s\n", labsecrets.AuthentikAdminUsername)
+	if pw := integrations.LoadAuthentikAdminPassword(); pw != "" {
+		fmt.Printf("   Password : %s\n", pw)
+	} else {
+		fmt.Printf("   Password : (see %s)\n", integrations.AuthentikEnvPath())
+	}
+	fmt.Printf("   Reset    : docker exec hal-authentik-server ak changepassword %s\n", labsecrets.AuthentikAdminUsername)
+	fmt.Println()
 }
 
 // ─── enable ───────────────────────────────────────────────────────────────────
@@ -367,10 +373,10 @@ func provisionAuthentikForVault(c *integrations.AuthentikClient) (string, string
 	}
 
 	// Users
-	if err := c.CreateUser("alice", "Alice Admin", "alice@hal.local", "password", []string{adminGroupPK}); err != nil {
+	if err := c.CreateUser(labsecrets.VaultOIDCUserAlice, "Alice Admin", "alice@hal.local", labsecrets.AuthentikPersonaPassword, []string{adminGroupPK}); err != nil {
 		return "", "", fmt.Errorf("create user alice: %w", err)
 	}
-	if err := c.CreateUser("bob", "Bob Builder", "bob@hal.local", "password", []string{userROGroupPK}); err != nil {
+	if err := c.CreateUser(labsecrets.VaultOIDCUserBob, "Bob Builder", "bob@hal.local", labsecrets.AuthentikPersonaPassword, []string{userROGroupPK}); err != nil {
 		return "", "", fmt.Errorf("create user bob: %w", err)
 	}
 
@@ -532,8 +538,8 @@ func printOIDCSuccess() {
 	ui.Field("CLI login", "vault login -method=oidc")
 
 	ui.Section("Demo users")
-	ui.Item("alice / password  →  admin policy (full access)")
-	ui.Item("bob   / password  →  user-ro policy (kv-oidc/team1 read)")
+	ui.Item("%-5s / %s  →  admin policy (full access)", labsecrets.VaultOIDCUserAlice, labsecrets.AuthentikPersonaPassword)
+	ui.Item("%-5s / %s  →  user-ro policy (kv-oidc/team1 read)", labsecrets.VaultOIDCUserBob, labsecrets.AuthentikPersonaPassword)
 
 	ui.Hint("Authentik admin credentials: hal creds status  (or: hal vault oidc status)")
 }

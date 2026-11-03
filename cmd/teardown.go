@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"hal/cmd/mcp"
+	"hal/internal/agenticiam"
 	"hal/internal/global"
+	"hal/internal/labsecrets"
 )
 
 // halNamedVolumes is the exhaustive list of named Docker/Podman volumes created
@@ -123,6 +125,21 @@ func runGlobalTeardown() globalTeardownResult {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("%s helper image removal failed: %s", containerEngine, strings.TrimSpace(string(out))))
 			}
 		}
+
+		// Legacy custom PQC image caches are removed globally. Stock NGINX
+		// distribution images are shared and are not removed here.
+		if out, err := exec.Command(containerEngine, "images", "--filter", "reference=localhost/hal-pqc-pki:*", "-q").Output(); err == nil {
+			if ids := strings.Fields(string(out)); len(ids) > 0 {
+				if err := exec.Command(containerEngine, append([]string{"image", "rm"}, ids...)...).Run(); err != nil {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("PQC image cleanup failed: %v", err))
+				}
+			}
+		}
+		// The Agentic IAM lab's images: every hal-* container is gone, so none
+		// is in use any more.
+		if _, err := agenticiam.RemoveImages(containerEngine); err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s Agentic IAM image removal failed: %v", containerEngine, err))
+		}
 	}
 
 	multipassVMs, err := listHALMultipassVMs()
@@ -141,6 +158,15 @@ func runGlobalTeardown() globalTeardownResult {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("multipass purge failed: %v", err))
 			}
 		}
+	}
+
+	if err := global.RemovePQCPKIState(); err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("PQC PKI state cleanup failed: %v", err))
+	}
+
+	// Every lab is gone, so the credentials they generated go with them.
+	if err := labsecrets.RemoveStore(); err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("lab credential store cleanup failed: %v", err))
 	}
 
 	removed, existed, err := global.RemoveObsState()

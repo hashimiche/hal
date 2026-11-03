@@ -19,6 +19,13 @@ const (
 	HalHealthPort          = 9001
 
 	HalNetName = "hal-net"
+
+	// The Agentic IAM lab (hal vault agentic-iam, ADR 0004). Its two containers
+	// and the chat URL are read by hal status, hal creds, the status snapshot
+	// and the MCP diagnostics as well as by cmd/vault, so they live here.
+	AgenticIAMChatContainer  = "hal-agentic-iam-chat"
+	AgenticIAMAgentContainer = "hal-agentic-iam-agent"
+	AgenticIAMChatURL        = "http://agentic.localhost:8092"
 )
 
 // HalNetSubnet is the optional subnet passed via --network-subnet.

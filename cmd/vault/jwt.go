@@ -12,6 +12,7 @@ import (
 
 	"hal/internal/global"
 	"hal/internal/integrations"
+	"hal/internal/labsecrets"
 
 	vault "github.com/hashicorp/vault/api"
 	"github.com/spf13/cobra"
@@ -178,7 +179,7 @@ var vaultJwtCmd = &cobra.Command{
 
 			global.EnsureNetwork(engine)
 
-			gitlab, err := integrations.EnsureSharedGitLab(engine, gitlabImage+":"+gitlabTag, "hal9000FTW", gitlabPort, 0)
+			gitlab, err := integrations.EnsureSharedGitLab(engine, gitlabImage+":"+gitlabTag, labsecrets.GitLabRootPassword, gitlabPort, 0)
 			if err != nil {
 				fmt.Printf("❌ %v\n", err)
 				return
@@ -301,7 +302,7 @@ var vaultJwtCmd = &cobra.Command{
 			fmt.Println("\n✅ Enterprise Secret Zero Environment Ready!")
 			fmt.Println("---------------------------------------------------------")
 			fmt.Printf("🔗 GitLab UI:    %s/root/secret-zero/-/pipelines\n", jwtGitLabAliasURL())
-			fmt.Println("   Login:        root / hal9000FTW")
+			fmt.Printf("   Login:        %s / %s\n", labsecrets.GitLabRootUsername, labsecrets.GitLabRootPassword)
 			fmt.Println("\n💡 THE DEMO WORKFLOW:")
 			fmt.Println("   1. The repository and pipeline were created or updated quickly against the shared GitLab instance.")
 			fmt.Println("   2. Vault JWT auth is bound to protected tags matching 'v*'.")
@@ -356,7 +357,7 @@ func waitForGitLab(baseURL string, maxRetries int) error {
 }
 
 func getGitLabToken(urlStr string) string {
-	token, err := integrations.GitLabPasswordToken(urlStr, "root", "hal9000FTW")
+	token, err := integrations.GitLabPasswordToken(urlStr, labsecrets.GitLabRootUsername, labsecrets.GitLabRootPassword)
 	if err == nil {
 		return token
 	}

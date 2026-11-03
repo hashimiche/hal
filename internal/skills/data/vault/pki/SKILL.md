@@ -1,11 +1,11 @@
 ---
 name: pki
-description: Deploy, verify, and troubleshoot the Vault PKI CA chain and demo scenarios in hal. Use this skill when the user asks to set up a Root CA or Intermediate CA, issue leaf certificates, deploy cert-manager K8s integration, run the Vault ACME + Caddy live auto-renewal demo, or reset PKI engines. Triggers include "vault pki", "Root CA", "Intermediate CA", "cert-manager", "ACME", "Caddy renewal", "PKI certificate", and "hal vault pki".
+description: Deploy, verify, and troubleshoot the Vault PKI CA chain and demo scenarios in hal. Use this skill when the user asks to set up a Root CA or Intermediate CA, issue leaf certificates, deploy cert-manager K8s integration, run the Vault ACME + Caddy live auto-renewal demo, set up HSM-backed CA keys via SoftHSM2 managed keys, or reset PKI engines. Triggers include "vault pki", "Root CA", "Intermediate CA", "cert-manager", "ACME", "Caddy renewal", "PKI certificate", "HSM", "SoftHSM", "managed key", "PKCS#11", and "hal vault pki".
 ---
 
 # Hal Vault PKI Configurator
 
-This skill covers the two-tier PKI CA chain and both K8s/ACME demo modes implemented by `hal vault pki`.
+This skill covers the two-tier PKI CA chain and the K8s, ACME, and HSM demo modes implemented by `hal vault pki`.
 
 ## Lab Assumptions
 
@@ -28,13 +28,25 @@ This skill covers the two-tier PKI CA chain and both K8s/ACME demo modes impleme
 
 ### `--k8s` mode (adds cert-manager + nginx demo)
 
-- Shared KinD cluster on `hal-net` via `ensureHALKindCluster()` (ports 30080→8088, 30082→8089, 30083→8090, 30084→8091)
+- Shared KinD cluster on `hal-net` via `ensureHALKindCluster()` (ports 30080→8088, 30082→8089, 30083→8090, 30084→8091, 30085→8093 for PQC)
 - Jetstack cert-manager (Helm, OCI chart, `webhook.hostNetwork=true` for KinD)
 - Dedicated Vault Kubernetes auth mount: `kubernetes-pki/`
 - ClusterIssuer: `vault-pki-issuer` → `pki-int/sign/hal-role`
 - Certificate: `hal-web-pki-cert` in namespace `pki-demo`
 - nginx web pod with TLS cert mounted at `/tls`, page shows `openssl x509 -noout -text`
 - Access: `https://pki.localhost:8089`
+
+### HSM mode (SoftHSM2 PKCS#11 managed keys — Vault Enterprise HSM build only)
+
+- Requires create-time selection: `hal vault create --edition ent-hsm --mode prod`
+- Create builds `hal-vault-softhsm:latest` and boots it with the PKCS#11
+  `kms_library` configuration. PKI never swaps or restarts the container.
+- `hal vault pki enable` auto-detects the running `+ent.hsm` version. `--hsm`
+  asserts HSM availability; `--no-hsm` forces software-backed CAs.
+- SoftHSM2 token (label `hal-hsm-token`) stored in the `hal-vault-data` volume at `/vault/data/softhsm/tokens`
+- Vault managed key: `sys/managed-keys/pkcs11/hal-kms-root` (mechanism `0x0001` CKM_RSA_PKCS, 4096-bit)
+- Root/Intermediate CAs generated via `/root/generate/kms` and `/intermediate/generate/kms` — private keys live only in the PKCS#11 token
+- Verify with: `vault read sys/managed-keys/pkcs11/hal-kms-root`
 
 ### `--acme` mode (adds Caddy + ACME demo)
 
@@ -68,6 +80,11 @@ Then use the correct lifecycle command:
 
     # Both demos at once
     hal vault pki enable --k8s --acme
+
+    # HSM-backed CA keys (after create --edition ent-hsm --mode prod)
+    hal vault pki enable
+    hal vault pki enable --hsm     # optional hard assertion
+    hal vault pki enable --no-hsm  # software-key opt-out
 
     # Reconcile ACME layer (PKI engines preserved, Caddy restarted)
     hal vault pki update --acme --acme-cert-ttl 2m
@@ -146,3 +163,32 @@ Confirm CA chain is built and which demo modes are active.
 5. **TTL still shows 12h after update:** Vault 2.x `config/acme max_ttl` defaults to `2160h` and caps all ACME certs on the mount regardless of role TTL. `update --acme` re-syncs both. Use `vault read pki-int/config/acme` to verify.
 6. **Old cert TTL after update:** `update --acme` automatically does `kubectl rollout restart` to clear the emptyDir cert cache. If the pod still shows the old cert, run the restart manually.
 7. **`allow_any_name` requirement:** The `acme-demo` role must have `allow_any_name=true` because Caddy requests a cert for `acme.localhost` which does not match the `hal.local` domain list. This is already set by the code.
+8. **`--hsm` reports a non-HSM build:** Redeploy with `hal vault create --edition ent-hsm --mode prod`. The assertion is validated before any PKI teardown.
+9. **HSM build lacks the HAL runtime:** This is an old stock `-ent.hsm` deployment. Redeploy with `hal vault create --edition ent-hsm --mode prod --update`, or use `--no-hsm` for software CAs.
+10. **HSM teardown:** `hal vault pki disable` deletes the managed key after unmounting PKI and wipes token data, but leaves the create-owned HSM container/image in place. An auto-detected HSM `update` keeps the token and re-registers the key; `update --no-hsm` wipes it. `hal vault delete` removes the runtime image.
+
+### Post-quantum PKI
+
+Use `hal vault pki enable|update|disable --pqc`; default/status actions are
+read-only. PQC implies Kubernetes; explicit `--k8s` remains accepted.
+Provision licensed Enterprise 2.2.0+ through
+`hal vault create --edition ent --vault-tag <supported-tag>`. Enable provisions
+its own mounts and checks their live schemas before CA generation; no diagnostic
+mount is required. Failed issuance removes only newly created mounts.
+Never replace Vault or use SoftHSM availability as evidence of ML-DSA support.
+
+Preserve namespace `hal-pqc` in shared KinD cleanup. Use direct host port 8093
+when mapped, otherwise the status-provided port-forward. Browser ECDSA HTTPS
+and internal ML-DSA/ML-KEM-768 mTLS are separate trust decisions. Only actual
+verified connection evidence establishes authentication and negotiation;
+readiness and parsed certificates do not. See `docs/commands/vault-pki.md`.
+
+
+PQC workload certificates default to `--pqc-cert-ttl 10s` (range 10s–24h).
+NGINX/njs automatically issues fresh identities at about half the lifetime and
+selects them for new handshakes without restarting pods. Click Test connection
+again after roughly five seconds to see a changed frontend serial and expiry.
+The page countdown is a snapshot of the last verified connection. Each pod uses
+its own restricted, self-renewing issuance token; disable revokes those tokens
+and removes their policies. If pods remain stopped beyond the one-hour token
+period, run update --pqc to provision fresh issuance credentials.

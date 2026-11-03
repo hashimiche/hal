@@ -74,8 +74,11 @@ jobs:
             exit 1
           fi
 
+      # Built with the stable Go above, so it must support that Go release:
+      # v2.12.2 could not read Go 1.27 export data and failed every run in
+      # typecheck. Bump it when a new Go release breaks it again.
       - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 
       # Only fails on issues introduced relative to main; pre-existing debt is
       # tracked separately and does not block. Remove --new-from-merge-base once

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/labsecrets"
 	"hal/internal/ui"
 
 	"github.com/spf13/cobra"
@@ -327,6 +328,12 @@ var deployCmd = &cobra.Command{
 			AdminEmail:    deployTFEAdminEmail,
 			AdminPassword: deployTFEAdminPass,
 		})
+
+		// A flag may have replaced the catalog password; the credential
+		// surfaces must show what this TFE actually booted with.
+		if saveErr := labsecrets.SaveOverride(labsecrets.KeyTFEAdminPassword, deployTFEAdminPass, labsecrets.TFEAdminPassword); saveErr != nil {
+			fmt.Printf("⚠️  Could not record the TFE admin password: %v\n", saveErr)
+		}
 
 		ui.LogoStop()
 		global.RefreshHalHealth(engine)

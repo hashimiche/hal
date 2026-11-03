@@ -26,7 +26,7 @@ When command behavior changes, keep this file and `.github/copilot-instructions.
 | `hal nomad` | `create`, `delete`, `status`, `obs`, `job` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature command `job` remains action-based. Observability artifacts are managed explicitly via `hal nomad obs <create|update|delete|status>`. |
 | `hal obs` | `create`, `delete`, `status` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. |
 | `hal terraform` (alias `hal tf`) | `create`, `delete`, `status`, `obs`, `agent`, `api-workflow` (alias `api`), `workspace` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Twin lifecycle is target-based via `--target primary|twin|both` on `create`/`update`/`delete`/`status`. Terraform observability artifacts are managed under `hal terraform obs <create|update|delete|status>`. |
-| `hal vault` | `create`, `delete`, `status`, `obs`, `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc`, `aap` | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. Feature lifecycle is action-based (`status|enable|disable|update`) with hidden compatibility flags. Observability artifacts are managed explicitly via `hal vault obs <create|update|delete|status>`. |
+| `hal vault` | `create`, `delete`, `status`, `obs`, `audit`, `database`, `jwt`, `k8s`, `ldap`, `oidc`, `pki`, `aap`, `agentic-iam` (alias `agentic`) | Product lifecycle is command-based (`create`/`delete`) with `--update` on `create`. `--edition ent-hsm --mode prod` selects the create-owned SoftHSM runtime. Feature lifecycle is action-based (`status|enable|disable|update`) with hidden compatibility flags. Observability artifacts are managed explicitly via `hal vault obs <create|update|delete|status>`. |
 | `hal mcp` | `create`, `update`, `delete`, `status`, `policy` | Product lifecycle is command-based (`create`/`update`/`delete`). `policy` is read-only today. |
 
 ## Target Command Model
@@ -55,12 +55,14 @@ Intent:
 | Product feature command | Target lifecycle verbs | Notes |
 |---|---|---|
 | `hal vault k8s` | `enable`, `update`, `disable`, `status` | Keep HashiCorp-style engine/integration enablement model. |
+| `hal vault pki` | `enable`, `update`, `disable`, `status` | Owns the PKI mounts, managed key, and SoftHSM token state. It auto-detects a create-owned `ent-hsm` runtime; `--hsm` asserts it and `--no-hsm` opts out. |
 | `hal vault ldap` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault oidc` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault jwt` | `enable`, `update`, `disable`, `status` | Same as above. |
 | `hal vault aap` | `enabled` (preferred), plus `oidc` lifecycle `enable`, `update`, `disable`, `status` | Configure Vault JWT auth for local AAP OIDC integration. |
-| `hal vault database` | `enable`, `update`, `disable`, `status` | Same as above. `--k8s` flag extends enable/update/disable onto the shared KinD cluster using a dedicated `kubernetes-db/` Vault auth mount. |
+| `hal vault database` | `enable`, `update`, `disable`, `status` | Same as above. `--k8s` flag extends enable/update/disable onto the shared KinD cluster using a dedicated `kubernetes-db/` Vault auth mount. The MariaDB backend uses the shared `hal-vault-mariadb` (see Shared Vault MariaDB Convention). |
 | `hal vault audit` | `enable`, `update`, `disable`, `status` | Same as above. |
+| `hal vault agentic-iam` (alias `agentic`) | `enable`, `update`, `disable`, `status` | ADR 0004. `enable` checks every prerequisite (Vault Enterprise 2.1.0+ licensed with Agentic IAM, a running Authentik 2026.8.0+, host port 8092 free) before changing anything, and refuses with the fix. `update` re-applies everything and always recreates the chat and demo agent containers. Consumer `vault-agentic-iam` of the shared Authentik and of `hal-vault-mariadb`. `enable` and `update` remove the images built from earlier sources. `disable` keeps the current one (a build cache). `hal delete` removes it. |
 | `hal boundary mariadb` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |
 | `hal boundary ssh` | `enable`, `update`, `disable`, `status` | Target resource behavior fits feature model. |
 | `hal vault obs` | `create`, `update`, `delete`, `status` | Observability artifacts are modeled as a managed feature resource. |
@@ -162,8 +164,8 @@ Several `hal vault` features can run simultaneously on the same KinD cluster.
 Each feature that uses `--k8s` must follow these rules:
 
 ### Auth mount isolation
-Every `--k8s` feature owns a **dedicated** Vault Kubernetes auth mount. No two
-features share a mount. Sharing a mount means the second feature to `enable`
+Every feature that enables Vault Kubernetes auth owns a **dedicated** auth mount.
+No two features share a mount. Sharing a mount means the second feature to `enable`
 overwrites the Kubernetes CA/token config for the first, and the first feature's
 `disable` tears down auth for the second.
 
@@ -173,8 +175,10 @@ overwrites the Kubernetes CA/token config for the first, and the first feature's
 | `hal vault database --k8s` | `kubernetes-db/` |
 | `hal vault pki --k8s` | `kubernetes-pki/` |
 
-When adding a new `--k8s` feature, register a new mount path here and in
-`cmd/vault/defaults.go`. Never reuse an existing mount.
+When adding a feature that enables Vault Kubernetes auth, register a new mount
+path here and in `cmd/vault/defaults.go`. Never reuse an existing mount.
+`hal vault pki --pqc` uses scoped issuance tokens and does not enable Vault
+Kubernetes auth, so it has no auth mount.
 
 ### Co-tenant cluster teardown guard
 Before running `kind delete cluster`, every `disable` path must check whether
@@ -187,6 +191,7 @@ are. The canonical namespace list to check:
 | `db-app` | `hal vault database --k8s` |
 | `pki-demo` | `hal vault pki --k8s` |
 | `pki-acme-demo` | `hal vault pki --acme` |
+| `hal-pqc` | `hal vault pki --pqc` |
 
 When the guard preserves the cluster, the `disable` path must still delete its
 **own** namespace(s) before returning. A feature that leaves its namespace
@@ -206,9 +211,13 @@ in `cmd/vault/helper.go`). All host port mappings are declared upfront:
 | `8089` | `30082` | `hal vault pki --k8s` |
 | `8090` | `30083` | `hal vault pki --acme` |
 | `8091` | `30084` | `hal vault database --k8s` |
+| `8093` | `30085` | `hal vault pki --pqc` |
 
 When adding a new `--k8s` feature, reserve the next available pair and add it
 to `writeHALKindConfig()` so the port is pre-mapped on any existing cluster.
+Host port `8092` is taken by the Agentic IAM chat (`hal-agentic-iam-chat`,
+`http://agentic.localhost:8092`), which is not on KinD: the next pair starts
+at `8094` (8093 is reserved for PQC PKI).
 
 ### Network
 KinD nodes must be on `hal-net` so Vault and other HAL containers can reach the
@@ -229,6 +238,73 @@ lists cluster names with `{{.Label "io.x-k8s.kind.cluster"}}`, always
 force-removes leftover `kind-control-plane` nodes, and does not warn for that
 known template error.
 
+## Vault SoftHSM Runtime Ownership
+
+`hal vault create --edition ent-hsm --mode prod` selects an Enterprise HSM
+source image, builds `hal-vault-softhsm:latest`, and boots Vault with the
+PKCS#11 `kms_library` configuration present from its first start. The product
+lifecycle owns the runtime container, image, Raft volume, and production state.
+
+`hal vault pki` owns only the feature layer: the PKI mounts and roles, the Vault
+managed-key registration, and SoftHSM token data under the Vault data volume.
+It auto-selects managed-key-backed CAs when the running Vault version contains
+`ent.hsm`; `--hsm` is a hard assertion and `--no-hsm` forces software-backed
+CAs. HSM intent and runtime checks must complete before an update tears down a
+working PKI deployment.
+
+`hal vault pki disable` removes feature-owned HSM state but leaves the runtime
+container and image intact. `hal vault delete` removes the create-owned runtime
+image after the Vault container is gone. PKI code must never swap or rebuild the
+Vault container.
+
+## Shared Vault MariaDB Convention
+
+`hal-vault-mariadb` is a shared service counted per consumer, like Authentik and
+GitLab (ADR 0004). Its key in `~/.hal/shared-services.json` is `vault-mariadb`.
+
+| Consumer | Owned by | Vault mount |
+|----------|----------|-------------|
+| `vault-database` | `hal vault database` (MariaDB backend) | `database/` |
+| `vault-agentic-iam` | `hal vault agentic-iam` | `agentic-db/` |
+
+Rules for every consumer (helpers in `cmd/vault/database-mariadb.go`):
+
+1. `enable` calls `ensureVaultMariaDB()`: a running container is reused, a
+   stopped one restarted, and only a missing one started fresh (which resets the
+   consumer list). Never run or remove the container directly.
+2. Each consumer owns its own Vault mount and broker user. Root keeps its fixed
+   lab password, so Vault's `rotate-root` only ever rotates a broker.
+3. `disable` revokes and unmounts its own mount, drops its own broker and data,
+   then calls `releaseVaultMariaDB()`, which removes the container only when no
+   other consumer remains.
+
+`hal vault delete` is exempt: every consumer is a Vault lab, so it removes the
+container and clears the key. `hal boundary mariadb --with-vault` is not a
+consumer; it depends on `hal vault database`'s `database/creds/dba-role`.
+
+A `disable` acts on the shared container only when its consumer is
+registered: a lab that was never enabled leaves it alone, even with an empty
+consumer list (a container started before counting belongs to
+`hal vault database`).
+
+## Shared Authentik Consumers
+
+The Authentik stack (`hal-authentik-*`) is a shared service under the
+`authentik-idp` key. `enable` starts it only when it is absent and never
+restarts it under other consumers; `disable` stops it, volumes included, only
+when no other consumer remains.
+
+| Consumer | Owned by | Its Authentik objects |
+|----------|----------|-----------------------|
+| `vault-oidc` | `hal vault oidc` | `hashicorp-vault` app, groups `admin`/`user-ro`, alice, bob |
+| `vault-agentic-iam` | `hal vault agentic-iam` | apps `hal-chat`, `hal-demo-agent`, `vault-agentic`, actor `finance-agent`, groups `finance`/`engineering`/`sales`, charlie (alice and bob are shared) |
+| `tfe-saml` / `tfe-bis-saml` | `hal tf saml` | the TFE SAML apps |
+
+A consumer that needs a newer Authentik than the running one refuses with the
+fix (disable the other consumers so the next `enable` starts the new tag)
+rather than restarting it. `hal vault delete` deregisters both Vault consumers,
+and removes the Agentic IAM lab's objects when Authentik stays up for
+`hal tf saml`.
 
 ## Migration Policy
 
@@ -251,3 +327,27 @@ Whenever CLI behavior, verbs, or lifecycle semantics change:
 	- `cmd/mcp/ops_api.go`
 	- `cmd/mcp/testdata/*_help_snapshot.json`
 	- `HAL_MCP_CONTRACT.json` if response contract/schema changed
+
+## Post-quantum PKI lab
+
+`hal vault pki [enable|update|disable|status] --pqc` selects isolated ML-DSA-65
+PKI and a stock NGINX/OpenSSL ML-KEM-768 mutual-TLS lab. `--pqc` implies
+Kubernetes; explicit `--k8s` remains accepted. No action means read-only status
+and a copy-pasteable Next Step. Requires a running licensed Vault Enterprise
+2.2.0+ deployment, provisioned through `hal vault create`; never replace its runtime.
+Enable creates its own mounts and checks their live schemas before CA generation.
+No pre-existing PKI mount is required; failed issuance removes only newly created mounts.
+`enable` preserves a completed deployment; `update` reconciles roles, rotates leaf
+credentials and restarts workloads while retaining CAs. Conventional PKI/ACME/HSM
+options cannot be mixed with PQC. Mounts `hal-pqc-root`/`hal-pqc-int` and namespace
+`hal-pqc` are separately owned; no Vault Kubernetes auth mount is needed.
+
+Register `hal-pqc` in every co-tenant teardown guard. Shared KinD reserves host
+8093 → NodePort 30085; existing clusters without that mapping use an explicit
+`kubectl --context kind-kind -n hal-pqc port-forward --address 127.0.0.1
+service/frontend 8093:8443`, preserving co-tenants. PQC disable preserves the shared
+cluster and distribution images; product/global lifecycle handles final cluster
+cleanup. `--pqc-image` selects the stock NGINX image, pinned by digest by default;
+`--kind-node-image` controls new nodes. No custom TLS image build is needed.
+Status is deployment readiness, never cryptographic proof. See
+[Vault PKI](commands/vault-pki.md).

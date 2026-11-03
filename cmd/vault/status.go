@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"hal/internal/global"
 	"hal/internal/integrations"
+	"hal/internal/labsecrets"
+	"hal/internal/labsecrets/live"
 
 	"github.com/spf13/cobra"
 )
@@ -25,6 +28,7 @@ var vaultStatusCmd = &cobra.Command{
 		}
 
 		fmt.Println("🔍 Analyzing HashiCorp Vault Ecosystem...")
+		fmt.Printf("PQC PKI workload readiness: %s (hal vault pki status --pqc)\n", global.PQCPKIReadiness())
 
 		// ==========================================
 		// 1. INFRASTRUCTURE LAYER (Containers)
@@ -78,11 +82,17 @@ var vaultStatusCmd = &cobra.Command{
 			{"LDAP (OpenLDAP)", openLDAPContainer, "ldap"},
 			{"Database", vaultMariaDBContainer, "database"},
 			{"K8s (KinD)", "kind-control-plane", "k8s"},
+			{"Agentic IAM", agenticIAMChatContainer, "agentic-iam"},
 		}
 
 		for _, f := range features {
 			if f.Command == "database" {
 				mariaOut, mariaErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", vaultMariaDBContainer).Output()
+				// hal-vault-mariadb is shared: it backs this feature only while
+				// `hal vault database` is one of its consumers.
+				if mariaErr == nil && !global.VaultDatabaseUsesMariaDB() {
+					mariaOut, mariaErr = nil, fmt.Errorf("%s is only used by other labs", vaultMariaDBContainer)
+				}
 				postgresOut, postgresErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", "hal-vault-postgres").Output()
 				oracleOut, oracleErr := exec.Command(engine, "inspect", "-f", "{{.State.Status}}", vaultOracleContainer).Output()
 				mariaStatus := strings.TrimSpace(string(mariaOut))
@@ -156,6 +166,9 @@ var vaultStatusCmd = &cobra.Command{
 
 		if err != nil {
 			fmt.Println("  🟡 API is unreachable (Vault might still be booting up).")
+			// The container is up, so the credentials still stand — and an
+			// unreachable or sealed Vault is when the root token is wanted most.
+			printVaultCredentials(engine)
 			return
 		}
 		defer resp.Body.Close()
@@ -243,8 +256,20 @@ var vaultStatusCmd = &cobra.Command{
 			}
 		}
 
-		fmt.Println("\n💡 Tip: Run 'hal vault <feature>' for a detailed micro-status check.")
+		// ==========================================
+		// 4. CREDENTIALS (shared tree)
+		// ==========================================
+		printVaultCredentials(engine)
+
+		fmt.Println("💡 Tip: Run 'hal vault <feature>' for a detailed micro-status check.")
 	},
+}
+
+// printVaultCredentials prints Vault's branch of the shared credential tree:
+// the root token, then a block for each scenario currently enabled on it.
+func printVaultCredentials(engine string) {
+	fmt.Println("\n  [ Vault Credentials ]")
+	labsecrets.RenderSection(os.Stdout, live.Tree(engine), labsecrets.SectionVault)
 }
 
 func init() {

@@ -96,6 +96,12 @@ var mariadbCmd = &cobra.Command{
 					fmt.Println("❌ Error: Vault is not running! Run: hal vault create && hal vault database enable")
 					return
 				}
+				// hal-vault-mariadb is shared and can run for another Vault lab
+				// alone, so check for the role this target brokers, not the container.
+				if exec.Command(engine, "exec", "-e", "VAULT_TOKEN=root", "-e", "VAULT_ADDR=http://127.0.0.1:8200", "hal-vault", "vault", "read", "database/roles/dba-role").Run() != nil {
+					fmt.Println("❌ Error: Vault dynamic database credentials are not configured! Run: hal vault database enable")
+					return
+				}
 				dbContainerName = vaultMariaDBContainer
 				fmt.Printf("🔗 Attaching Boundary to existing %s...\n", dbContainerName)
 			} else {

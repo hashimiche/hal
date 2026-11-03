@@ -25,10 +25,6 @@ credential)
 
 ### Driving HAL from an LLM
 
-**HAL Plus**:
-HAL's own chat interface: a conversational lab assistant backed by a local model.
-_Avoid_: HAL+, halplus
-
 **Read command**:
 A `hal` command that observes the lab without changing it.
 _Avoid_: safe command, status tool
@@ -47,3 +43,77 @@ _Avoid_: path flag (many path-like flags refer to paths inside the lab)
 A command that, when run from a chat, also tears down the connection that chat is
 using.
 _Avoid_: self-destructive command
+
+### HAL Plus
+
+**HAL Plus**:
+HAL's own chat interface, where a person gets lessons about the lab.
+_Avoid_: HAL+, halplus, agent
+
+**Lesson**:
+The answer HAL Plus gives, centered on one topic, and optionally a second. It says what the mechanism is, how to configure it, the hal commands that show it on the lab, and the reference documents.
+_Avoid_: agent, route, topic, scenario (a scenario is a feature enabled on a product)
+
+**Topic**:
+What HAL Plus gives the model about one product or one scenario: what the mechanism is, how the lab stages it, and two or three documents.
+_Avoid_: scenario, lesson, skill, Copilot skill, behavior pack, fiche
+
+### Agentic IAM lab
+
+**Agentic IAM lab**:
+The Vault lab in which a demo agent reaches lab data on behalf of a persona, and
+every access is decided by the IdP and Vault rather than by the agent.
+_Avoid_: OBO lab, agentic lab, agent lab
+
+**Demo agent**:
+The AI agent HAL deploys inside the Agentic IAM lab. It never acts as itself, only
+on behalf of a persona.
+_Avoid_: agent (alone: ambiguous with the TFE agent and HAL Plus), bot, assistant
+
+**Persona**:
+A demo identity HAL creates in the IdP for the Agentic IAM lab, such as alice,
+bob or charlie. It is a lab credential, not the person running HAL.
+_Avoid_: user (that is the person running HAL), test user, demo user
+
+**OBO token**:
+The token that names both a persona, as its subject, and the demo agent, as its
+actor, so that Vault sees who asked and who acts.
+_Avoid_: delegation token, agent token, impersonation token
+
+**Ceiling**:
+The most Vault access the demo agent can ever have, whichever persona it acts for.
+_Avoid_: agent policy (Vault ignores the agent's own policies when it acts for a persona)
+
+**Task scope**:
+The Vault accesses a persona consents to for one request, fixed from the prompt
+before the demo agent reads any data.
+_Avoid_: session scope, RAR (that is the mechanism that carries it)
+
+**Decision point**:
+One of the four places that can refuse the demo agent an access: the IdP, the
+persona's own rights, the ceiling, and the task scope.
+_Avoid_: layer, gate, check
+
+### Lab secrets
+
+**Lab secret**:
+A value HAL chooses so that a lab can boot: a username, a password, a token. It
+is fixed when HAL decides it up front, and generated when the lab mints it at
+boot.
+_Avoid_: credential (too broad), password (only one kind of lab secret)
+
+**Operator login**:
+The lab secret a person types to reach a lab. The rest are typed only by
+containers.
+_Avoid_: demo credential, admin credential, user credential
+
+**Scenario**:
+A feature enabled on a product, such as OIDC or the VCS workflow. It has its own
+operator logins and its own lifecycle, but no life of its own without its
+product.
+_Avoid_: feature, integration, lab (that is the whole thing the user runs)
+
+**Product license**:
+The HashiCorp license a product boots with. It is not a lab secret: HAL never
+stores one and never shows one.
+_Avoid_: key, entitlement, secret

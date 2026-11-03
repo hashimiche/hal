@@ -14,6 +14,7 @@ import (
 
 	"hal/internal/global"
 	"hal/internal/integrations"
+	"hal/internal/labsecrets"
 
 	"github.com/spf13/cobra"
 )
@@ -188,6 +189,11 @@ func runWorkspaceScenarioEnable(cmd *cobra.Command, engine, target string) error
 		fmt.Println("ℹ️  Reusing existing shared GitLab service.")
 	} else {
 		fmt.Println("🚀 Booted shared GitLab service for Terraform VCS workflow setup.")
+		// Only a fresh boot sets the root password; a reused GitLab keeps the
+		// one whichever product started it chose.
+		if saveErr := labsecrets.SaveOverride(labsecrets.KeyGitLabRootPassword, workspaceGitLabPassword, labsecrets.GitLabRootPassword); saveErr != nil {
+			fmt.Printf("⚠️  Could not record the GitLab root password: %v\n", saveErr)
+		}
 	}
 
 	fmt.Println("⏳ Waiting for GitLab API...")
@@ -200,7 +206,7 @@ func runWorkspaceScenarioEnable(cmd *cobra.Command, engine, target string) error
 		fmt.Println("   💡 VCS push events may not trigger runs if tfe.localhost is unreachable from hal-gitlab.")
 	}
 
-	vcsToken, err := integrations.GitLabPasswordToken(gitlabHostBaseURL()+"/oauth/token", "root", workspaceGitLabPassword)
+	vcsToken, err := integrations.GitLabPasswordToken(gitlabHostBaseURL()+"/oauth/token", labsecrets.GitLabRootUsername, workspaceGitLabPassword)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve GitLab API token: %w", err)
 	}
@@ -311,7 +317,9 @@ func runWorkspaceScenarioEnable(cmd *cobra.Command, engine, target string) error
 	fmt.Printf("\n✅ Terraform VCS workflow prepared (target=%s).\n", target)
 	fmt.Println("---------------------------------------------------------")
 	fmt.Printf("🔗 GitLab Repo: %s\n", webURL)
-	fmt.Println("   Login:       root / hal9000FTW")
+	// The password this GitLab actually answers on, which --gitlab-root-password
+	// may have replaced.
+	fmt.Printf("   Login:       %s / %s\n", labsecrets.GitLabRootUsername, workspaceGitLabPassword)
 	fmt.Println("🧭 Next:        Push a new commit to main in GitLab to validate the end-to-end VCS-driven auto-apply workflow")
 	fmt.Println("---------------------------------------------------------")
 
@@ -935,7 +943,7 @@ func init() {
 	workspaceCmd.Flags().StringVar(&workspaceGitLabTag, "gitlab-tag", "18.11.9-ce.0", "GitLab CE container image tag used for shared Terraform workspace setup")
 	workspaceCmd.Flags().StringVar(&workspaceGitLabImage, "gitlab-image", "gitlab/gitlab-ce", "GitLab CE container image name used for shared Terraform workspace setup")
 	workspaceCmd.Flags().IntVar(&workspaceGitLabPort, "gitlab-port", 8080, "Host/container port for the shared GitLab service (override to avoid conflicts on 8080)")
-	workspaceCmd.Flags().StringVar(&workspaceGitLabPassword, "gitlab-root-password", "hal9000FTW", "Root password used to bootstrap GitLab when HAL starts it")
+	workspaceCmd.Flags().StringVar(&workspaceGitLabPassword, "gitlab-root-password", labsecrets.GitLabRootPassword, "Root password used to bootstrap GitLab when HAL starts it")
 	workspaceCmd.Flags().StringVar(&workspaceProjectName, "project-name", "tfe-agent-demo", "GitLab project name for the Terraform workspace demo")
 	workspaceCmd.Flags().StringVar(&workspaceProjectPath, "project-path", "tfe-agent-demo", "GitLab project path for the Terraform workspace demo")
 	workspaceCmd.Flags().StringVar(&tfeOrgName, "tfe-org", defaultTFEOrg, "Terraform Enterprise organization name to bootstrap")

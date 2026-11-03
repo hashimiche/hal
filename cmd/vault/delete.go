@@ -1,10 +1,12 @@
 package vault
 
 import (
+	"errors"
 	"fmt"
 	"hal/internal/global"
 	"hal/internal/integrations"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,12 +18,18 @@ import (
 // It is a shared service (also used by 'hal tf vcs-workflow'), so it is torn down
 // via teardownSharedGitLab() with a consumer/TFE-runtime check instead of being
 // force-removed unconditionally.
+// hal-vault-mariadb is shared too, but every one of its consumers is a Vault lab,
+// so it stays in this list and delete clears its whole consumer registry.
+// The Agentic IAM lab's chat and demo agent go with Vault; its Authentik
+// consumer is handled with vault-oidc's below.
 var vaultEcosystem = []string{
 	vaultContainer,
 	openLDAPContainer,
 	phpLDAPAdminContainer,
 	vaultMariaDBContainer,
 	vaultOracleContainer,
+	agenticIAMChatContainer,
+	agenticIAMAgentContainer,
 }
 
 var vaultVolumes = []string{
@@ -68,17 +76,46 @@ var vaultDestroyCmd = &cobra.Command{
 			}
 		}
 
-		// 1b. Authentik is a shared IdP (also used by 'hal tf saml'), so it is
+		// 1a. hal-vault-mariadb is gone with the rest of the ecosystem. Drop its
+		// consumers too, so the registry never lists labs whose container is gone
+		// (a later disable would otherwise report it "still in use").
+		if global.DryRun {
+			fmt.Printf("[DRY RUN] Would clear the %s shared service consumers\n", vaultMariaDBContainer)
+		} else if err := global.ClearSharedService(global.SharedVaultMariaDBServiceKey); err != nil {
+			fmt.Printf("⚠️  Could not update shared service registry: %v\n", err)
+		}
+
+		// 1b. The SoftHSM runtime is owned by vault create/delete. Remove it only
+		// after the Vault container is gone so the engine cannot report it in use.
+		softHSMRuntimeRef := vaultSoftHSMRuntimeImage + ":" + vaultSoftHSMRuntimeTag
+		if global.DryRun {
+			fmt.Printf("[DRY RUN] Would remove local image %s if present\n", softHSMRuntimeRef)
+		} else if exec.Command(engine, "image", "inspect", softHSMRuntimeRef).Run() == nil {
+			if err := exec.Command(engine, "image", "rm", "-f", softHSMRuntimeRef).Run(); err != nil {
+				fmt.Printf("⚠️  Could not remove image %s: %v\n", softHSMRuntimeRef, err)
+			} else {
+				fmt.Printf("  ✅ Removed local image: %s\n", softHSMRuntimeRef)
+			}
+		}
+
+		// 1c. Authentik is a shared IdP (also used by 'hal tf saml'), so it is
 		// deregistered and only torn down when no other product still depends on
 		// it — mirroring the GitLab shared-service model rather than force-removing
-		// a container another lab may be using.
+		// a container another lab may be using. Both Vault labs that use it,
+		// vault-oidc and the Agentic IAM lab, go with Vault: left registered, they
+		// would keep Authentik "in use" forever.
 		if global.DryRun {
-			fmt.Println("[DRY RUN] Would deregister vault-oidc from the Authentik shared service and stop the stack if unused")
+			fmt.Printf("[DRY RUN] Would deregister %s and %s from the Authentik shared service and stop the stack if unused\n",
+				oidcSharedServiceKey, integrations.AgenticIAMAuthentikConsumer)
+			fmt.Printf("[DRY RUN] Would remove ~/.hal/%s, and the Agentic IAM lab's Authentik objects if Authentik stays up\n", agenticIAMStateDirName)
 		} else {
-			remaining, regErr := global.RemoveSharedServiceConsumer(integrations.AuthentikSharedServiceKey, oidcSharedServiceKey)
-			if regErr != nil {
+			agenticWasConsumer := slices.Contains(global.GetSharedServiceConsumers(integrations.AuthentikSharedServiceKey), integrations.AgenticIAMAuthentikConsumer)
+			_, regErr := global.RemoveSharedServiceConsumer(integrations.AuthentikSharedServiceKey, oidcSharedServiceKey)
+			remaining, agenticErr := global.RemoveSharedServiceConsumer(integrations.AuthentikSharedServiceKey, integrations.AgenticIAMAuthentikConsumer)
+			if regErr = errors.Join(regErr, agenticErr); regErr != nil {
 				fmt.Printf("⚠️  Could not update shared service registry: %v\n", regErr)
 			}
+			releaseAgenticIAMOnVaultDelete(engine, agenticWasConsumer, remaining)
 			if len(remaining) == 0 {
 				if err := integrations.StopAuthentikStack(engine, true); err != nil {
 					fmt.Printf("⚠️  Warning during Authentik teardown: %v\n", err)
@@ -90,7 +127,7 @@ var vaultDestroyCmd = &cobra.Command{
 			}
 		}
 
-		// 1c. GitLab is a shared service (also used by 'hal tf vcs-workflow'), so
+		// 1d. GitLab is a shared service (also used by 'hal tf vcs-workflow'), so
 		// it is deregistered and only removed when no other product depends on it
 		// and no Terraform Enterprise runtime is running. The vault-jwt runner is
 		// always removed.
@@ -135,6 +172,12 @@ var vaultDestroyCmd = &cobra.Command{
 			fmt.Printf("[DRY RUN] Would remove prod state dir: %s\n", global.VaultProdStateDir())
 		} else if err := global.RemoveCachedVaultInit(); err != nil {
 			fmt.Printf("⚠️  Could not remove prod Vault state (%s): %v\n", global.VaultProdStateDir(), err)
+		}
+
+		if global.DryRun {
+			fmt.Println("[DRY RUN] Would remove owned PQC PKI local credentials and configuration")
+		} else if err := global.RemovePQCPKIState(); err != nil {
+			fmt.Printf("Warning: %v\n", err)
 		}
 
 		// 5. Attempt to clean the network (Only deletes hal-net if NO containers are using it)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/labsecrets"
 
 	"github.com/spf13/cobra"
 )
@@ -299,6 +300,11 @@ var twinCmd = &cobra.Command{
 			}
 		}
 
+		// The twin has its own admin password flag, so it gets its own key.
+		if saveErr := labsecrets.SaveOverride(labsecrets.KeyTFETwinAdminPassword, tfeTwinAdminPass, labsecrets.TFEAdminPassword); saveErr != nil {
+			fmt.Printf("⚠️  Could not record the twin TFE admin password: %v\n", saveErr)
+		}
+
 		fmt.Println("\n✅ Terraform Enterprise twin instance is UP!")
 		fmt.Println("---------------------------------------------------------")
 		fmt.Printf("🔗 UI Address:   %s\n", layout.UIURL)
@@ -540,7 +546,7 @@ func bindTwinFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&tfeTwinHTTPSPort, "twin-https-port", 9443, "Host HTTPS port the shared ingress proxy publishes for the twin vhost")
 	cmd.Flags().StringVar(&tfeTwinHostname, "twin-hostname", defaultTFETwinHostname, "TLS hostname used by the twin TFE instance")
 	cmd.Flags().StringVar(&tfeTwinContainerName, "twin-container-name", "hal-tfe-bis", "Container name used for the twin TFE core application")
-	cmd.Flags().StringVar(&tfeTwinDatabasePassword, "twin-db-password", "tfe_password", "PostgreSQL password used by the twin TFE backend")
+	cmd.Flags().StringVar(&tfeTwinDatabasePassword, "twin-db-password", tfeDBPassword, "PostgreSQL password used by the twin TFE backend")
 	cmd.Flags().StringVar(&tfeTwinDatabaseName, "twin-db-name", "tfe_bis", "Database name for the twin TFE schema in shared PostgreSQL")
 	cmd.Flags().StringVar(&tfeTwinS3AccessKey, "twin-s3-access-key", tfeS3AccessKey, "S3 access key for shared object storage")
 	cmd.Flags().StringVar(&tfeTwinS3SecretKey, "twin-s3-secret-key", tfeS3SecretKey, "S3 secret key for shared object storage")

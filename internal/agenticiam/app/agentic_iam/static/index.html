@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HAL · Agentic IAM lab</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Agentic IAM lab</h1>
+      <p class="tagline">A demo agent acts on your behalf. The IdP and Vault decide what it may reach.</p>
+    </div>
+    <div id="who" hidden>
+      Logged in as <strong id="persona"></strong>
+      <a class="button secondary" href="/logout">Log out</a>
+    </div>
+  </header>
+
+  <main id="login" hidden>
+    <p id="login-message">Log in as a persona (alice, bob or charlie) to talk to the demo agent.</p>
+    <a class="button" href="/login">Log in with Authentik</a>
+  </main>
+
+  <main id="app" hidden>
+    <section class="chat" aria-label="Chat">
+      <ol id="messages" aria-live="polite"></ol>
+      <div class="suggestions" aria-label="Suggestions">
+        <button type="button" data-prompt="Q3 results">Q3 results</button>
+        <button type="button" data-prompt="payroll">payroll</button>
+        <button type="button" data-prompt="Q2 results">Q2 results</button>
+        <button type="button" data-prompt="Q3 results and forecasts">Q3 results and forecasts</button>
+      </div>
+      <form id="ask">
+        <input id="prompt" name="prompt" maxlength="500" autocomplete="off"
+               placeholder="Ask the demo agent, e.g. last quarter's results" required>
+        <button type="submit">Send</button>
+      </form>
+    </section>
+
+    <aside class="panel" aria-label="Transparency panel">
+      <h2>Transparency panel</h2>
+      <p class="hint">For each task: the OBO token the demo agent used, and what Vault decided for each tool call.</p>
+      <div id="tasks"></div>
+    </aside>
+  </main>
+</body>
+</html>

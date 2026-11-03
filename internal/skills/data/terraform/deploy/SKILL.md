@@ -39,7 +39,7 @@ Handle hal terraform create requests with a stable lifecycle pattern.
 - This avoids requiring privileged host port 443 on rootless Podman.
 - User-facing URL remains `https://tfe.localhost:8443` in this mode.
 - Deploy validation should include both health endpoint and `/app` reachability (to catch redirect loops).
-- Deploy should preserve UI/log usability for archivist object links by keeping links on `:8443` in proxied responses.
+- Deploy should keep every portless TFE URL on `:8443` in proxied responses, not only archivist object links: the state viewer's `hosted_json_state` URL is a Rails URL, and without the rewrite states are unreadable in the UI.
 
 ## Runtime Notes
 

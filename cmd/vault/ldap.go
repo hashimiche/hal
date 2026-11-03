@@ -3,6 +3,7 @@ package vault
 import (
 	"fmt"
 	"hal/internal/global"
+	"hal/internal/labsecrets"
 	"os"
 	"os/exec"
 	"strings"
@@ -91,7 +92,7 @@ var vaultLdapCmd = &cobra.Command{
 				fmt.Println("   hal vault ldap enable")
 			} else if ldapExists && authMounted && secretsMounted {
 				fmt.Println("   Demo is ready! Try logging in as Bob:")
-				fmt.Println("   vault login -method=ldap username=bob password=bobpass")
+				fmt.Printf("   vault login -method=ldap username=%s password=%s\n", labsecrets.LDAPUserBob, labsecrets.LDAPUserPassword)
 				fmt.Println("\n   To completely remove this demo environment, run:")
 				fmt.Println("   hal vault ldap disable")
 			} else {
@@ -174,10 +175,10 @@ var vaultLdapCmd = &cobra.Command{
 				"--platform", "linux/amd64",
 				"-e", "LDAP_ORGANISATION=HAL",
 				"-e", "LDAP_DOMAIN=hal.local",
-				"-e", "LDAP_ADMIN_PASSWORD=admin",
+				"-e", "LDAP_ADMIN_PASSWORD="+labsecrets.LDAPAdminSeedPassword,
 				"-e", "LDAP_READONLY_USER=true",
-				"-e", "LDAP_READONLY_USER_USERNAME=vault-auth",
-				"-e", "LDAP_READONLY_USER_PASSWORD=authpass",
+				"-e", "LDAP_READONLY_USER_USERNAME="+labsecrets.LDAPReadOnlyUser,
+				"-e", "LDAP_READONLY_USER_PASSWORD="+labsecrets.LDAPReadOnlyPassword,
 				"-e", "LDAP_TLS=false",
 				fmt.Sprintf("osixia/openldap:%s", ldapServerImageTag),
 			).Run()
@@ -247,8 +248,8 @@ path "ldap/library/dev-pool/check-in" { capabilities = ["create", "update"] }
 
 			_, _ = client.Logical().Write("ldap/config", map[string]interface{}{
 				"url":          "ldap://hal-openldap",
-				"binddn":       "cn=admin,dc=hal,dc=local",
-				"bindpass":     "admin",
+				"binddn":       labsecrets.LDAPAdminDN,
+				"bindpass":     labsecrets.LDAPAdminSeedPassword,
 				"userdn":       "ou=users,dc=hal,dc=local",
 				"insecure_tls": true,
 			})
@@ -286,10 +287,10 @@ userPassword: {{.Password}}`,
 			global.RefreshHalHealth(engine)
 			fmt.Println("---------------------------------------------------------")
 			fmt.Println("🔗 phpLDAPadmin UI: https://phpldapadmin.localhost:8082")
-			fmt.Println("   Login DN: cn=admin,dc=hal,dc=local")
+			fmt.Printf("   Login DN: %s\n", labsecrets.LDAPAdminDN)
 			fmt.Println("   Password: (UNKNOWN! Vault rotated the root password!)")
 			fmt.Println("\n👤 Try logging into Vault as Bob (Reader):")
-			fmt.Println("   vault login -method=ldap username=bob password=password")
+			fmt.Printf("   vault login -method=ldap username=%s password=%s\n", labsecrets.LDAPUserBob, labsecrets.LDAPUserPassword)
 			fmt.Println("\n💡 As Bob, run these LDAP Secret Engine commands:")
 			fmt.Println("   1. vault read ldap/creds/dynamic-reader")
 			fmt.Println("   2. vault read ldap/static-cred/static-app")
@@ -303,13 +304,18 @@ userPassword: {{.Password}}`,
 // Helper Functions (Kept exactly as you wrote them)
 // -----------------------------------------------------------------------------
 
-func seedLDAP(engine string) {
-	ldif := `dn: cn=admin,dc=hal,dc=local
+// seedLDIF is the directory HAL loads before Vault owns it: the admin entry, the
+// two organizational units, the demo users, the service accounts the secrets
+// engine manages, and the groups the auth method maps to policies.
+func seedLDIF() string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, `dn: %s
 objectClass: simpleSecurityObject
 objectClass: organizationalRole
 cn: admin
 description: LDAP administrator
-userPassword: admin
+userPassword: %s
 
 dn: ou=groups,dc=hal,dc=local
 objectClass: organizationalUnit
@@ -321,64 +327,45 @@ objectClass: organizationalUnit
 objectClass: top
 ou: users
 
-dn: cn=alice,ou=users,dc=hal,dc=local
+`, labsecrets.LDAPAdminDN, labsecrets.LDAPAdminSeedPassword)
+
+	for _, u := range []struct{ cn, sn, password string }{
+		{labsecrets.LDAPUserAlice, "Admin", labsecrets.LDAPUserPassword},
+		{labsecrets.LDAPUserBob, "Reader", labsecrets.LDAPUserPassword},
+		{"app-service", "Service", labsecrets.LDAPServiceAccountPassword},
+		{"lib-service-1", "Service", labsecrets.LDAPServiceAccountPassword},
+		{"lib-service-2", "Service", labsecrets.LDAPServiceAccountPassword},
+	} {
+		fmt.Fprintf(&b, `dn: cn=%[1]s,ou=users,dc=hal,dc=local
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
 objectClass: inetOrgPerson
-cn: alice
-sn: Admin
-userPassword: password
+cn: %[1]s
+sn: %[2]s
+userPassword: %[3]s
 
-dn: cn=bob,ou=users,dc=hal,dc=local
-objectClass: top
-objectClass: person
-objectClass: organizationalPerson
-objectClass: inetOrgPerson
-cn: bob
-sn: Reader
-userPassword: password
+`, u.cn, u.sn, u.password)
+	}
 
-dn: cn=app-service,ou=users,dc=hal,dc=local
-objectClass: top
-objectClass: person
-objectClass: organizationalPerson
-objectClass: inetOrgPerson
-cn: app-service
-sn: Service
-userPassword: initialpass
-
-dn: cn=lib-service-1,ou=users,dc=hal,dc=local
-objectClass: top
-objectClass: person
-objectClass: organizationalPerson
-objectClass: inetOrgPerson
-cn: lib-service-1
-sn: Service
-userPassword: initialpass
-
-dn: cn=lib-service-2,ou=users,dc=hal,dc=local
-objectClass: top
-objectClass: person
-objectClass: organizationalPerson
-objectClass: inetOrgPerson
-cn: lib-service-2
-sn: Service
-userPassword: initialpass
-
-dn: cn=admin,ou=groups,dc=hal,dc=local
+	fmt.Fprintf(&b, `dn: cn=admin,ou=groups,dc=hal,dc=local
 objectClass: groupOfNames
 objectClass: top
 cn: admin
-member: cn=alice,ou=users,dc=hal,dc=local
+member: cn=%s,ou=users,dc=hal,dc=local
 
 dn: cn=reader,ou=groups,dc=hal,dc=local
 objectClass: groupOfNames
 objectClass: top
 cn: reader
-member: cn=bob,ou=users,dc=hal,dc=local
-`
-	ldifClean := strings.ReplaceAll(ldif, "\r", "")
+member: cn=%s,ou=users,dc=hal,dc=local
+`, labsecrets.LDAPUserAlice, labsecrets.LDAPUserBob)
+
+	return b.String()
+}
+
+func seedLDAP(engine string) {
+	ldifClean := strings.ReplaceAll(seedLDIF(), "\r", "")
 
 	tmpFile := "/tmp/hal_seed.ldif"
 	_ = os.WriteFile(tmpFile, []byte(ldifClean), 0644)
@@ -389,7 +376,7 @@ member: cn=bob,ou=users,dc=hal,dc=local
 	fmt.Print("⚙️  Waiting for OpenLDAP to accept connections")
 
 	for i := 0; i < 10; i++ {
-		out, err := exec.Command(engine, "exec", openLDAPContainer, "ldapadd", "-c", "-x", "-D", "cn=admin,dc=hal,dc=local", "-w", "admin", "-H", "ldap://localhost", "-f", "/tmp/seed.ldif").CombinedOutput()
+		out, err := exec.Command(engine, "exec", openLDAPContainer, "ldapadd", "-c", "-x", "-D", labsecrets.LDAPAdminDN, "-w", labsecrets.LDAPAdminSeedPassword, "-H", "ldap://localhost", "-f", "/tmp/seed.ldif").CombinedOutput()
 		if err == nil {
 			fmt.Println("\n✅ LDAP Directory seeded successfully.")
 			return

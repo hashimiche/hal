@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/labsecrets"
 
 	vault "github.com/hashicorp/vault/api"
 	"github.com/spf13/cobra"
@@ -328,6 +329,11 @@ var vaultAAPCmd = &cobra.Command{
 		if err != nil {
 			fmt.Printf("❌ Failed to connect to AAP API: %v\n", err)
 			return
+		}
+
+		// The controller answered on this password, so it is the one to show.
+		if saveErr := labsecrets.SaveOverride(labsecrets.KeyAAPPassword, vaultAAPAAPPassword, labsecrets.AAPPassword); saveErr != nil {
+			fmt.Printf("⚠️  Could not record the AAP password: %v\n", saveErr)
 		}
 
 		envCfgs := vaultAAPAAPEnvironmentConfigs()
@@ -737,8 +743,8 @@ func bindVaultAAPFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&vaultAAPDevOrgName, "development-org", "Development", "AAP organization mapped to development Vault role")
 	cmd.Flags().StringVar(&vaultAAPProdOrgName, "production-org", "Production", "AAP organization mapped to production Vault role")
 	cmd.Flags().StringVar(&vaultAAPCACertFile, "aap-ca-cert-file", "/home/aap/aap/tls/ca.cert", "Path to the AAP CA certificate inside hal-aap container")
-	cmd.Flags().StringVar(&vaultAAPAAPUsername, "aap-username", "admin", "AAP controller username")
-	cmd.Flags().StringVar(&vaultAAPAAPPassword, "aap-password", "admin", "AAP controller password")
+	cmd.Flags().StringVar(&vaultAAPAAPUsername, "aap-username", labsecrets.AAPUsername, "AAP controller username")
+	cmd.Flags().StringVar(&vaultAAPAAPPassword, "aap-password", labsecrets.AAPPassword, "AAP controller password")
 	cmd.Flags().StringVar(&vaultAAPAAPVaultURL, "aap-vault-url", "http://hal-vault:8200", "Vault URL used by AAP external secret lookup credentials")
 	cmd.Flags().IntVar(&vaultAAPAAPLookupTypeID, "aap-vault-lookup-type-id", 29, "AAP credential type ID for HashiCorp Vault Secret Lookup (OIDC)")
 

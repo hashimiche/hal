@@ -9,6 +9,7 @@ import (
 
 	"hal/internal/global"
 	"hal/internal/integrations"
+	"hal/internal/labsecrets"
 
 	"github.com/spf13/cobra"
 )
@@ -195,6 +196,10 @@ var destroyCmd = &cobra.Command{
 			fmt.Printf("⚠️  Could not remove cached TFE API token: %v\n", err)
 		} else {
 			fmt.Println("  🧹 Removed cached TFE API token.")
+		}
+
+		if err := labsecrets.Remove(labsecrets.KeyTFEAdminPassword, labsecrets.KeyTFETwinAdminPassword); err != nil {
+			fmt.Printf("⚠️  Could not remove stored TFE admin credentials: %v\n", err)
 		}
 
 		if err := removeTFEAgentState(tfeTargetPrimary); err != nil {

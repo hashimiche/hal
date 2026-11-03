@@ -14,6 +14,8 @@ const (
 	boundarySSHInstance      = "hal-boundary-ssh" // Multipass VM
 	// vaultMariaDBContainer mirrors the Vault package's MariaDB container name; it
 	// is referenced (not owned) here when --with-vault attaches to that database.
+	// Boundary is not one of its shared-service consumers: it creates nothing in
+	// it and brokers `hal vault database`'s dba-role, so that feature owns it.
 	vaultMariaDBContainer = "hal-vault-mariadb"
 
 	// --- Ports ---

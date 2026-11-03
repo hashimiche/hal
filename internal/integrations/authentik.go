@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"hal/internal/global"
+	"hal/internal/labsecrets"
 	"hal/internal/ui"
 )
 
@@ -25,7 +26,7 @@ const (
 	AuthentikWorkerContainer = "hal-authentik-worker"
 
 	AuthentikDefaultImage = "ghcr.io/goauthentik/server"
-	AuthentikDefaultTag   = "2026.5.6"
+	AuthentikDefaultTag   = "2026.8.3"
 
 	// Host ports — chosen to avoid all existing HAL port usage.
 	// 9000: hal-plus / TFE S3 gateway internal
@@ -173,6 +174,11 @@ func LoadOrCreateAuthentikSecrets() (*AuthentikSecrets, error) {
 	if err := os.WriteFile(envPath, []byte(content), 0o600); err != nil {
 		return nil, fmt.Errorf("failed to write authentik env: %w", err)
 	}
+
+	// Mirror the one operator-facing value into the shared credential store
+	// (ADR 0005). HAL keeps this env file across a disable so the same akadmin
+	// password works on the next boot, so the mirror lives exactly as long.
+	_ = labsecrets.Save(map[string]string{labsecrets.KeyAuthentikAdminPassword: s.AdminPassword})
 
 	return s, nil
 }
@@ -638,6 +644,24 @@ func (c *AuthentikClient) Token() string { return c.token }
 // do executes a JSON API call, decodes the response and returns it as a generic map.
 // body may be nil for GET requests. Returns (nil, statusCode, nil) on 204 No Content.
 func (c *AuthentikClient) do(method, path string, body interface{}) (map[string]interface{}, int, error) {
+	raw, status, err := c.send(method, path, body)
+	if err != nil {
+		return nil, status, err
+	}
+	if len(raw) == 0 {
+		return nil, status, nil
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, status, fmt.Errorf("decode response: %w", err)
+	}
+	return result, status, nil
+}
+
+// send executes a JSON API call and returns the raw response body. A status of
+// 400 or more is returned as an error that carries the status code and the body.
+func (c *AuthentikClient) send(method, path string, body interface{}) ([]byte, int, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -667,15 +691,7 @@ func (c *AuthentikClient) do(method, path string, body interface{}) (map[string]
 	if resp.StatusCode >= 400 {
 		return nil, resp.StatusCode, fmt.Errorf("authentik %s %s → %d: %s", method, path, resp.StatusCode, string(raw))
 	}
-	if len(raw) == 0 {
-		return nil, resp.StatusCode, nil
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("decode response: %w", err)
-	}
-	return result, resp.StatusCode, nil
+	return raw, resp.StatusCode, nil
 }
 
 // firstResult returns the first item from a paginated list response.
@@ -864,9 +880,12 @@ func (c *AuthentikClient) GetGroupsScopeMappingPK() (string, error) {
 }
 
 // AuthentikRedirectURI pairs a matching mode with a URL for OAuth2 redirect_uris.
+// RedirectURIType is "authorization" (the default when empty) or, in Authentik
+// 2026.8, "logout" for an allowed post_logout_redirect_uri.
 type AuthentikRedirectURI struct {
-	MatchingMode string `json:"matching_mode"`
-	URL          string `json:"url"`
+	MatchingMode    string `json:"matching_mode"`
+	URL             string `json:"url"`
+	RedirectURIType string `json:"redirect_uri_type,omitempty"`
 }
 
 // AuthentikOAuth2AuthorizationGrants is the grant-type set Vault OIDC needs.

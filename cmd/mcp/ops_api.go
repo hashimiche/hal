@@ -13,6 +13,7 @@ import (
 
 	"hal/cmd/creds"
 	"hal/internal/global"
+	"hal/internal/labsecrets"
 )
 
 const (
@@ -148,7 +149,7 @@ func mcpOpsTools() []map[string]interface{} {
 		},
 		{
 			"name":        "get_vault_pki_status",
-			"description": "Return Vault PKI readiness: Root/Intermediate CA engines, hal-role, and the optional cert-manager (--k8s) and ACME/Caddy (--acme) demo layers.",
+			"description": "Return Vault PKI readiness: Root/Intermediate CA engines, hal-role, optional auto-detected SoftHSM2 PKCS#11 managed key, cert-manager (--k8s), ACME/Caddy (--acme), and isolated ML-DSA/ML-KEM-768 (--pqc) workload readiness. Readiness is not cryptographic proof.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
@@ -183,7 +184,7 @@ func mcpOpsTools() []map[string]interface{} {
 		},
 		{
 			"name":        "get_active_credentials",
-			"description": "Return structured per-service credentials for currently running lab services (URLs, usernames, demo passwords, and the cached TFE API token) — the structured equivalent of `hal creds status`.",
+			"description": "Return the credential tree of the currently running lab products, each with its enabled scenarios nested underneath: `data.{any_active,services[]}` where a service carries `{service,label,url,entries[{name,username,secret,note}],commands[],scenarios[]}` and every nested scenario has that same shape. Includes the generated TFE API token and the root token of a prod Vault — the structured equivalent of `hal creds status`.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
@@ -249,6 +250,11 @@ func mcpOpsTools() []map[string]interface{} {
 		{
 			"name":        "get_vault_os_status",
 			"description": "Return Vault OS secret engine (Linux user management via Ubuntu VM) readiness and key checks.",
+			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		},
+		{
+			"name":        "get_vault_agentic_iam_status",
+			"description": "Return Vault Agentic IAM lab readiness (ADR 0004): prerequisites verdict, chat and demo agent containers, Vault objects, Authentik applications and shared-service consumers.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
@@ -394,11 +400,12 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 			return opErrorForTool("get_vault_pki_status", codeParseError, err.Error(), nil, []string{"hal vault pki"}, nil, nil, nil), true
 		}
 		execRes := runHAL("vault", "pki")
-		checks := []opCheck{{Name: "vault_pki_status", Status: statusFromExecution(execRes), Details: "vault pki engines + cert-manager/acme demo check"}}
+		pqcRes := runHAL("vault", "pki", "status", "--pqc")
+		checks := []opCheck{{Name: "vault_pki_status", Status: statusFromExecution(execRes), Details: "vault pki engines + cert-manager/acme demo check"}, {Name: "vault_pqc_pki_status", Status: statusFromExecution(pqcRes), Details: "independent PQC readiness; not cryptographic proof"}}
 		if execRes.ExitCode != 0 {
-			return opErrorForTool("get_vault_pki_status", classifyContractError(execRes.Output), "vault pki check failed; ensure Vault is reachable and PKI engines are enabled", map[string]interface{}{"execution": execRes}, []string{"hal vault status", "hal vault pki enable"}, checks, nil, nil), true
+			return opErrorForTool("get_vault_pki_status", classifyContractError(execRes.Output), "vault pki check failed; ensure Vault is reachable and PKI engines are enabled", map[string]interface{}{"execution": execRes, "pqc_execution": pqcRes}, []string{"hal vault status", "hal vault pki enable"}, checks, nil, nil), true
 		}
-		return opSuccessForTool("get_vault_pki_status", "vault pki status collected", map[string]interface{}{"execution": execRes}, []string{"hal vault pki", "hal vault pki enable", "hal vault pki enable --acme", "hal vault pki enable --k8s"}, checks, nil, nil, []string{"https://developer.hashicorp.com/vault/docs/secrets/pki"}), true
+		return opSuccessForTool("get_vault_pki_status", "vault pki status collected", map[string]interface{}{"execution": execRes, "pqc_execution": pqcRes}, []string{"hal vault pki", "hal vault pki enable", "hal vault create --edition ent-hsm --mode prod", "hal vault pki enable --no-hsm", "hal vault pki enable --acme", "hal vault pki enable --k8s", "hal vault pki status --pqc", "hal vault pki enable --pqc --dry-run"}, checks, nil, nil, []string{"https://developer.hashicorp.com/vault/docs/secrets/pki", "https://developer.hashicorp.com/vault/tutorials/pki/managed-key-pki"}), true
 
 	case "get_ldap_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
@@ -520,6 +527,12 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 			return opErrorForTool("get_vault_os_status", codeParseError, err.Error(), nil, []string{"hal vault os"}, nil, nil, nil), true
 		}
 		return handleStatusCommandTool("get_vault_os_status", []string{"vault", "os"}, []string{"hal vault os", "hal vault os enable"}, []string{"https://developer.hashicorp.com/vault/docs/secrets/ssh"}), true
+
+	case "get_vault_agentic_iam_status":
+		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {
+			return opErrorForTool("get_vault_agentic_iam_status", codeParseError, err.Error(), nil, []string{"hal vault agentic-iam"}, nil, nil, nil), true
+		}
+		return handleStatusCommandTool("get_vault_agentic_iam_status", []string{"vault", "agentic-iam"}, []string{"hal vault agentic-iam", "hal vault agentic-iam enable --dry-run", "hal vault agentic-iam enable"}, []string{"https://developer.hashicorp.com/vault/ai/iam"}), true
 
 	case "get_product_obs_status":
 		if err := ensureOnlyKeys(args, map[string]bool{"product": true}); err != nil {
@@ -1499,8 +1512,8 @@ func handleTFEVCSWorkflowStatus() mcpToolCallResult {
 			// lab_credentials are non-secret demo values already printed by the CLI
 			// and are intentionally surfaced here (lab-scoped, redaction-exempt).
 			"lab_credentials": map[string]interface{}{
-				"gitlab":    map[string]string{"username": "root", "password": "hal9000FTW"},
-				"tfe_admin": map[string]string{"username": "haladmin", "password": "hal9000FTW"},
+				"gitlab":    map[string]string{"username": labsecrets.GitLabRootUsername, "password": labsecrets.GitLabRootPassword},
+				"tfe_admin": map[string]string{"username": labsecrets.TFEAdminUsername, "password": labsecrets.TFEAdminPassword},
 			},
 			"ready": ready,
 			"notes": "Values reflect hal defaults; flags at 'hal terraform vcs-workflow enable' can override them. Twin target is not surfaced by this tool in v1.",

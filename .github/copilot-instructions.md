@@ -28,6 +28,9 @@ You are an expert HashiCorp Vault, Terraform, and DevOps assistant. Your primary
 - Reuse the shared `hal-net` network and `hal-...` resource names.
 - Be careful with command names: the observability namespace is `obs`, not `observability`.
 - **Shared KinD cluster:** when a `--k8s` feature enables Vault Kubernetes auth, it must use a dedicated auth mount (never `kubernetes/` unless it is `hal vault k8s` itself). All `--k8s` enable paths must call `ensureHALKindCluster()` so nodes join `hal-net` (do not invoke `kind create` directly). See `docs/cli-lifecycle-model.md` Shared KinD Cluster Convention for the mount registry, co-tenant teardown, port map, and network rules.
+- **Shared Vault MariaDB:** `hal-vault-mariadb` is a shared service (registry key `vault-mariadb`, consumers `vault-database`, `vault-agentic-iam`). Bring it up with `ensureVaultMariaDB()` and tear it down with `releaseVaultMariaDB()` (`cmd/vault/database-mariadb.go`); never `run`/`rm` it directly. Each consumer owns its own Vault mount and broker user, and never changes root's password. `hal vault database disable` keeps the container while another consumer remains. See `docs/cli-lifecycle-model.md` Shared Vault MariaDB Convention.
+- **SoftHSM-backed Vault PKI:** `hal vault create --edition ent-hsm --mode prod` owns the locally built `hal-vault-softhsm:latest` runtime and its `kms_library` boot configuration. `hal vault pki enable` only detects that runtime and owns the managed key plus PKI/token state; it must never replace the Vault container. `hal vault pki disable` removes PKI-owned HSM state, while `hal vault delete` removes the runtime image. Validate HSM intent before destructive PKI teardown. See `docs/cli-lifecycle-model.md` Vault SoftHSM Runtime Ownership.
+- **Agentic IAM lab (`hal vault agentic-iam`, ADR 0004):** `enable` runs every prerequisite check (Vault Enterprise 2.1.0+ licensed with Agentic IAM, running Authentik 2026.8.0+, host port 8092) before any change, and never restarts the shared Authentik. Its containers `hal-agentic-iam-chat` (published on 8092) and `hal-agentic-iam-agent` (hal-net only) get their secrets from `0600` env files under `~/.hal/agentic-iam/`, never from the command line. It is consumer `vault-agentic-iam` of the shared Authentik and of `hal-vault-mariadb`; a `disable` releases a shared service only when it is registered on it. `hal vault delete` deregisters it. Its image `localhost/hal-agentic-iam:<source hash>` is a build cache: `enable`/`update` remove the images of earlier sources (never forced), `disable` and `hal vault delete` keep the current one, `hal delete` removes them all. Host port 8092 is taken: 8093 is reserved for PQC PKI; the next KinD port pair starts at 8094. See `docs/cli-lifecycle-model.md` Shared Authentik Consumers.
 
 ## CLI Lifecycle Governance
 
@@ -82,3 +85,17 @@ Before every commit, verify that all relevant documentation is updated in the sa
 - `HAL_MCP_CONTRACT.json` + `cmd/mcp/testdata/*_help_snapshot.json` — if command syntax changed
 
 If any of these are stale relative to the code changes, update them before proposing the commit.
+
+## Post-quantum PKI
+
+`hal vault pki enable|update|disable --pqc` owns separate ML-DSA mounts
+`hal-pqc-root`/`hal-pqc-int` and namespace `hal-pqc`; `status --pqc` is read-only.
+`--pqc` implies Kubernetes; explicit `--k8s` remains accepted.
+Create Vault using `hal vault create --edition ent --vault-tag <supported-tag>`.
+Require a running licensed Vault Enterprise 2.2.0+ and live ML-DSA API support.
+Do not infer PQC from HSM support or replace Vault. Shared KinD reserves 8093 →
+30085; older clusters use explicit port-forward without recreation. All co-tenant
+guards must preserve `hal-pqc`. Stock NGINX/OpenSSL verifies the actual peer and negotiates
+`mldsa65` plus standalone `MLKEM768`; Go only orchestrates. Conventional ECDSA browser
+HTTPS is separate. Readiness and certificate-file parsing are never authentication
+or negotiated-key-agreement evidence. See `docs/commands/vault-pki.md`.

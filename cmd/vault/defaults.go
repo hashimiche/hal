@@ -4,8 +4,13 @@ package vault
 // command package. Container/volume names, the dev endpoint+token, ports and every
 // image/tag flag default are declared once here so create, status, delete, audit,
 // database, os, ldap, oidc and k8s can never drift apart. Cross-product values
-// (the Docker network name) live in internal/global and are referenced, never
-// redeclared.
+// (the Docker network name) live in internal/global, and every fixed lab
+// credential in internal/labsecrets; both are referenced, never redeclared.
+
+import (
+	"hal/internal/global"
+	"hal/internal/labsecrets"
+)
 
 const (
 	// --- Containers / instances ---
@@ -27,7 +32,7 @@ const (
 
 	// --- Endpoints / token / port ---
 	vaultHTTPPort    = 8200
-	vaultRootToken   = "root"
+	vaultRootToken   = labsecrets.VaultDevRootToken
 	vaultLocalAPIURL = "http://127.0.0.1:8200"
 	vaultPublicURL   = "http://vault.localhost:8200"
 	vaultHealthURL   = "http://vault.localhost:8200/v1/sys/health"
@@ -65,16 +70,25 @@ const (
 	vaultProdRaftMount   = "/vault/data"
 	vaultProdClusterPort = 8201
 
-	// --- Backend DB (MariaDB) ---
+	// --- Backend DB (MariaDB, shared: see database-mariadb.go) ---
 	vaultMariaDBHostAlias    = "mariadb.localhost"
 	vaultMariaDBPort         = 3306
-	vaultMariaDBRootPassword = "vaultroot"
+	vaultMariaDBRootPassword = labsecrets.VaultMariaDBRootPassword
+	// Broker user of `hal vault database`. Vault rotates its password right
+	// after the connection is written; the bootstrap value is only used before.
+	vaultMariaDBBrokerUser              = labsecrets.VaultMariaDBBrokerUser
+	vaultMariaDBBrokerBootstrapPassword = labsecrets.VaultMariaDBBrokerBootstrapPassword
 
 	// --- Image / tag flag defaults ---
-	defaultVaultImageCE     = "hashicorp/vault"
-	defaultVaultImageEnt    = "hashicorp/vault-enterprise"
-	defaultVaultTag         = "2.0.4"
-	defaultVaultEntTag      = "2.0.4-ent"
+	defaultVaultImageCE  = "hashicorp/vault"
+	defaultVaultImageEnt = "hashicorp/vault-enterprise"
+	defaultVaultTag      = "2.1.2"
+	defaultVaultEntTag   = "2.1.2-ent"
+	// HSM-enabled Enterprise builds use the separate "-ent.hsm" tag variant.
+	// The PKCS#11 subsystem is compiled in only for these tags; a plain "-ent"
+	// binary will start but Vault will reject any sys/managed-keys write with
+	// "Vault is not built with HSM support".
+	defaultVaultEntHSMTag   = "2.1.2-ent.hsm"
 	defaultVaultEdition     = "ce"
 	defaultVaultHelperImage = "alpine"
 	defaultVaultHelperTag   = "3.24"
@@ -115,6 +129,33 @@ const (
 	defaultInstantClientVerARM64 = "23.26.2.0.0"
 	defaultInstantClientDirARM64 = "instantclient_23_26"
 
+	// --- SoftHSM / Managed-key PKI (hal vault create --edition ent-hsm) ---
+	// A custom image is built locally at create-time: debian:12-slim base with
+	// SoftHSM2 installed and the Vault binary extracted from the official image.
+	// PKI enable detects the running HSM build and uses managed keys by default.
+	vaultSoftHSMRuntimeImage = "hal-vault-softhsm"
+	vaultSoftHSMRuntimeTag   = "latest"
+
+	// SoftHSM token initialisation defaults — all overridable via flags.
+	defaultSoftHSMLabel          = "hal-hsm-token"
+	defaultSoftHSMPin            = "1234"
+	defaultSoftHSMSOPin          = "0000"
+	defaultSoftHSMManagedKeyName = "hal-kms-root"
+	defaultSoftHSMKeyLabel       = "hal-pki-root-key"
+	defaultSoftHSMHMACLabel      = "hal-pki-root-hmac-key"
+
+	// Managed-key crypto parameters. sys/managed-keys/pkcs11 requires
+	// `mechanism`, and `key_bits` is required whenever allow_generate_key=true
+	// with an RSA mechanism. CKM_RSA_PKCS (0x0001) at 4096 bits mirrors the
+	// RSA-4096 CA chain built by the software (non-HSM) PKI path.
+	softHSMMechanismRSAPKCS = "0x0001"
+	softHSMKeyBits          = "4096"
+
+	// Base image for the SoftHSM runtime (must be glibc-based; musl/Alpine cannot
+	// run the SoftHSM2 Debian package).
+	defaultSoftHSMBaseImage = "debian"
+	defaultSoftHSMBaseTag   = "12-slim"
+
 	// --- Database VSO (hal vault database enable --k8s) ---
 	// KinD + VSO port mapping for the database credential demo.
 	// Port 30084 → 8091 is reserved so it does not collide with the
@@ -139,4 +180,39 @@ const (
 	dbVSOMariaDBRole = "dba-role"
 	dbVSOOracleRole  = "oracle-dba-role"
 	dbVSOSecretName  = "hal-db-creds"
+
+	// --- Agentic IAM lab (hal vault agentic-iam, ADR 0004) ---
+	// One image built locally from internal/agenticiam runs as two containers
+	// on hal-net (contract: internal/agenticiam/app/README.md). Only the chat is
+	// published: the persona's browser opens it, and Authentik redirects back
+	// to it. The demo agent is reachable from hal-net only.
+	agenticIAMChatContainer  = global.AgenticIAMChatContainer
+	agenticIAMAgentContainer = global.AgenticIAMAgentContainer
+	// agenticIAMChatHostPort is the chat's host port: the first one free after
+	// the KinD mappings 8088-8091 (see writeHALKindConfig).
+	agenticIAMChatHostPort = 8092
+	// agenticIAMChatPublicURL is the chat's PUBLIC_URL. The browser goes from
+	// it to Authentik at http://authentik.localhost:9100 and back.
+	agenticIAMChatPublicURL = global.AgenticIAMChatURL
+	// Ports inside the containers (the image defaults).
+	agenticIAMChatPort  = 8080
+	agenticIAMAgentPort = 8081
+	// agenticIAMStateDirName holds the containers' env files under ~/.hal.
+	agenticIAMStateDirName = "agentic-iam"
+)
+
+// PQC PKI is isolated from conventional PKI and create-owned SoftHSM state.
+const (
+	pqcNamespace        = global.PQCPKINamespace
+	pqcRootMount        = "hal-pqc-root"
+	pqcIntMount         = "hal-pqc-int"
+	pqcOwner            = global.PQCPKIOwner
+	pqcMountDescription = "HAL post-quantum PKI lab (hal-vault-pqc-pki)"
+	pqcBackend          = "backend"
+	pqcFrontend         = "frontend"
+	pqcNodePort         = 30085
+	pqcHostPort         = 8093
+	pqcBrowserDNS       = "pqc.localhost"
+	pqcDefaultDomain    = "cluster.local"
+	pqcDefaultImage     = "docker.io/library/nginx@sha256:1dd3048a04f4b76ebd706c1bbb9df7d9d53b4f8253b32ce14467088c9b5ada0f"
 )

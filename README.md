@@ -121,6 +121,7 @@ hal vault create                          # provision Vault with defaults (dev m
 hal vault create --vault-tag 2.0          # pin the image tag
 hal vault create --vault-image myregistry.local/vault --vault-tag 2.0  # custom image
 hal vault create --edition ent            # use Vault Enterprise image (still dev mode)
+hal vault create --edition ent-hsm --mode prod  # Enterprise HSM build + local SoftHSM2 runtime
 hal vault create --join-consul            # tether to the local Consul instance
 hal vault update                          # reconcile config changes
 hal vault status                          # health + seal/init state
@@ -144,6 +145,8 @@ hal vault create --mode prod              # real `server -config`, integrated Ra
   `~/.hal/vault-prod/init.json` (mode `0600`)** — retrieve them anytime with
   `hal vault status` or `hal creds status`.
 - `--mode prod` implies `--edition ent`; requires a valid `VAULT_LICENSE`.
+- `--edition ent-hsm --mode prod` builds `hal-vault-softhsm:latest`, boots the
+  Enterprise HSM binary with PKCS#11 support, and makes HSM-backed PKI the default.
 - `hal vault delete` removes the container, Raft volume, **and** `~/.hal/vault-prod/`.
 
 **Feature subcommands** — `enable` / `update` / `disable`
@@ -151,7 +154,7 @@ hal vault create --mode prod              # real `server -config`, integrated Ra
 ```bash
 # OIDC auth method (deploys Authentik as the IdP)
 hal vault oidc enable
-hal vault oidc enable --authentik-tag 2026.5.6  # pin the image tag
+hal vault oidc enable --authentik-tag 2026.8.3  # pin the image tag
 hal vault oidc enable --scim                     # also configure SCIM (Vault Enterprise only)
 hal vault oidc update
 hal vault oidc disable
@@ -190,9 +193,11 @@ hal vault k8s update
 hal vault k8s disable
 
 # PKI secrets engine (Root CA + Intermediate CA)
-hal vault pki enable
 hal vault pki enable --k8s              # also deploy cert-manager + web demo on KinD
 hal vault pki enable --acme             # also deploy Caddy ACME demo on KinD
+hal vault pki enable                    # auto-selects SoftHSM2 managed keys on an ent-hsm deployment
+hal vault pki enable --hsm              # assert that HSM-backed CAs are available
+hal vault pki enable --no-hsm           # force software-backed CAs on an HSM deployment
 hal vault pki update --k8s
 hal vault pki update --acme
 hal vault pki update --acme --acme-cert-ttl 2m  # shorten cert TTL for live renewal demo
@@ -201,7 +206,19 @@ hal vault pki disable
 # Audit logging (file-based by default)
 hal vault audit enable
 hal vault audit enable --loki    # also wire into the Promtail/Loki shared volume
+
+# Agentic IAM lab (Vault Enterprise 2.1.0+ licensed with Agentic IAM, ADR 0004):
+# a demo agent acts for personas logged in to a chat through Authentik; the IdP and Vault decide
+hal vault agentic-iam enable            # refuses, changing nothing, if a prerequisite is missing
+hal vault agentic-iam enable --dry-run  # prerequisite verdict + plan
+hal vault agentic-iam update            # re-apply and recreate both containers (new image)
+hal vault agentic-iam disable           # keeps shared Authentik/MariaDB for other labs, keeps the image
 ```
+
+The Agentic IAM chat is at http://agentic.localhost:8092. The personas are
+`alice`, `bob` and `charlie`, all with the password `password`. See
+[docs/commands/vault-agentic-iam.md](docs/commands/vault-agentic-iam.md) for
+the six scenario cases.
 
 **Observability** (opt-in, CRUD lifecycle)
 
@@ -486,6 +503,8 @@ hal mcp delete    # remove MCP config, managed binary, and stale PID state
 | `hal_plan_deploy` | Intent-driven deploy/setup planning |
 | `hal_plan_verify` | Deterministic post-action verification command plan |
 
+Read-only `get_*` status tools cover most products and features as well (for example `get_vault_status`, `get_vault_database_status`, `get_vault_agentic_iam_status`). `get_capabilities` lists the full surface.
+
 ---
 
 ### HAL Plus (`hal plus`)
@@ -537,6 +556,8 @@ HAL uses environment variables and Docker/Podman networking — there is no conf
 | Prometheus | http://prometheus.localhost:9090 |
 | Loki | http://loki.localhost:3100/ready |
 | Vault K8s demo | http://web.localhost:8088 |
+| Authentik (shared IdP) | http://authentik.localhost:9100 |
+| Vault Agentic IAM chat | http://agentic.localhost:8092 |
 
 ---
 
@@ -549,6 +570,7 @@ HAL uses environment variables and Docker/Podman networking — there is no conf
 - **`hal delete`** (global teardown) removes all HAL-managed containers, volumes, VMs, KinD nodes, and the `hal-net` Docker network. There is a confirmation prompt but the action is not reversible. If `hal-net` cannot be removed (non-HAL containers still attached), the command exits with an error listing the blockers. KinD discovery does not require a working `kind get clusters` (Podman 6 + older kind CLIs).
 - **TFE requires a valid license.** `hal terraform create` expects a Terraform Enterprise license to be in place. The stack will start but TFE itself will not activate without one.
 - **Vault Enterprise prod mode requires a license.** `hal vault create --mode prod` needs `VAULT_LICENSE` (or `VAULT_LICENSE_PATH`) and will not boot without one. It serves HTTPS with a self-signed cert — accept the browser warning, or set `VAULT_CACERT=~/.hal/vault-prod/certs/cert.pem` for the CLI. The saved unseal key + root token in `~/.hal/vault-prod/init.json` are the **only** copy; losing that file leaves a sealed, unrecoverable Vault. Feature integrations that embed URLs into Vault (OIDC callbacks, PKI AIA/CRL, the OS plugin register) are currently validated against **dev mode**; enabling them against a prod (TLS) instance may need manual URL adjustment.
+- **`hal vault agentic-iam` needs a license with the Agentic IAM terms.** A valid Vault 2.1.x Enterprise license can lack them; Vault then answers `Feature Not Enabled` and `enable` refuses, changing nothing. It also needs Authentik 2026.8.0+: HAL never restarts a shared Authentik, so an older running one means disabling the labs that use it first (the refusal lists them). The first `enable` builds a local Python image, which needs Docker Hub and PyPI.
 - **CSI mode for `hal vault k8s`** requires a Vault Enterprise binary. HAL will detect the edition at runtime and fall back to native mode automatically.
 - **Image and tag overrides are opt-in.** Every `create` / `enable` command exposes `--<component>-image` (registry + name) and `--<component>-tag` (version) flags independently. Use them to pull from a private mirror, pin a specific version, or test a custom build.
 - **`--network-subnet`** (global flag) pins the subnet when `hal-net` is created for the first time (e.g. `hal --network-subnet 10.89.3.0/24 tf create --enable`). Useful on Rancher Desktop or any engine that assigns an unexpected default subnet that conflicts with static proxy IPs.
@@ -576,3 +598,14 @@ Before changing command behavior or UX patterns, read these files in order:
 
 Keep all three in sync when adding or renaming commands.
 
+### Post-quantum PKI lab
+
+Use `hal vault pki enable --pqc` for Vault-issued ML-DSA-65 mutual TLS with
+standalone MLKEM768 key exchange between two pods, behind conventional browser HTTPS. Requires
+an existing licensed Vault Enterprise 2.2.0+ and a compatible stock NGINX/OpenSSL image.
+`hal vault pki status --pqc`, `update --pqc` and `disable --pqc` manage
+the isolated lab. `hal status` and `hal vault status` also report PQC deployment
+readiness. Workload certificates expire after ten seconds and rotate
+automatically about every five seconds. Click **Test connection** again to see a
+new frontend certificate serial and expiry. Use `--pqc-cert-ttl` to change the TTL.
+See [setup, browser trust, tests and runtime findings](docs/commands/vault-pki.md).

@@ -17,7 +17,7 @@ Handle hal vault status requests with a stable lifecycle pattern.
 
 - Summarize service health and configured integrations.
 - Recommend the next lifecycle command based on state.
-- Include scenario-specific guidance (JWT/OIDC/K8s/LDAP/MariaDB) when one integration is degraded.
+- Include scenario-specific guidance (JWT/OIDC/K8s/LDAP/MariaDB/Agentic IAM) when one integration is degraded. For Agentic IAM, `hal vault agentic-iam` shows the lab's own status, prerequisites included.
 
 ## Edge Cases
 

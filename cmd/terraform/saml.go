@@ -9,6 +9,7 @@ import (
 
 	"hal/internal/global"
 	"hal/internal/integrations"
+	"hal/internal/labsecrets"
 
 	"github.com/spf13/cobra"
 )
@@ -523,10 +524,10 @@ func provisionAuthentikForTFE(c *integrations.AuthentikClient, target string) (i
 	}
 
 	// Users
-	if err := c.CreateUser("alice", "Alice Admin", "alice@hal.local", "password", []string{adminsGroupPK}); err != nil {
+	if err := c.CreateUser("alice", "Alice Admin", "alice@hal.local", labsecrets.AuthentikPersonaPassword, []string{adminsGroupPK}); err != nil {
 		return 0, fmt.Errorf("create user alice: %w", err)
 	}
-	if err := c.CreateUser("bob", "Bob Builder", "bob@hal.local", "password", []string{devsGroupPK}); err != nil {
+	if err := c.CreateUser("bob", "Bob Builder", "bob@hal.local", labsecrets.AuthentikPersonaPassword, []string{devsGroupPK}); err != nil {
 		return 0, fmt.Errorf("create user bob: %w", err)
 	}
 
@@ -767,7 +768,7 @@ func printTFESAMLAuthentikCredentials(secrets *integrations.AuthentikSecrets) {
 	fmt.Println()
 	fmt.Println("  🔑 Authentik — first boot credentials")
 	fmt.Printf("     Admin UI  : %s/if/admin/\n", integrations.AuthentikAdminURL())
-	fmt.Println("     Username  : akadmin")
+	fmt.Printf("     Username  : %s\n", labsecrets.AuthentikAdminUsername)
 	fmt.Printf("     Password  : %s\n", secrets.AdminPassword)
 	fmt.Printf("     Saved at  : %s\n", integrations.AuthentikEnvPath())
 	fmt.Println()
@@ -784,11 +785,11 @@ func printTFESAMLSuccess(secrets *integrations.AuthentikSecrets, target string) 
 	fmt.Printf("  TFE UI     : %s  (click 'SSO' to log in)\n", baseURL)
 	fmt.Println()
 	fmt.Println("  Demo users:")
-	fmt.Println("    alice / password  →  group: admins  (TFE team: admins)")
-	fmt.Println("    bob   / password  →  group: devs    (TFE team: devs)")
+	fmt.Printf("    alice / %s  →  group: admins  (TFE team: admins)\n", labsecrets.AuthentikPersonaPassword)
+	fmt.Printf("    bob   / %s  →  group: devs    (TFE team: devs)\n", labsecrets.AuthentikPersonaPassword)
 	fmt.Println()
 	fmt.Printf("  Authentik admin  : %s/if/admin/\n", integrations.AuthentikAdminURL())
-	fmt.Printf("  Authentik login  : akadmin / %s\n", secrets.AdminPassword)
+	fmt.Printf("  Authentik login  : %s / %s\n", labsecrets.AuthentikAdminUsername, secrets.AdminPassword)
 	fmt.Println()
 	if tfeSAMLWithSCIM {
 		fmt.Println("  SCIM sync        : Authentik → TFE  (teams + users provisioned via outbound SCIM)")
