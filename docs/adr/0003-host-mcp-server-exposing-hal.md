@@ -1,9 +1,10 @@
 # 3. The MCP server is the host `hal` binary, and it exposes `hal` itself
 
-- **Status:** Proposed — **draft**, to be revised after the HAL Plus discussion
-  (several decisions below depend on where HAL Plus runs; see
-  [Open questions](#open-questions))
-- **Date:** 2026-10-02
+- **Status:** Accepted, 2026-11-03. Revised after the HAL Plus discussion, which is
+  recorded in ADR 0006 (HAL Plus lessons). Where HAL Plus runs, the fate of the
+  image and the client obligations are now settled; see
+  [Open questions](#open-questions) for what remains.
+- **Date:** 2026-10-02, revised 2026-11-03
 - **Branch for implementation:** one branch per phase — see
   [Implementation plan](#implementation-plan)
 - **Supersedes:** the containerised `hal-mcp` server and its 39-tool surface, as
@@ -56,10 +57,13 @@ Measured against that, the current server fails on every axis:
    - The docs are stale. The README lists removed tools. `docs/commands/mcp-serve.md`
      says stdio is the only transport. `docs/cli-lifecycle-model.md` lists
      `hal mcp update` and `hal mcp policy`, which do not exist.
-4. **It is too heavy for the model it serves.** HAL Plus runs `gemma4:e4b` with a
+4. **It is too heavy for the model it serves.** HAL Plus ran `gemma4:e4b` with a
    32k context. 39 tool definitions take a large part of that window, and small
    models choose poorly among that many tools. Every new `hal` feature also needs a
-   new hand-written handler.
+   new hand-written handler. ADR 0006 has since moved HAL Plus to a hosted model,
+   which removes the context pressure there. The argument for two tools still holds
+   for the other clients, local models included, and for the per-tool approval
+   described in decision 4.
 5. **The protocol is hand-rolled.** There is no SDK, no sessions, no SSE, and no
    tests for the stdio path.
 6. **The stdio client runs a stale copy of `hal`.** `hal mcp create` copies `hal`
@@ -78,16 +82,16 @@ server **is the host `hal` binary**, and its tools **are `hal` itself**.
 |---|---|
 | 1 | **The server is always the host `hal` binary** (`hal mcp serve`). There is no MCP container. |
 | 2 | **Built on the official Go SDK**, `github.com/modelcontextprotocol/go-sdk`. |
-| 3 | **The catalog is the cobra command tree**, read in-process. MCP metadata lives in cobra annotations. |
+| 3 | **The catalog is the cobra command tree**, read in-process. MCP metadata lives in cobra annotations. The knowledge is `docs/topics`, served as MCP resources. |
 | 4 | **Two tools, `hal_read` and `hal_run`, both taking argv**, plus server `instructions`. |
 | 5 | **Only `hal` can be executed** — guaranteed by construction, not by a filter list. |
 | 6 | **Every `hal` command is reachable, including full teardown.** Safety comes from the *lab invariant*, which this ADR makes true. |
 | 7 | **Host-path flags are refused** through MCP. |
-| 8 | **Logs become a `hal` command**: `hal <product> logs`. |
-| 9 | **One confirmation gate**: MCP elicitation, with a two-step fallback. |
+| 8 | **Observation gaps become `hal` commands**: `hal <product> logs` and `hal status --json`. |
+| 9 | **One confirmation gate, owned by the server**: MCP elicitation, asked for every `hal_run` over HTTP and for guarded commands over stdio, with a two-step fallback for HTTP clients that cannot elicit. |
 | 10 | **Execution semantics**: synchronous with progress, SIGINT on cancel, one `hal_run` at a time per server, shaped output. |
 | 11 | **Two transports, two lifecycles**: stdio is owned by the client; the HTTP daemon is owned by `hal mcp create/status/delete`, and `hal plus` drives it. |
-| 12 | **The HTTP daemon is protected**: loopback bind, `Origin` check, bearer token. |
+| 12 | **The HTTP daemon is protected**: loopback bind, `Origin` check, a stable bearer token. |
 | 13 | **The guarantees are enforced in CI** by a test that walks the cobra tree. |
 
 ### 1. The server is the host `hal` binary
@@ -133,8 +137,10 @@ flags, subcommands, `Deprecated` and `Hidden`. Drift is impossible by constructi
 - `validate_command` disappears as a tool. "Is this command valid?" now means "does
   cobra accept it?", and it is checked inside `hal_read`/`hal_run` before anything
   is spawned.
-- `SKILL.md` files remain the **knowledge** (procedures, the *why*). They no longer
-  define **which commands exist**.
+- The **knowledge** (procedures, the *why*) is `docs/topics`, defined by ADR 0006 and
+  embedded in the binary. The server declares the `resources` capability and serves
+  one resource per topic, at `hal://topic/<id>`. Topics never define **which commands
+  exist**: that stays the cobra tree. `SKILL.md` files no longer play this role.
 
 MCP-specific metadata lives in cobra `Annotations`, which nothing uses today. On
 flags, it lives in pflag annotations (`Flags().SetAnnotation`).
@@ -142,7 +148,11 @@ flags, it lives in pflag annotations (`Flags().SetAnnotation`).
 | Annotation | On | Meaning | When absent |
 |---|---|---|---|
 | `hal.mcp/readonly: "true"` | command | allowed through `hal_read` | treated as an action (`hal_run` only) — **fails safe**: one confirmation too many |
-| `hal.mcp/ends-http-session: "true"` | command | running it over HTTP ends the current session (decision 9) | no session warning |
+| `hal.mcp/ends-http-session: "true"` | command | running it over HTTP ends the current session (decision 9); HAL Plus never offers it as an action | no session warning |
+
+Annotated today as read-only: `hal status`, `hal status --json` (decision 8),
+`hal <product> logs` (decision 8), and `hal creds status`. Annotated as ending the
+HTTP session: `hal plus delete`, `hal mcp delete`, `hal delete`, `hal daisy`.
 | `hal.mcp/hostpath: "true" \| "false"` | flag | `"true"`: the value is a host path, so `hal_run` refuses the flag (decision 7) | **must** be set when the flag name looks like a path — enforced by CI (decision 13) |
 
 ### 4. Two tools: `hal_read` and `hal_run`
@@ -233,7 +243,9 @@ runs:
 | `--local-directory` | `hal terraform api-workflow` | **mounts any host directory** into a helper container |
 | `--prom-config-path`, `--scrape-config-path` | `hal obs create` | reads a host file into the lab |
 | `--oracle-plugin-path` | `hal vault database` | reads a host file into the lab |
-| `--model-config` | `hal plus create` | reads a host file |
+
+`hal plus create --model-config` is not in this table: ADR 0006 replaces it with
+`--provider`, which takes no path.
 
 These flags are annotated `hal.mcp/hostpath: "true"`, and `hal_run` refuses any argv
 that uses one. A human can still use them from a terminal.
@@ -242,54 +254,96 @@ Some flags have path-like names but refer to paths **inside** containers or Vaul
 and are annotated `"false"`: `--metrics-path`, `--aap-ca-cert-file`, `--path`
 (Vault audit), `--root-mount`, `--int-mount`, `--project-path`, `--http-path`.
 
-### 8. Logs become a `hal` command
+### 8. Observation gaps become `hal` commands
 
-`hal_diagnostics` runs `podman logs` today. Decision 5 forbids that. No `hal … logs`
-command exists, so add `hal <product> logs [--tail N]`, annotated read-only. The
-rule then has no exception, observation keeps its most useful signal, and humans get
-the command too.
+**Logs.** `hal_diagnostics` runs `podman logs` today. Decision 5 forbids that. No
+`hal … logs` command exists, so add `hal <product> logs [--tail N]`, annotated
+read-only. The rule then has no exception, observation keeps its most useful signal,
+and humans get the command too.
 
-### 9. One confirmation gate
+**Status as data.** `hal status --json` prints the lab snapshot as JSON, annotated
+read-only. It does not exist today: the only `json` in `cmd/status.go` is a
+`-format=json` passed to Terraform. It is built on `BuildStatusSnapshot`
+(`internal/global/status_snapshot.go`), which already produces the shape HAL Plus
+reads for its status panel. This replaces the `hal-health` sidecar and its frozen
+snapshot (see Consequences): the panel calls `hal_read ["status","--json"]` and
+always sees the live lab.
 
-`hal_run` passes a command through a single gate when either of these is true:
+### 9. One confirmation gate, owned by the server
 
-- **the command defines `--auto-approve`.** This is detected from cobra, so there is
-  no annotation to forget. Today: `hal delete`, `hal terraform agent`,
-  `hal terraform vcs-workflow`, `hal terraform api-workflow`.
-- **the command is annotated `hal.mcp/ends-http-session` and the transport is
-  HTTP.** Today: `hal plus delete`, `hal mcp delete`, `hal delete`, `hal daisy`. Over
-  stdio the client owns the server process, which none of these commands affect, so
-  no warning is given.
+The server is the only guard. A client bug, or a model that misbehaves, must not be
+able to start a command that no human answered for. The gate depends on the
+transport, because the two transports have different clients.
 
-The gate works like this:
+**What triggers it.**
+
+| Transport | `hal_run` goes through the gate when… |
+|---|---|
+| **HTTP** | **always**. Every `hal_run` asks, whatever the command. |
+| **stdio** | the command defines `--auto-approve` (detected from cobra, so there is no annotation to forget; today `hal delete`, `hal terraform agent`, `hal terraform vcs-workflow`, `hal terraform api-workflow`). |
+
+The `ends-http-session` annotation adds the session warning to the question, but does
+not trigger the gate by itself: over stdio the client owns the server process, which
+none of these commands affect, and over HTTP every `hal_run` is asked anyway.
+
+Over stdio, the client already approves `hal_run` per tool (decision 4), so asking
+again for every command would only add noise. Over HTTP the client may be a chat that
+has no per-tool approval, so the server asks itself.
+
+**What the gate does.**
 
 1. **Elicitation**, if the client declares the capability. The server asks the user
-   directly, without going through the model. The message reuses the command's
-   original `[y/N]` text (for example "This will destroy ALL HAL containers,
-   clusters, and VMs."), plus "…and it will also end this session." when relevant.
-   - If the user accepts, **the server appends `--auto-approve`** and runs the
-     command. Elicitation is what lets the server know a human said yes.
-   - If the user declines, the tool returns "Cancelled by the user."
-2. **Two-step fallback**, if the client cannot elicit. The first call returns the
-   warning instead of running the command, with an instruction to relay it to the
-   user and call again with `confirmed: true`. This reaches the user in most cases,
-   but a careless model can skip the user and call again straight away. That risk is
+   directly, without going through the model, with an empty `requestedSchema`: the
+   answer is accept, decline or cancel, and nothing else.
+   - The message is written by the server and contains the **exact argv** that will
+     run.
+   - For a command that defines `--auto-approve`, it adds the command's original
+     `[y/N]` text (for example "This will destroy ALL HAL containers, clusters, and
+     VMs.").
+   - For a command annotated `ends-http-session`, over HTTP, it adds a warning that
+     the command ends this session.
+   - If the user accepts, the server runs the command. For a command that defines
+     `--auto-approve`, **the server appends it**, since elicitation is what tells the
+     server that a human said yes.
+   - If the user declines or cancels, the tool returns "Cancelled by the user." and
+     nothing is spawned.
+   - **If nobody answers within 5 minutes**, the server cancels the question and
+     nothing is spawned.
+2. **Two-step fallback**, only when the gate applies and **the client does not declare
+   elicitation**. Over HTTP that is any client without the capability, such as the MCP
+   Inspector; HAL Plus always declares it, so it never uses the fallback. Over stdio
+   it is the guarded commands only, as before. The first call returns the warning
+   instead of running the command, with an instruction to relay it to the user and
+   call again with `confirmed: true`. This reaches the user in most cases, but a
+   careless model can skip the user and call again straight away. That risk is
    accepted, because of decision 6.
 3. **`hal_run` rejects `--auto-approve` in the model's argv**, otherwise the gate
-   would be trivial to bypass.
+   would be trivial to bypass. For the same reason, `confirmed` is honoured only when
+   the client has not declared elicitation: a client that declared it cannot skip the
+   question by sending `confirmed: true`.
+
+**Execution has no timeout from the server.** Once approved, a command runs as long as
+it needs (decision 10). Only the question is bounded.
 
 **Accepted limitation.** The three `hal terraform` commands accept `--auto-approve`
-but only prompt on `disable`. Their `enable` path is therefore gated too, which costs
-one unnecessary confirmation. This can be refined with an annotation at
-implementation time if it proves annoying.
+but only prompt on `disable`. Over stdio, their `enable` path is therefore gated too,
+which costs one unnecessary confirmation. This can be refined with an annotation at
+implementation time if it proves annoying. Over HTTP it makes no difference, since
+every `hal_run` asks.
 
 ### 10. Execution semantics
 
 - **Synchronous, with progress.** When the client sends a `progressToken`, the
-  server sends `notifications/progress` with the last lines of output. Long
-  commands, such as `hal terraform create`, depend on the client's tool timeout: it
-  is long in the HAL Plus client, and `hal mcp create` prints the
-  `MCP_TOOL_TIMEOUT` hint for Claude Code.
+  server sends `notifications/progress` with the last lines of output, which also
+  keeps the connection open. Long commands, such as `hal terraform create`, depend
+  on the client's tool timeout: HAL Plus imposes none on execution, and
+  `hal mcp create` prints the `MCP_TOOL_TIMEOUT` hint for Claude Code. Only the
+  confirmation question has a limit (decision 9).
+- **A daemon restart interrupts the run.** `hal mcp create` restarts the HTTP daemon
+  when its version differs from the binary's (decision 11). A command running at that
+  moment is cut. The client sees its session answer 404, initializes again (the
+  token is stable, decision 12), and tells the user the run was interrupted and to
+  check the status.
 - **Cancellation sends SIGINT** to the child `hal`. It has exactly the meaning of a
   Ctrl-C in a terminal.
 - **One `hal_run` at a time per server process.** `hal_read` calls run freely. A
@@ -310,17 +364,35 @@ stdio — owned by the client
 
 HTTP — owned by hal mcp, driven by hal plus
   hal mcp create   → starts `hal mcp serve --transport streamable-http` detached on 127.0.0.1:<port>
-                     writes PID and token under ~/.hal/mcp/
+                     writes PID under ~/.hal/mcp/; creates the token once (decision 12)
                      restarts the daemon if its version differs from this binary's
-                     prints client setup lines: stdio for Claude Code / VS Code / Claude Desktop,
-                     and the HTTP URL with its token
+                     prints the path of the token file, and the client setup lines:
+                     stdio for Claude Code / VS Code / Claude Desktop, and the HTTP URL
+                     with `Authorization: Bearer $(cat ~/.hal/mcp/token)`
   hal mcp status   → daemon running? version? /healthz
   hal mcp delete   → stops the daemon; removes PID, token and legacy artifacts
                      (~/.hal/bin/hal-mcp, ~/.hal/mcp/hal-mcp.json)
-  hal plus create  → hal mcp create (no-op if already running), then starts hal-plus with URL and token
-  hal plus delete  → removes hal-plus and hal-qdrant, then hal mcp delete
+  hal plus create  → hal mcp create (no-op if already running), then starts hal-plus,
+                     injecting the token as HAL_MCP_TOKEN
+  hal plus delete  → removes hal-plus and the leftovers of the old layout (hal-mcp,
+                     hal-qdrant, hal-health), then calls hal mcp delete
   hal delete       → stops the daemon too, via the existing MCP cleanup in teardown
 ```
+
+**What the commands ask, and what they print.**
+
+- `hal plus delete` and `hal mcp delete` **do not prompt** in the terminal. They
+  stop the daemon and print afterwards what they stopped, with a warning that any open
+  chat or HTTP MCP client is now disconnected.
+- `hal delete` keeps its existing `[y/N]` prompt, whose text now also says that
+  HAL Plus and the MCP server will be stopped.
+- `hal daisy`, the hidden command, has no prompt, as before.
+
+**Commands that end the HTTP session.** `hal plus delete`, `hal mcp delete`, `hal delete`
+and `hal daisy` are annotated `hal.mcp/ends-http-session`. HAL Plus never runs them,
+and its client refuses them as a second line of defence. Its chat shows the command
+to the user, with the warning that the session will be lost, and no button. The test
+in decision 13 checks that no topic lists them in its `actions`.
 
 - `hal mcp` follows the usual `create/status/delete` lifecycle
   (`docs/cli-lifecycle-model.md`). The MCP server can also be tested without HAL
@@ -343,10 +415,21 @@ The HTTP daemon listens on a port instead:
 | another OS user on the machine | loopback | bearer token |
 | the user's own processes | — | nothing needed: they can already run `hal` |
 
-`hal mcp create` generates the token, writes it to `~/.hal/mcp/token` with mode
-`0600`, and `hal plus create` injects it into `hal-plus`. Containers cannot read
-host files, so they cannot get the token. OAuth 2.1, as the MCP spec describes it,
-is disproportionate for a single-user local tool.
+`hal mcp create` generates the token **once**, writes it to `~/.hal/mcp/token` with
+mode `0600`, and reuses it when the daemon restarts after a version change. Only
+`hal mcp delete` and `hal delete` remove it. `hal plus create` injects it into
+`hal-plus` as `HAL_MCP_TOKEN`. Containers cannot read host files, so they cannot get
+the token on their own. OAuth 2.1, as the MCP spec describes it, is disproportionate
+for a single-user local tool.
+
+The token is **never printed**, not even in a dry run. `hal mcp create` shows the
+path of the file, and the client configuration refers to it, as in
+`Authorization: Bearer $(cat ~/.hal/mcp/token)`.
+
+A stable token means a restart does not invalidate a client's configuration. The
+cost is that a leaked token stays valid until `hal mcp delete` or `hal delete` removes
+it. That is accepted for a single-user local lab, where the attacker would already
+need a process on the user's machine.
 
 ### 13. Enforced in CI
 
@@ -385,8 +468,8 @@ neither from MCP.
 - The binary copy in `~/.hal/bin/hal-mcp`.
 - The `hal-mcp` container.
 
-The fate of the image, `HAL_MCP_CONTRACT.json` and the response envelope is still
-open — see below.
+The image, `HAL_MCP_CONTRACT.json` and the response envelope are removed with the
+legacy server, in phase 4 (see Consequences).
 
 **HAL Plus breaks unless both repos migrate together.** It prefetches
 `hal_status_baseline`, `get_capabilities`, `hal_policy_profile` and
@@ -394,15 +477,29 @@ open — see below.
 server behind the streamable-HTTP path, so HAL Plus is untouched until phase 4.
 Phase 4 then follows the cross-repo rule (`LLM_CONTEXT.md:277`).
 
-**The HAL Plus client gets new obligations**:
-- implement elicitation, or rely on the weaker two-step fallback;
-- send the bearer token;
-- use a long tool timeout;
-- relay progress notifications.
+**The HAL Plus client gets new obligations**, all listed in ADR 0006:
+- implement elicitation, and do not use the two-step fallback: HAL Plus always
+  declares the capability, so the server asks the user for every `hal_run`;
+- send the bearer token from `HAL_MCP_TOKEN`;
+- use a long tool timeout, and relay progress notifications;
+- show "interrupted, check the status" when the daemon restarts during a run;
+- refuse the four `ends-http-session` commands, even if a topic lists them, and show
+  them as text only.
 
 **The LLM can destroy the whole lab.** This is accepted by design and bounded by the
-lab invariant. Running `hal delete` from the HAL Plus chat ends the chat session,
-after a warning.
+lab invariant. The four commands that end the HTTP session are not reachable from
+HAL Plus at all: the chat displays them and the user runs them from a terminal. The
+server itself refuses none of them. Over stdio, a Claude Code user who approves
+`hal_run ["delete"]` gets the `[y/N]` text of `hal delete` and nothing about a session,
+since none exists to lose. Over HTTP, any other client gets the session-ending warning
+in the question.
+
+**The `hal-health` sidecar and the `hal-mcp` image go away.** `hal-health` serves a
+snapshot frozen at the last lifecycle command. Its replacement is
+`hal status --json` (decision 8 of this ADR, phase 2). The removal covers the
+container, `hal health`, `RefreshHalHealth` and `RemoveHalHealth` (39 call sites in
+`cmd/`), the `ghcr.io/hashimiche/hal-mcp` image and its publishing workflow, and
+`HAL_MCP_CONTRACT.json` with the response envelope.
 
 **Lab credentials reach the selected model provider**, cloud included. This is
 accepted, because they are disposable.
@@ -443,14 +540,28 @@ Make the lab invariant true (decision 6). It is a prerequisite for `hal_run`.
 ### Phase 2 — `feature/hal-logs`
 
 - `hal <product> logs [--tail N]` for each product, annotated `hal.mcp/readonly`.
+- `hal status --json`, annotated `hal.mcp/readonly`, built on `BuildStatusSnapshot`
+  (decision 8).
 
 ### Phase 3 — `feature/mcp-host-server`
 
 The new server over **stdio**. The legacy server stays on the streamable-HTTP path,
-so HAL Plus is unchanged.
+so HAL Plus is unchanged until phase 4. The new server's HTTP transport, and the HTTP
+gate of decision 9, come in phase 4.
+
+Starts with a **spike** on the Go SDK, before any other work: elicitation during a
+`tools/call`, an empty `requestedSchema`, progress notifications, and the 5-minute
+question timeout. The spike tests both transports. Over **streamable HTTP**, it must
+show that the elicitation request travels on the SSE stream of the `tools/call` in
+progress, and that the answer comes back and unblocks the call. This is the highest
+risk of the whole redesign, because the HTTP gate of decision 9 depends on it. The
+spike is throwaway: it may exercise HTTP without shipping any of it, since the HTTP
+transport ships in phase 4. Its findings go into this phase's PR description.
 
 - Official Go SDK; stdio transport.
 - `hal_read`, `hal_run` and generated `instructions` (decisions 3–5).
+- Topics as resources: the `resources` capability, one resource per topic at
+  `hal://topic/<id>`, served from the embedded `docs/topics` (decision 3).
 - The three annotations on existing commands and flags (decisions 3 and 7).
 - The confirmation gate (decision 9) and the execution semantics (decision 10).
 - `--read-only`.
@@ -458,14 +569,23 @@ so HAL Plus is unchanged.
 - `hal mcp create` prints client setup lines; the binary copy is removed.
 - Docs for the stdio path.
 
-### Phase 4 — after the HAL Plus ADR
+This phase is L5. It runs in a single session on a frontier model, with no other L5
+task in parallel.
 
-- The HTTP daemon on the host, with its token and the `hal mcp create/status/delete`
+### Phase 4 — with `hal plus create --provider` (ADR 0006, T05)
+
+Merged with T05, because both touch `cmd/plus/create.go` and both are the same work
+on the HTTP daemon and the token.
+
+- The new server over streamable HTTP, with the HTTP gate of decision 9 (elicitation
+  for every `hal_run`) and the `Origin` middleware.
+- The HTTP daemon on the host, with its stable token and the `hal mcp create/status/delete`
   lifecycle (decisions 11 and 12).
-- The `hal plus create/delete` wiring.
-- The HAL Plus client migration, coordinated in `hal-plus`.
-- Removal of the legacy server and of the `hal-mcp` container.
-- The decision on the image and the contract.
+- The `hal plus create/delete` wiring, and `hal plus create --provider` (ADR 0006).
+- The HAL Plus client migration, coordinated in `hal-plus` (ADR 0006, T07 and T08).
+- Removal of the legacy server, of the `hal-mcp` container, of `hal-health` and
+  `hal health`, and of the image and its publishing (ADR 0006, T11).
+- `HAL_MCP_CONTRACT.json` and the response envelope go with the legacy server.
 
 ---
 
@@ -494,6 +614,18 @@ claude mcp add hal -- hal mcp serve
 # cancel during `hal_run ["terraform","create"]` → child receives SIGINT
 # two concurrent hal_run calls                 → second waits for the first
 # MCP Inspector over stdio                     → handshake and both tools work
+```
+
+HTTP, from phase 4. The gate itself is also covered by Go tests, which need no Docker:
+
+```bash
+# hal_run over HTTP, any command                → elicitation always sent, even for `status`
+# hal_run over HTTP, user declines              → nothing spawned, "Cancelled by the user."
+# hal_run over HTTP, no answer for 5 minutes    → question cancelled, nothing spawned
+# hal_run over HTTP, client declares no elicitation → confirmed: true is honoured only then
+# hal_run ["plus","delete"] over HTTP           → elicitation carries the session warning
+# the stable token appears in no output         → grep the stdout and stderr of
+#                                                 hal mcp create, hal mcp status and hal plus create
 ```
 
 ---
@@ -562,12 +694,5 @@ claude mcp add hal -- hal mcp serve
    `env` block of the printed client config. Rejected so far: reloading a login shell
    at startup (slow, depends on rc files), and a CLI-wide `~/.hal/env` file (out of
    scope).
-2. **Deferred to the HAL Plus discussion:**
-   - **Where HAL Plus runs.** If it moves to the host, it can talk to the server over
-     stdio, and decisions 11 and 12 shrink to almost nothing.
-   - **The fate of `ghcr.io/hashimiche/hal-mcp`.** `hal-health` reuses that image.
-   - **Structured outputs.** Whether HAL Plus still needs the contract envelope, or
-     JSON output from `hal` itself.
-   - **The HAL Plus client obligations** listed under Consequences.
-3. **The HTTP daemon port.** Fixed by default and configurable. Not `8080`, which is
+2. **The HTTP daemon port.** Fixed by default and configurable. Not `8080`, which is
    too common.
