@@ -30,3 +30,16 @@
 ## Sources
 - Namespace and lifecycle commands: `cmd/mcp/mcp.go`
 - Advanced aliases/intent metadata: `cmd/mcp/advanced.go`
+
+The existing `get_vault_pki_status` tool also returns `data.pqc_execution` from
+`hal vault pki status --pqc`, alongside conventional `data.execution`. Its input
+and response envelope are unchanged. This reports workload readiness, not
+cryptographic proof; obtain verified-connection evidence from the running lab's
+HTTPS `/test` endpoint. See [PQC lab](vault-pki.md).
+
+The PQC payload is additive: clients should tolerate its absence with older HAL
+versions and preserve conventional `data.execution` handling. The two executions
+have separate checks; the top-level result retains conventional PKI execution
+semantics. No input or envelope version change is required. HAL Plus consumers
+should ground PQC answers in `pqc_execution` when present and never infer mutual
+authentication from readiness.

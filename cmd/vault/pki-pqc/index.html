@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HAL · Post-quantum PKI</title>
+<style>
+:root{
+  color-scheme:light;
+  font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
+  --background:#fff;--layer:#f4f4f4;
+  --text:#161616;--text-secondary:#525252;--border:#e0e0e0;
+  --blue:#0f62fe;--blue-hover:#0043ce;--blue-soft:#edf5ff;
+  --green:#198038;--green-soft:#defbe6;--purple:#8a3ffc;
+  background:var(--background);color:var(--text);
+}
+*{box-sizing:border-box}
+body{max-width:1200px;margin:0 auto;padding:48px 32px 80px}
+header{max-width:900px;padding-bottom:32px;border-bottom:1px solid var(--border)}
+small,.eyebrow{color:var(--text-secondary);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+h1{font-size:clamp(36px,5vw,54px);font-weight:400;letter-spacing:-.025em;line-height:1.12;margin:20px 0 16px}
+h2{font-size:24px;font-weight:400;line-height:1.3;margin:0 0 16px}
+p{color:var(--text-secondary);font-size:14px;line-height:1.6;margin:0 0 16px}
+header p{font-size:16px;max-width:720px;margin-bottom:0}
+button{font:inherit;cursor:pointer}
+button:focus-visible,summary:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+.lifetime{background:var(--layer);border-left:4px solid var(--blue);padding:24px 32px;margin:40px 0 0}
+.lifetime p{max-width:960px;overflow-wrap:anywhere}
+.lifetime #rotation-result{margin-bottom:16px}
+progress{display:block;width:min(240px,100%);height:8px;accent-color:var(--blue)}
+.toolbar{display:flex;align-items:center;gap:24px;flex-wrap:wrap;margin:32px 0}
+#test{min-height:48px;min-width:168px;background:var(--blue);color:#fff;border:0;border-radius:0;padding:12px 24px;text-align:left;font-size:14px;font-weight:600}
+#test:hover{background:var(--blue-hover)}#test:disabled{opacity:.6;cursor:wait}
+#status{font-size:14px;color:var(--text-secondary)}#status.badge{color:var(--green)}#status.error{color:#da1e28}
+.canvas{border:1px solid var(--border);overflow:auto;background:var(--layer)}
+.diagram{height:350px;min-width:900px;position:relative;background-image:radial-gradient(#c6c6c6 .7px,transparent .7px);background-size:20px 20px}
+.diagram svg{position:absolute;width:100%;height:100%;inset:0;pointer-events:none}
+.wire{fill:none;stroke-width:2;opacity:.55}.wire.https{stroke:var(--blue)}.wire.authentication{stroke:var(--green)}.wire.exchange{stroke:var(--purple);stroke-dasharray:5 4}
+.packet{fill:var(--blue);display:none}.packet.authentication{fill:var(--green)}.packet.exchange{fill:var(--purple)}
+.verified .packet{display:block}.verified .wire{opacity:1}
+.lane-label{font-size:11px;fill:var(--green);text-anchor:middle}.lane-label.exchange-label{fill:var(--purple)}
+.node{position:absolute;top:126px;width:20%;height:132px;background:#fff;border:1px solid var(--border);color:var(--text);text-align:left;padding:20px}
+.node strong{display:block;font-size:20px;font-weight:600;margin:10px 0 8px}.node .state{display:block;color:var(--text-secondary);font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.verified .frontend-node .state,.verified .backend-node .state{color:var(--green)}
+.browser-node{left:4%;background:var(--blue-soft);border-color:var(--blue)}.frontend-node{left:40%;background:var(--green-soft);border-color:var(--green)}.backend-node{left:76%;background:#e5f6ff;border-color:#1192e8}
+.edge{position:absolute;top:142px;background:#fff;color:var(--text-secondary);border:1px solid var(--border);padding:9px 12px;font-size:12px;width:14%;text-align:center}
+.https-edge{left:25%}.pqc-edge{left:61%;color:var(--green)}
+.boundary{position:absolute;left:38%;right:2%;top:58px;bottom:34px;border:1px dashed #a8a8a8;pointer-events:none}
+.boundary span{position:absolute;top:-10px;left:18px;background:var(--layer);padding:0 10px;color:var(--text-secondary);font-size:11px;font-weight:600;letter-spacing:.08em}
+.legend{display:flex;gap:10px 24px;flex-wrap:wrap;margin-top:16px;font-size:12px;color:var(--text-secondary)}.legend span{display:flex;align-items:center;gap:8px}
+.swatch{width:26px;border-top:2px solid var(--blue)}.swatch.authentication{border-color:var(--green)}.swatch.exchange{border-color:var(--purple);border-top-style:dashed}
+.caption{font-size:12px;margin:14px 0 28px}
+details{border-top:1px solid var(--border);padding-top:20px}
+summary{cursor:pointer;color:var(--blue);font-size:14px;font-weight:600;min-height:28px}
+details[open] summary{margin-bottom:16px}
+details p{margin-bottom:12px}
+pre{background:var(--layer);border-left:3px solid var(--blue);padding:20px;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text)}
+@media(prefers-reduced-motion:reduce){.packet{display:none!important}}
+@media(max-width:672px){body{padding:32px 16px 56px}.lifetime{padding:20px 24px;margin-top:32px}.toolbar{align-items:flex-start;flex-direction:column;gap:12px}.node{padding:16px}}
+</style>
+<header><small>HASHICORP ACADEMY LABS / VAULT PKI</small>
+<h1>Post-quantum workload connection</h1>
+<p>Test mutual authentication and key exchange between the frontend and backend workloads.</p></header>
+<main>
+<section class="lifetime" aria-labelledby="lifetime-title"><h2 id="lifetime-title">Short-lived workload identities</h2>
+<p>By default, each workload renews its 10-second certificate automatically. Test again after about five seconds to compare frontend certificate serials. The countdown reflects the last test.</p>
+<p id="cert-lifetime">Awaiting a verified certificate.</p>
+<p id="rotation-result" role="status">Test twice to compare certificate serials.</p>
+<progress id="cert-progress" max="100" value="0" aria-label="Observed frontend certificate validity remaining"></progress></section>
+<div class="toolbar"><button id="test">Test connection</button><span id="status" role="status">Ready to test · No connection evidence yet</span></div>
+<div class="canvas" aria-label="Connection diagram showing browser HTTPS and post-quantum mTLS between workloads.">
+<div class="diagram" id="diagram">
+<div class="boundary"><span>WORKLOADS / POST-QUANTUM mTLS</span></div>
+<svg viewBox="0 0 1100 350" preserveAspectRatio="none" aria-hidden="true">
+<defs>
+<marker id="arrow-https" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#0f62fe"/></marker>
+<marker id="arrow-auth" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#198038"/></marker>
+<marker id="arrow-exchange" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#8a3ffc"/></marker>
+</defs>
+<path id="https-path" class="wire https" d="M268 218 H436" marker-start="url(#arrow-https)" marker-end="url(#arrow-https)"/>
+<text class="lane-label" x="748" y="194">ML-DSA-65 / identity</text>
+<path id="auth-path" class="wire authentication" d="M664 206 H832" marker-start="url(#arrow-auth)" marker-end="url(#arrow-auth)"/>
+<text class="lane-label exchange-label" x="748" y="235">ML-KEM-768 / keys</text>
+<path id="pqc-path" class="wire exchange" d="M664 247 H832" marker-start="url(#arrow-exchange)" marker-end="url(#arrow-exchange)"/>
+<circle class="packet" r="3"><animateMotion dur="2s" repeatCount="indefinite"><mpath href="#https-path"/></animateMotion></circle>
+<circle class="packet authentication" r="3"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#auth-path"/></animateMotion></circle>
+<circle class="packet authentication" r="3"><animateMotion dur="2.4s" repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear"><mpath href="#auth-path"/></animateMotion></circle>
+<circle class="packet exchange" r="3"><animateMotion dur="3s" repeatCount="indefinite"><mpath href="#pqc-path"/></animateMotion></circle>
+<circle class="packet exchange" r="3"><animateMotion dur="3s" repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear"><mpath href="#pqc-path"/></animateMotion></circle>
+</svg>
+<div class="node browser-node" id="node-browser"><span class="eyebrow">01 / Client</span><strong>Browser</strong><span class="state" id="state-browser">Conventional HTTPS</span></div>
+<div class="edge https-edge" id="node-https">HTTPS ⇄</div>
+<div class="node frontend-node" id="node-frontend"><span class="eyebrow">02 / Proxy</span><strong>Frontend</strong><span class="state" id="state-frontend">Backend trust not tested</span></div>
+<div class="edge pqc-edge" id="node-pqc">PQC mTLS ⇄</div>
+<div class="node backend-node" id="node-backend"><span class="eyebrow">03 / Service</span><strong>Backend</strong><span class="state" id="state-backend">Client trust not tested</span></div>
+</div></div>
+<div class="legend" aria-label="Connection color legend"><span><i class="swatch" aria-hidden="true"></i>Blue · Browser HTTPS</span><span><i class="swatch authentication" aria-hidden="true"></i>Green / solid · Mutual authentication</span><span><i class="swatch exchange" aria-hidden="true"></i>Purple / dashed · Key exchange</span></div>
+<p class="caption">The browser uses separate HTTPS. The workload connection uses ML-DSA-65 for authentication and ML-KEM-768 for session keys. Moving markers show the last successful test.</p>
+<details><summary>Raw connection evidence / JSON</summary><p>Original NGINX observations. Unavailable metadata is reported as null.</p><pre id="evidence">Run the test to inspect a real connection.</pre></details>
+</main>
+<script>
+let observedCertificate=null;
+let lastVerifiedSerial=null;
+function updateLifetime(){
+  const label=document.getElementById('cert-lifetime');
+  const progress=document.getElementById('cert-progress');
+  if(!observedCertificate){label.textContent='Awaiting a verified certificate.';progress.value=0;return}
+  const start=Date.parse(observedCertificate.valid_from);
+  const end=Date.parse(observedCertificate.valid_until);
+  if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start){label.textContent='Certificate validity unavailable.';progress.value=0;return}
+  const remaining=Math.max(0,Math.ceil((end-Date.now())/1000));
+  progress.value=Math.max(0,Math.min(100,(end-Date.now())/(end-start)*100));
+  label.textContent=(remaining?Math.floor(remaining/60)+'m '+String(remaining%60).padStart(2,'0')+'s remaining':'Observed certificate expired · Test again for the current identity')+' · Frontend serial '+observedCertificate.serial_number+' · Observed in the last successful test';
+}
+setInterval(updateLifetime,1000);
+function nodeStates(browser,frontend,backend){
+  for(const [key,value] of Object.entries({browser,frontend,backend}))document.getElementById('state-'+key).textContent=value;
+}
+document.getElementById('test').onclick=async function(){
+  this.disabled=true;
+  const status=document.getElementById('status');
+  status.textContent='Verifying workloads…';status.className='';
+  observedCertificate=null;updateLifetime();
+  document.getElementById('rotation-result').textContent='Checking the current identity…';
+  document.getElementById('diagram').className='diagram';
+  nodeStates('Checking HTTPS…','Checking backend trust…','Checking client trust…');
+  document.getElementById('evidence').textContent='Waiting for connection evidence…';
+  try{
+    const response=await fetch('/test',{method:'POST'});
+    const data=await response.json();
+    document.getElementById('evidence').textContent=JSON.stringify(data,null,2);
+    if(!response.ok)throw Error(data.error||'Backend verification failed');
+    const connection=data.backend_response?.connection;
+    const peer=connection?.peer_certificate;
+    const tls=connection?.tls_session;
+    const passed=data.frontend_verification?.chain_and_hostname_verified&&data.backend_response?.authenticated&&peer?.chain_verified&&peer.public_key_algorithm==='ML-DSA-65'&&tls?.protocol==='TLSv1.3'&&tls.peer_handshake_signature_scheme==='mldsa65'&&tls.local_handshake_signature_scheme==='mldsa65'&&tls.key_exchange_group==='MLKEM768';
+    if(!passed)throw Error('Connection evidence did not meet the required algorithms');
+    observedCertificate=peer;updateLifetime();
+    document.getElementById('rotation-result').textContent=lastVerifiedSerial===null?'First observed certificate · Test again after about five seconds.':lastVerifiedSerial!==peer.serial_number?'Certificate rotated · New serial: '+peer.serial_number+' · Previous: '+lastVerifiedSerial:'Same certificate · Try again in a few seconds.';
+    lastVerifiedSerial=peer.serial_number;
+    status.textContent='Workloads verified each other · ML-DSA-65 / ML-KEM-768';status.className='badge';
+    document.getElementById('diagram').className='diagram verified';
+    const browser=data.browser_connection||{};
+    nodeStates([browser.protocol,browser.key_exchange_group].filter(Boolean).join(' · ')||'HTTPS','✓ Backend chain + DNS verified','✓ Frontend certificate accepted');
+  }catch(error){
+    observedCertificate=null;updateLifetime();
+    document.getElementById('rotation-result').textContent='Rotation unconfirmed · Connection test failed.';
+    document.getElementById('diagram').className='diagram';
+    nodeStates('Test incomplete','Trust not confirmed','Trust not confirmed');
+    status.className='error';status.textContent='Test failed: '+error.message;
+  }finally{this.disabled=false}
+};
+</script></html>

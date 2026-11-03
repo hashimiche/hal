@@ -28,6 +28,7 @@ var vaultStatusCmd = &cobra.Command{
 		}
 
 		fmt.Println("🔍 Analyzing HashiCorp Vault Ecosystem...")
+		fmt.Printf("PQC PKI workload readiness: %s (hal vault pki status --pqc)\n", global.PQCPKIReadiness())
 
 		// ==========================================
 		// 1. INFRASTRUCTURE LAYER (Containers)

@@ -52,6 +52,7 @@ func BuildStatusSnapshot(engine string) ([]byte, error) {
 			[]string{"hal-vault"},
 			map[string]string{
 				"audit":    resolveVaultAudit(engine),
+				"pki-pqc":  PQCPKIReadiness(),
 				"k8s":      BoolState(CheckContainer(engine, "kind-control-plane")),
 				"jwt":      BoolState(CheckContainer(engine, "hal-gitlab")),
 				"ldap":     BoolState(CheckContainer(engine, "hal-openldap")),

@@ -174,6 +174,12 @@ var vaultDestroyCmd = &cobra.Command{
 			fmt.Printf("⚠️  Could not remove prod Vault state (%s): %v\n", global.VaultProdStateDir(), err)
 		}
 
+		if global.DryRun {
+			fmt.Println("[DRY RUN] Would remove owned PQC PKI local credentials and configuration")
+		} else if err := global.RemovePQCPKIState(); err != nil {
+			fmt.Printf("Warning: %v\n", err)
+		}
+
 		// 5. Attempt to clean the network (Only deletes hal-net if NO containers are using it)
 		global.CleanNetworkIfEmpty(engine)
 

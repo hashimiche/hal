@@ -3,6 +3,8 @@ package vault
 import (
 	"encoding/base64"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,7 +48,7 @@ var (
 
 var vaultPKICmd = &cobra.Command{
 	Use:   "pki [status|enable|disable|update]",
-	Short: "Manage Vault PKI engines (Root CA, Intermediate CA, cert-manager K8s or ACME/Caddy demo)",
+	Short: "Manage Vault PKI engines and conventional or post-quantum Kubernetes TLS labs",
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := parseLifecycleAction(args, &pkiEnable, &pkiDisable, &pkiUpdate); err != nil {
@@ -149,9 +151,9 @@ var vaultPKICmd = &cobra.Command{
 
 					issuerOut, _ := exec.Command(
 						"kubectl", "get", "clusterissuer", "vault-pki-issuer",
-						"-o", "jsonpath={.status.conditions[0].type}",
+						"-o", `jsonpath={.status.conditions[?(@.type=="Ready")].status}`,
 					).Output()
-					if strings.TrimSpace(string(issuerOut)) == "Ready" {
+					if strings.TrimSpace(string(issuerOut)) == "True" {
 						fmt.Println("  ✅ ClusterIssuer : Ready (vault-pki-issuer)")
 					} else {
 						fmt.Println("  ⚠️  ClusterIssuer : Not ready")
@@ -159,9 +161,9 @@ var vaultPKICmd = &cobra.Command{
 
 					certOut, _ := exec.Command(
 						"kubectl", "get", "certificate", "hal-web-pki-cert",
-						"-n", "pki-demo", "-o", "jsonpath={.status.conditions[0].type}",
+						"-n", "pki-demo", "-o", `jsonpath={.status.conditions[?(@.type=="Ready")].status}`,
 					).Output()
-					if strings.TrimSpace(string(certOut)) == "Ready" {
+					if strings.TrimSpace(string(certOut)) == "True" {
 						fmt.Println("  ✅ Certificate   : Issued (hal-web-pki-cert)")
 					} else {
 						fmt.Println("  ⚠️  Certificate   : Not yet issued")
@@ -296,7 +298,10 @@ var vaultPKICmd = &cobra.Command{
 
 				// Conditionally delete KinD cluster
 				vsoOut, _ := exec.Command("helm", "list", "-n", "vso", "-q").Output()
-				if strings.Contains(string(vsoOut), "vault-secrets-operator") {
+				pqcOut, pqcErr := pqcKube(nil, "get", "namespace", pqcNamespace, "--ignore-not-found", "-o", "name")
+				if (pqcErr != nil && halKindClusterRunning()) || strings.TrimSpace(string(pqcOut)) != "" {
+					fmt.Println("KinD cluster preserved (PQC PKI is still active).")
+				} else if strings.Contains(string(vsoOut), "vault-secrets-operator") {
 					fmt.Println("ℹ️  KinD cluster preserved (hal vault k8s is still active).")
 					fmt.Println("   Run 'hal vault k8s disable' to remove it.")
 				} else {
@@ -597,7 +602,7 @@ func runPKIK8sEnable(client *vault.Client, engine string, intMount string) {
 		"upgrade", "--install", "cert-manager",
 		"oci://quay.io/jetstack/charts/cert-manager",
 		"-n", "cert-manager", "--create-namespace",
-		"--set", "installCRDs=true",
+		"--set", "crds.enabled=true",
 		"--set", "webhook.hostNetwork=true",
 		"--set", "webhook.securePort=10260",
 	}
@@ -615,11 +620,14 @@ func runPKIK8sEnable(client *vault.Client, engine string, intMount string) {
 	// node's IP so reachability is no longer the issue, but TLS cert init
 	// still takes a few seconds.
 	fmt.Println("⏳ Waiting for cert-manager-webhook rollout (up to 60s)...")
-	_ = exec.Command(
+	if err := exec.Command(
 		"kubectl", "rollout", "status",
 		"deployment/cert-manager-webhook",
 		"-n", "cert-manager", "--timeout=60s",
-	).Run()
+	).Run(); err != nil {
+		fmt.Printf("❌ cert-manager webhook did not become ready: %v\n", err)
+		return
+	}
 	fmt.Println("⏳ Allowing webhook TLS to initialise (5s)...")
 	time.Sleep(5 * time.Second)
 
@@ -662,7 +670,12 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	// The webhook TLS server may still be warming up even after rollout completes,
 	// so retry until it accepts the connection.
 	fmt.Println("⚙️  Applying cert-manager CRDs (ClusterIssuer, Certificate) — retrying if webhook not ready...")
-	crdManifests := buildPKIK8sCRDManifests(vaultIP, intMount)
+	server, serverName, ca, err := pkiK8sVaultConnection(client.Address(), vaultIP)
+	if err != nil {
+		fmt.Printf("❌ Cannot configure cert-manager Vault connection: %v\n", err)
+		return
+	}
+	crdManifests := buildPKIK8sCRDManifests(server, intMount, serverName, ca)
 	var applyErr error
 	for attempt := 1; attempt <= 10; attempt++ {
 		applyCmd := exec.Command("kubectl", "apply", "-f", "-")
@@ -683,17 +696,26 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 		return
 	}
 
-	fmt.Println("⏳ Waiting for TLS Certificate to be issued (up to 60s)...")
+	fmt.Println("⏳ Waiting for Vault ClusterIssuer to be Ready (up to 180s)...")
+	if err := exec.Command("kubectl", "wait", "--for=condition=Ready",
+		"clusterissuer/vault-pki-issuer", "--timeout=180s").Run(); err != nil {
+		fmt.Printf("❌ Vault ClusterIssuer did not become ready: %v\n", err)
+		out, _ := exec.Command("kubectl", "describe", "clusterissuer", "vault-pki-issuer").CombinedOutput()
+		fmt.Print(string(out))
+		return
+	}
+
+	fmt.Println("⏳ Waiting for TLS Certificate to be issued (up to 180s)...")
 	certWaitErr := exec.Command(
 		"kubectl", "wait", "--for=condition=Ready",
-		"certificate/hal-web-pki-cert", "-n", "pki-demo", "--timeout=60s",
+		"certificate/hal-web-pki-cert", "-n", "pki-demo", "--timeout=180s",
 	).Run()
 	if certWaitErr != nil {
-		fmt.Println("❌ Certificate was not issued within 60s. Diagnosis:")
+		fmt.Println("❌ Certificate was not issued within 180s. Diagnosis:")
 		// Condition message from the Certificate CR
 		condOut, _ := exec.Command(
 			"kubectl", "get", "certificate", "hal-web-pki-cert", "-n", "pki-demo",
-			"-o", `jsonpath={range .status.conditions[*]}  {.type}: {.reason} - {.message}\n{end}`,
+			"-o", `jsonpath={range .status.conditions[*]}  {.type}: {.reason} - {.message}{"\n"}{end}`,
 		).Output()
 		if len(condOut) > 0 {
 			fmt.Println(string(condOut))
@@ -701,7 +723,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 		// Most recent CertificateRequest failure
 		crOut, _ := exec.Command(
 			"kubectl", "get", "certificaterequest", "-n", "pki-demo",
-			"-o", `jsonpath={range .items[*]}  CertificateRequest {.metadata.name}: {range .status.conditions[*]}{.type}={.reason} ({.message})\n{end}{end}`,
+			"-o", `jsonpath={range .items[*]}  CertificateRequest {.metadata.name}: {range .status.conditions[*]}{.type}={.reason} ({.message}){"\n"}{end}{end}`,
 		).Output()
 		if len(crOut) > 0 {
 			fmt.Println(string(crOut))
@@ -719,11 +741,14 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 		return
 	}
 
-	fmt.Println("⏳ Waiting for web pod to be Ready (up to 30s)...")
-	_ = exec.Command(
-		"kubectl", "wait", "--for=condition=Ready",
-		"pod", "-l", "app=hal-web-pki", "-n", "pki-demo", "--timeout=30s",
-	).Run()
+	fmt.Println("⏳ Waiting for web deployment to be Ready (up to 180s)...")
+	if err := exec.Command("kubectl", "rollout", "status", "deployment/hal-web-pki",
+		"-n", "pki-demo", "--timeout=180s").Run(); err != nil {
+		fmt.Printf("❌ Web deployment did not become ready: %v\n", err)
+		out, _ := exec.Command("kubectl", "describe", "pods", "-l", "app=hal-web-pki", "-n", "pki-demo").CombinedOutput()
+		fmt.Print(string(out))
+		return
+	}
 
 	fmt.Println("\n✅ PKI Kubernetes demo deployed!")
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -899,10 +924,47 @@ spec:
 `, webBackendImage, intMount)
 }
 
-// buildPKIK8sCRDManifests returns ClusterIssuer and Certificate YAML.
-// These are cert-manager CRDs validated by the admission webhook — apply only
-// after the webhook TLS server is confirmed to be accepting connections.
-func buildPKIK8sCRDManifests(vaultIP, intMount string) string {
+// pkiK8sVaultConnection preserves Vault TLS settings for in-cluster clients.
+func pkiK8sVaultConnection(address, vaultIP string) (server, serverName, ca string, err error) {
+	endpoint, err := url.Parse(address)
+	if err != nil {
+		return "", "", "", err
+	}
+	if endpoint.Scheme != "http" && endpoint.Scheme != "https" {
+		return "", "", "", fmt.Errorf("unsupported Vault URL scheme %q", endpoint.Scheme)
+	}
+	host := endpoint.Hostname()
+	serverName = host
+	if host == "localhost" || host == "vault.localhost" || (net.ParseIP(host) != nil && net.ParseIP(host).IsLoopback()) {
+		host = vaultIP
+		serverName = vaultContainer
+	}
+	port := endpoint.Port()
+	if port == "" {
+		port = "80"
+		if endpoint.Scheme == "https" {
+			port = "443"
+		}
+	}
+	endpoint.Host = net.JoinHostPort(host, port)
+	if endpoint.Scheme == "https" {
+		caPath := os.Getenv("VAULT_CACERT")
+		if caPath == "" && vaultProdActive() {
+			caPath = vaultProdCertPath()
+		}
+		if caPath != "" {
+			pem, readErr := os.ReadFile(caPath)
+			if readErr != nil {
+				return "", "", "", fmt.Errorf("read Vault CA: %w", readErr)
+			}
+			ca = base64.StdEncoding.EncodeToString(pem)
+		}
+	}
+	return endpoint.String(), serverName, ca, nil
+}
+
+// buildPKIK8sCRDManifests returns the issuer and certificate with verified Vault TLS.
+func buildPKIK8sCRDManifests(server, intMount, serverName, ca string) string {
 	return fmt.Sprintf(`---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -911,7 +973,9 @@ metadata:
 spec:
   vault:
     path: %s/sign/hal-role
-    server: http://%s:8200
+    server: %q
+    serverName: %q
+    caBundle: %q
     auth:
       kubernetes:
         role: cert-manager-role
@@ -947,7 +1011,7 @@ spec:
     name: vault-pki-issuer
     kind: ClusterIssuer
     group: cert-manager.io
-`, intMount, vaultIP)
+`, intMount, server, serverName, ca)
 }
 
 // runPKIACMEEnable deploys a Caddy pod that uses Vault's built-in ACME endpoint
@@ -1538,7 +1602,7 @@ func init() {
 	vaultPKICmd.Flags().StringVar(&pkiMaxCertTTL, "max-cert-ttl", "24h", "Maximum TTL for leaf certificates issued by 'hal-role'")
 
 	// K8s / cert-manager flags
-	vaultPKICmd.Flags().BoolVar(&pkiK8s, "k8s", false, "Deploy cert-manager + nginx web demo on KinD (enable/update only)")
+	vaultPKICmd.Flags().BoolVar(&pkiK8s, "k8s", false, "Deploy cert-manager PKI demo on Kubernetes (--pqc implies its own NGINX deployment)")
 	vaultPKICmd.Flags().BoolVar(&pkiACME, "acme", false, "Deploy Vault ACME endpoint + Caddy demo on KinD (enable/update only)")
 	vaultPKICmd.Flags().BoolVar(&pkiForce, "force", false, "With --k8s/--acme update: also rebuild Root CA and Intermediate CA from scratch")
 	vaultPKICmd.Flags().StringVar(&pkiKindNodeImage, "kind-node-image", "kindest/node:v1.36.1", "KinD node image (used only when creating a new cluster)")

@@ -56,3 +56,19 @@ If obs comes after Vault, prefer `hal vault obs create` to backfill metrics/dash
 3. Determine if CE is sufficient or Enterprise is required for requested features.
 4. Route to the correct specialized skill based on the user intent.
 5. Verify state with MCP or vault CLI before concluding.
+
+### Post-quantum PKI
+
+Use `hal vault pki enable|update|disable --pqc`; default/status actions are
+read-only. PQC implies Kubernetes; explicit `--k8s` remains accepted.
+Provision licensed Enterprise 2.2.0+ through
+`hal vault create --edition ent --vault-tag <supported-tag>`. Enable provisions
+its own mounts and checks their live schemas before CA generation; no diagnostic
+mount is required. Failed issuance removes only newly created mounts.
+Never replace Vault or use SoftHSM availability as evidence of ML-DSA support.
+
+Preserve namespace `hal-pqc` in shared KinD cleanup. Use direct host port 8093
+when mapped, otherwise the status-provided port-forward. Browser ECDSA HTTPS
+and internal ML-DSA/ML-KEM-768 mTLS are separate trust decisions. Only actual
+verified connection evidence establishes authentication and negotiation;
+readiness and parsed certificates do not. See `docs/commands/vault-pki.md`.

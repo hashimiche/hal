@@ -597,3 +597,15 @@ Before changing command behavior or UX patterns, read these files in order:
 4. `LLM_CONTEXT.md` — LLM-oriented command guidance
 
 Keep all three in sync when adding or renaming commands.
+
+### Post-quantum PKI lab
+
+Use `hal vault pki enable --pqc` for Vault-issued ML-DSA-65 mutual TLS with
+standalone MLKEM768 key exchange between two pods, behind conventional browser HTTPS. Requires
+an existing licensed Vault Enterprise 2.2.0+ and a compatible stock NGINX/OpenSSL image.
+`hal vault pki status --pqc`, `update --pqc` and `disable --pqc` manage
+the isolated lab. `hal status` and `hal vault status` also report PQC deployment
+readiness. Workload certificates expire after ten seconds and rotate
+automatically about every five seconds. Click **Test connection** again to see a
+new frontend certificate serial and expiry. Use `--pqc-cert-ttl` to change the TTL.
+See [setup, browser trust, tests and runtime findings](docs/commands/vault-pki.md).

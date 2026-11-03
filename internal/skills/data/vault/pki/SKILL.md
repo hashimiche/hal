@@ -28,7 +28,7 @@ This skill covers the two-tier PKI CA chain and the K8s, ACME, and HSM demo mode
 
 ### `--k8s` mode (adds cert-manager + nginx demo)
 
-- Shared KinD cluster on `hal-net` via `ensureHALKindCluster()` (ports 30080→8088, 30082→8089, 30083→8090, 30084→8091)
+- Shared KinD cluster on `hal-net` via `ensureHALKindCluster()` (ports 30080→8088, 30082→8089, 30083→8090, 30084→8091, 30085→8093 for PQC)
 - Jetstack cert-manager (Helm, OCI chart, `webhook.hostNetwork=true` for KinD)
 - Dedicated Vault Kubernetes auth mount: `kubernetes-pki/`
 - ClusterIssuer: `vault-pki-issuer` → `pki-int/sign/hal-role`
@@ -166,3 +166,29 @@ Confirm CA chain is built and which demo modes are active.
 8. **`--hsm` reports a non-HSM build:** Redeploy with `hal vault create --edition ent-hsm --mode prod`. The assertion is validated before any PKI teardown.
 9. **HSM build lacks the HAL runtime:** This is an old stock `-ent.hsm` deployment. Redeploy with `hal vault create --edition ent-hsm --mode prod --update`, or use `--no-hsm` for software CAs.
 10. **HSM teardown:** `hal vault pki disable` deletes the managed key after unmounting PKI and wipes token data, but leaves the create-owned HSM container/image in place. An auto-detected HSM `update` keeps the token and re-registers the key; `update --no-hsm` wipes it. `hal vault delete` removes the runtime image.
+
+### Post-quantum PKI
+
+Use `hal vault pki enable|update|disable --pqc`; default/status actions are
+read-only. PQC implies Kubernetes; explicit `--k8s` remains accepted.
+Provision licensed Enterprise 2.2.0+ through
+`hal vault create --edition ent --vault-tag <supported-tag>`. Enable provisions
+its own mounts and checks their live schemas before CA generation; no diagnostic
+mount is required. Failed issuance removes only newly created mounts.
+Never replace Vault or use SoftHSM availability as evidence of ML-DSA support.
+
+Preserve namespace `hal-pqc` in shared KinD cleanup. Use direct host port 8093
+when mapped, otherwise the status-provided port-forward. Browser ECDSA HTTPS
+and internal ML-DSA/ML-KEM-768 mTLS are separate trust decisions. Only actual
+verified connection evidence establishes authentication and negotiation;
+readiness and parsed certificates do not. See `docs/commands/vault-pki.md`.
+
+
+PQC workload certificates default to `--pqc-cert-ttl 10s` (range 10s–24h).
+NGINX/njs automatically issues fresh identities at about half the lifetime and
+selects them for new handshakes without restarting pods. Click Test connection
+again after roughly five seconds to see a changed frontend serial and expiry.
+The page countdown is a snapshot of the last verified connection. Each pod uses
+its own restricted, self-renewing issuance token; disable revokes those tokens
+and removes their policies. If pods remain stopped beyond the one-hour token
+period, run update --pqc to provision fresh issuance credentials.

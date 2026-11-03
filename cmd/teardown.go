@@ -126,6 +126,15 @@ func runGlobalTeardown() globalTeardownResult {
 			}
 		}
 
+		// Legacy custom PQC image caches are removed globally. Stock NGINX
+		// distribution images are shared and are not removed here.
+		if out, err := exec.Command(containerEngine, "images", "--filter", "reference=localhost/hal-pqc-pki:*", "-q").Output(); err == nil {
+			if ids := strings.Fields(string(out)); len(ids) > 0 {
+				if err := exec.Command(containerEngine, append([]string{"image", "rm"}, ids...)...).Run(); err != nil {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("PQC image cleanup failed: %v", err))
+				}
+			}
+		}
 		// The Agentic IAM lab's images: every hal-* container is gone, so none
 		// is in use any more.
 		if _, err := agenticiam.RemoveImages(containerEngine); err != nil {
@@ -149,6 +158,10 @@ func runGlobalTeardown() globalTeardownResult {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("multipass purge failed: %v", err))
 			}
 		}
+	}
+
+	if err := global.RemovePQCPKIState(); err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("PQC PKI state cleanup failed: %v", err))
 	}
 
 	// Every lab is gone, so the credentials they generated go with them.

@@ -350,3 +350,38 @@ func TestProductObsStatusRejectsUnknownProduct(t *testing.T) {
 		t.Fatalf("expected error for unknown obs product")
 	}
 }
+
+func TestVaultPKIIndependentExecutions(t *testing.T) {
+	restore := runHAL
+	t.Cleanup(func() { runHAL = restore })
+	for _, pqcExit := range []int{0, 1} {
+		runHAL = func(args ...string) toolExecution {
+			command := "hal " + strings.Join(args, " ")
+			code := 0
+			if strings.Contains(command, "--pqc") {
+				code = pqcExit
+			}
+			return toolExecution{Command: command, ExitCode: code, Output: "readiness only", Timestamp: "2026-10-20T00:00:00Z"}
+		}
+		result, handled := handleOpsTool("get_vault_pki_status", map[string]interface{}{})
+		if !handled || result.IsError {
+			t.Fatal("PQC execution changed conventional PKI success semantics")
+		}
+		var payload struct {
+			Data   map[string]toolExecution `json:"data"`
+			Checks []opCheck                `json:"checks"`
+		}
+		if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Data["execution"].Command != "hal vault pki" || payload.Data["pqc_execution"].Command != "hal vault pki status --pqc" {
+			t.Fatal("independent execution payloads missing")
+		}
+		if payload.Data["pqc_execution"].ExitCode != pqcExit {
+			t.Fatal("PQC failure hidden")
+		}
+		if len(payload.Checks) != 2 || payload.Checks[1].Status != statusFromExecution(payload.Data["pqc_execution"]) {
+			t.Fatal("independent PQC check missing")
+		}
+	}
+}

@@ -141,6 +141,7 @@ func printVaultFeatureStatus(engine string) {
 		status string
 	}{
 		{name: "audit", status: resolveVaultAuditStatus(engine)},
+		{name: "pki-pqc", status: global.PQCPKIReadiness()},
 		{name: "k8s", status: boolState(checkContainer(engine, "kind-control-plane"))},
 		{name: "jwt", status: boolState(checkContainer(engine, "hal-gitlab"))},
 		{name: "ldap", status: boolState(checkContainer(engine, "hal-openldap"))},

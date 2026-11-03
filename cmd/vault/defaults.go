@@ -200,3 +200,19 @@ const (
 	// agenticIAMStateDirName holds the containers' env files under ~/.hal.
 	agenticIAMStateDirName = "agentic-iam"
 )
+
+// PQC PKI is isolated from conventional PKI and create-owned SoftHSM state.
+const (
+	pqcNamespace        = global.PQCPKINamespace
+	pqcRootMount        = "hal-pqc-root"
+	pqcIntMount         = "hal-pqc-int"
+	pqcOwner            = global.PQCPKIOwner
+	pqcMountDescription = "HAL post-quantum PKI lab (hal-vault-pqc-pki)"
+	pqcBackend          = "backend"
+	pqcFrontend         = "frontend"
+	pqcNodePort         = 30085
+	pqcHostPort         = 8093
+	pqcBrowserDNS       = "pqc.localhost"
+	pqcDefaultDomain    = "cluster.local"
+	pqcDefaultImage     = "docker.io/library/nginx@sha256:1dd3048a04f4b76ebd706c1bbb9df7d9d53b4f8253b32ce14467088c9b5ada0f"
+)

@@ -164,8 +164,8 @@ Several `hal vault` features can run simultaneously on the same KinD cluster.
 Each feature that uses `--k8s` must follow these rules:
 
 ### Auth mount isolation
-Every `--k8s` feature owns a **dedicated** Vault Kubernetes auth mount. No two
-features share a mount. Sharing a mount means the second feature to `enable`
+Every feature that enables Vault Kubernetes auth owns a **dedicated** auth mount.
+No two features share a mount. Sharing a mount means the second feature to `enable`
 overwrites the Kubernetes CA/token config for the first, and the first feature's
 `disable` tears down auth for the second.
 
@@ -175,8 +175,10 @@ overwrites the Kubernetes CA/token config for the first, and the first feature's
 | `hal vault database --k8s` | `kubernetes-db/` |
 | `hal vault pki --k8s` | `kubernetes-pki/` |
 
-When adding a new `--k8s` feature, register a new mount path here and in
-`cmd/vault/defaults.go`. Never reuse an existing mount.
+When adding a feature that enables Vault Kubernetes auth, register a new mount
+path here and in `cmd/vault/defaults.go`. Never reuse an existing mount.
+`hal vault pki --pqc` uses scoped issuance tokens and does not enable Vault
+Kubernetes auth, so it has no auth mount.
 
 ### Co-tenant cluster teardown guard
 Before running `kind delete cluster`, every `disable` path must check whether
@@ -189,6 +191,7 @@ are. The canonical namespace list to check:
 | `db-app` | `hal vault database --k8s` |
 | `pki-demo` | `hal vault pki --k8s` |
 | `pki-acme-demo` | `hal vault pki --acme` |
+| `hal-pqc` | `hal vault pki --pqc` |
 
 When the guard preserves the cluster, the `disable` path must still delete its
 **own** namespace(s) before returning. A feature that leaves its namespace
@@ -208,12 +211,13 @@ in `cmd/vault/helper.go`). All host port mappings are declared upfront:
 | `8089` | `30082` | `hal vault pki --k8s` |
 | `8090` | `30083` | `hal vault pki --acme` |
 | `8091` | `30084` | `hal vault database --k8s` |
+| `8093` | `30085` | `hal vault pki --pqc` |
 
 When adding a new `--k8s` feature, reserve the next available pair and add it
 to `writeHALKindConfig()` so the port is pre-mapped on any existing cluster.
 Host port `8092` is taken by the Agentic IAM chat (`hal-agentic-iam-chat`,
 `http://agentic.localhost:8092`), which is not on KinD: the next pair starts
-at `8093`.
+at `8094` (8093 is reserved for PQC PKI).
 
 ### Network
 KinD nodes must be on `hal-net` so Vault and other HAL containers can reach the
@@ -323,3 +327,27 @@ Whenever CLI behavior, verbs, or lifecycle semantics change:
 	- `cmd/mcp/ops_api.go`
 	- `cmd/mcp/testdata/*_help_snapshot.json`
 	- `HAL_MCP_CONTRACT.json` if response contract/schema changed
+
+## Post-quantum PKI lab
+
+`hal vault pki [enable|update|disable|status] --pqc` selects isolated ML-DSA-65
+PKI and a stock NGINX/OpenSSL ML-KEM-768 mutual-TLS lab. `--pqc` implies
+Kubernetes; explicit `--k8s` remains accepted. No action means read-only status
+and a copy-pasteable Next Step. Requires a running licensed Vault Enterprise
+2.2.0+ deployment, provisioned through `hal vault create`; never replace its runtime.
+Enable creates its own mounts and checks their live schemas before CA generation.
+No pre-existing PKI mount is required; failed issuance removes only newly created mounts.
+`enable` preserves a completed deployment; `update` reconciles roles, rotates leaf
+credentials and restarts workloads while retaining CAs. Conventional PKI/ACME/HSM
+options cannot be mixed with PQC. Mounts `hal-pqc-root`/`hal-pqc-int` and namespace
+`hal-pqc` are separately owned; no Vault Kubernetes auth mount is needed.
+
+Register `hal-pqc` in every co-tenant teardown guard. Shared KinD reserves host
+8093 → NodePort 30085; existing clusters without that mapping use an explicit
+`kubectl --context kind-kind -n hal-pqc port-forward --address 127.0.0.1
+service/frontend 8093:8443`, preserving co-tenants. PQC disable preserves the shared
+cluster and distribution images; product/global lifecycle handles final cluster
+cleanup. `--pqc-image` selects the stock NGINX image, pinned by digest by default;
+`--kind-node-image` controls new nodes. No custom TLS image build is needed.
+Status is deployment readiness, never cryptographic proof. See
+[Vault PKI](commands/vault-pki.md).

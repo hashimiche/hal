@@ -235,12 +235,13 @@ var vaultK8sCmd = &cobra.Command{
 					{"db-app", "hal vault database --k8s"},
 					{"pki-demo", "hal vault pki --k8s"},
 					{"pki-acme-demo", "hal vault pki --acme"},
+					{pqcNamespace, "hal vault pki --pqc --k8s"},
 				}
 				clusterPreserved := false
 				for _, t := range coTenants {
-					out, _ := exec.Command("kubectl", "get", "namespace", t.ns,
+					out, lookupErr := exec.Command("kubectl", "get", "namespace", t.ns,
 						"--ignore-not-found", "-o", "name").Output()
-					if strings.TrimSpace(string(out)) != "" {
+					if (t.ns == pqcNamespace && lookupErr != nil) || strings.TrimSpace(string(out)) != "" {
 						fmt.Printf("ℹ️  KinD cluster preserved (%s is still active).\n", t.feature)
 						fmt.Printf("   Run '%s disable' to remove it when done.\n", t.feature)
 						clusterPreserved = true
