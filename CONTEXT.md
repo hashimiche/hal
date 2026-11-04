@@ -5,6 +5,59 @@ user's machine, and lets that user, or an LLM acting for them, inspect and drive
 
 ## Language
 
+### The lab
+
+**Lab**:
+The set of resources HAL has created on the user's machine. It is disposable by
+design: destroying it loses nothing that cannot be recreated.
+_Avoid_: environment, stack (when meaning the whole lab)
+
+**HAL-owned resource**:
+A container, volume, network, cluster or VM that HAL itself created. It is the only
+kind of thing a `hal` command may change or delete.
+_Avoid_: HAL resource (ambiguous with "anything HAL can see")
+
+**Lab credential**:
+A secret HAL generates or hard-codes for a lab, such as a root token or a demo
+password. It is disposable with the lab.
+_Avoid_: secret (too broad: it also covers the TFE license, which is not a lab
+credential)
+
+### Driving HAL from an LLM
+
+**Read command**:
+A `hal` command that observes the lab without changing it.
+_Avoid_: safe command, status tool
+
+**Action**:
+Any `hal` command that is not a read command. An action is treated as such until it
+is explicitly marked as a read command.
+_Avoid_: write, mutation, enable tool
+
+**Host-path flag**:
+A `hal` flag whose value designates a file or directory on the user's machine
+outside the lab. An LLM may not use one.
+_Avoid_: path flag (many path-like flags refer to paths inside the lab)
+
+**Session-ending command**:
+A command that, when run from a chat, also tears down the connection that chat is
+using.
+_Avoid_: self-destructive command
+
+### HAL Plus
+
+**HAL Plus**:
+HAL's own chat interface, where a person gets lessons about the lab.
+_Avoid_: HAL+, halplus, agent
+
+**Lesson**:
+The answer HAL Plus gives, centered on one topic, and optionally a second. It says what the mechanism is, how to configure it, the hal commands that show it on the lab, and the reference documents.
+_Avoid_: agent, route, topic, scenario (a scenario is a feature enabled on a product)
+
+**Topic**:
+What HAL Plus gives the model about one product or one scenario: what the mechanism is, how the lab stages it, and two or three documents.
+_Avoid_: scenario, lesson, skill, Copilot skill, behavior pack, fiche
+
 ### Agentic IAM lab
 
 **Agentic IAM lab**:
