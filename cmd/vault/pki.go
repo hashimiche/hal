@@ -299,8 +299,9 @@ var vaultPKICmd = &cobra.Command{
 				// Conditionally delete KinD cluster
 				vsoOut, _ := exec.Command("helm", "list", "-n", "vso", "-q").Output()
 				pqcOut, pqcErr := pqcKube(nil, "get", "namespace", pqcNamespace, "--ignore-not-found", "-o", "name")
-				if (pqcErr != nil && halKindClusterRunning()) || strings.TrimSpace(string(pqcOut)) != "" {
-					fmt.Println("KinD cluster preserved (PQC PKI is still active).")
+				agilityOut, agilityErr := pqcKube(nil, "get", "namespace", agilityNamespace, "--ignore-not-found", "-o", "name")
+				if ((pqcErr != nil || agilityErr != nil) && halKindClusterRunning()) || strings.TrimSpace(string(pqcOut)) != "" || strings.TrimSpace(string(agilityOut)) != "" {
+					fmt.Println("KinD cluster preserved (PQC PKI or crypto agility is still active).")
 				} else if strings.Contains(string(vsoOut), "vault-secrets-operator") {
 					fmt.Println("ℹ️  KinD cluster preserved (hal vault k8s is still active).")
 					fmt.Println("   Run 'hal vault k8s disable' to remove it.")
@@ -408,6 +409,13 @@ var vaultPKICmd = &cobra.Command{
 	},
 }
 
+func pkiIssuerPolicy() string {
+	return fmt.Sprintf(`
+path "%s/sign/hal-role"  { capabilities = ["create", "update"] }
+path "%s/issue/hal-role" { capabilities = ["create", "update"] }
+`, pkiIntMount, pkiIntMount)
+}
+
 // runVaultPKISetup creates the Root CA and Intermediate CA chain in Vault.
 func runVaultPKISetup(client *vault.Client, isUpdate bool) {
 	if isUpdate {
@@ -509,11 +517,7 @@ func runVaultPKISetup(client *vault.Client, isUpdate bool) {
 	fmt.Println("  ✅ Role 'hal-role' created.")
 
 	// ---- Policy ----
-	pkiPolicy := fmt.Sprintf(`
-path "%s/sign/hal-role"  { capabilities = ["create", "update"] }
-path "%s/issue/hal-role" { capabilities = ["create", "update"] }
-`, pkiIntMount, pkiIntMount)
-	_ = client.Sys().PutPolicy("hal-pki-issuer", pkiPolicy)
+	_ = client.Sys().PutPolicy("hal-pki-issuer", pkiIssuerPolicy())
 	fmt.Println("  ✅ Policy 'hal-pki-issuer' written.")
 
 	// ---- ACME endpoint + short-lived demo role ----

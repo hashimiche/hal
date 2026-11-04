@@ -32,14 +32,18 @@
 - Advanced aliases/intent metadata: `cmd/mcp/advanced.go`
 
 The existing `get_vault_pki_status` tool also returns `data.pqc_execution` from
-`hal vault pki status --pqc`, alongside conventional `data.execution`. Its input
-and response envelope are unchanged. This reports workload readiness, not
-cryptographic proof; obtain verified-connection evidence from the running lab's
-HTTPS `/test` endpoint. See [PQC lab](vault-pki.md).
+`hal vault pki status --pqc` and `data.agility_execution` from
+`hal vault pki status --agility`, alongside conventional `data.execution`. Its
+input and response envelope are unchanged. These report deployment readiness,
+not cryptographic proof or browser trust. The tool recommends
+`hal vault pki enable --agility`, which provisions missing conventional PKI and
+PQC lab prerequisites on a compatible, licensed Vault instance. See
+[Vault PKI](vault-pki.md).
 
-The PQC payload is additive: clients should tolerate its absence with older HAL
-versions and preserve conventional `data.execution` handling. The two executions
-have separate checks; the top-level result retains conventional PKI execution
-semantics. No input or envelope version change is required. HAL Plus consumers
-should ground PQC answers in `pqc_execution` when present and never infer mutual
-authentication from readiness.
+The PQC and agility payloads are additive: clients should tolerate their
+absence with older HAL versions and preserve conventional `data.execution`
+handling. All three executions have separate checks; the top-level result
+retains conventional PKI execution semantics. No input or envelope version
+change is required. HAL Plus consumers should ground PQC answers in
+`pqc_execution` when present and never infer mutual authentication from
+readiness.

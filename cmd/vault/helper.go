@@ -83,15 +83,17 @@ func GetHealthyClient() (*vault.Client, error) {
 //   - 30080 → 8088  (hal vault k8s   — VSO web demo)
 //   - 30082 → 8089  (hal vault pki --k8s   — cert-manager / nginx demo)
 //   - 30083 → 8090  (hal vault pki --acme  — ACME / Caddy demo)
+//   - 30085 → 8093  (hal vault pki --pqc  — workload mTLS demo)
+//   - 30086-30089 → 8094-8097 (hal vault pki --agility — browser demo)
 //
-// All three ports are declared upfront so any combination of demos can be
+// All feature ports are declared upfront so any combination of demos can be
 // enabled on the same cluster without recreating it.
 func writeHALKindConfig() (string, error) {
 	f, err := os.CreateTemp("", "hal-kind-*.yaml")
 	if err != nil {
 		return "", err
 	}
-	config := fmt.Sprintf("kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes:\n- role: control-plane\n  extraPortMappings:\n    - containerPort: 30080\n      hostPort: 8088\n      protocol: TCP\n    - containerPort: 30082\n      hostPort: 8089\n      protocol: TCP\n    - containerPort: 30083\n      hostPort: 8090\n      protocol: TCP\n    - containerPort: 30084\n      hostPort: 8091\n      protocol: TCP\n    - containerPort: %d\n      hostPort: %d\n      protocol: TCP\n", pqcNodePort, pqcHostPort)
+	config := fmt.Sprintf("kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes:\n- role: control-plane\n  extraPortMappings:\n    - containerPort: 30080\n      hostPort: 8088\n      protocol: TCP\n    - containerPort: 30082\n      hostPort: 8089\n      protocol: TCP\n    - containerPort: 30083\n      hostPort: 8090\n      protocol: TCP\n    - containerPort: 30084\n      hostPort: 8091\n      protocol: TCP\n    - containerPort: %d\n      hostPort: %d\n      protocol: TCP\n    - containerPort: %d\n      hostPort: %d\n      listenAddress: 127.0.0.1\n      protocol: TCP\n    - containerPort: %d\n      hostPort: %d\n      listenAddress: 127.0.0.1\n      protocol: TCP\n    - containerPort: %d\n      hostPort: %d\n      listenAddress: 127.0.0.1\n      protocol: TCP\n    - containerPort: %d\n      hostPort: %d\n      listenAddress: 127.0.0.1\n      protocol: TCP\n", pqcNodePort, pqcHostPort, agilityNodePort, agilityHostPort, agilityHybridNodePort, agilityHybridHostPort, agilityPQCNodePort, agilityPQCHostPort, agilityPureNodePort, agilityPureHostPort)
 	if _, err := f.WriteString(config); err != nil {
 		_ = f.Close()
 		return "", err

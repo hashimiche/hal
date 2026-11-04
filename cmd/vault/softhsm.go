@@ -448,11 +448,7 @@ func runVaultPKIHSMSetup(client *vault.Client, engine string, isUpdate bool) {
 	fmt.Println("  ✅ Role 'hal-role' created.")
 
 	// ---- Policy ----
-	pkiPolicy := fmt.Sprintf(`
-path "%s/sign/hal-role"  { capabilities = ["create", "update"] }
-path "%s/issue/hal-role" { capabilities = ["create", "update"] }
-`, pkiIntMount, pkiIntMount)
-	_ = client.Sys().PutPolicy("hal-pki-issuer", pkiPolicy)
+	_ = client.Sys().PutPolicy("hal-pki-issuer", pkiIssuerPolicy())
 	fmt.Println("  ✅ Policy 'hal-pki-issuer' written.")
 
 	fmt.Println("\n✅ Vault PKI (HSM-backed) setup complete!")

@@ -20,3 +20,6 @@ issues/
 
 # Working notes superseded by docs/adr/0001-versitygw-for-tfe-object-storage.md
 docs/object-storage-replacement-spec.md
+
+# Standalone PQC field guide kept outside version control
+/docs/pqc-architecture/

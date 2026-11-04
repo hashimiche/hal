@@ -1,0 +1,13 @@
+mode,metric,n,median_ms,p95_ms,certificate_algorithm,negotiated_group,chain_der_bytes
+traditional,tcp_connect_ms,30,0.226000,0.368000,RSA,x25519,2722
+traditional,tls_handshake_ms,30,2.459000,5.403999,RSA,x25519,2722
+traditional,request_ttfb_ms,30,0.499000,0.742000,RSA,x25519,2722
+traditional,total_ttfb_ms,30,3.277000,6.552999,RSA,x25519,2722
+hybrid,tcp_connect_ms,30,0.259501,0.435000,RSA,X25519MLKEM768,2712
+hybrid,tls_handshake_ms,30,2.687500,3.870000,RSA,X25519MLKEM768,2712
+hybrid,request_ttfb_ms,30,0.504500,0.710000,RSA,X25519MLKEM768,2712
+hybrid,total_ttfb_ms,30,3.532500,4.869000,RSA,X25519MLKEM768,2712
+pqc,tcp_connect_ms,30,0.225000,0.360000,ML-DSA-65,X25519MLKEM768,11141
+pqc,tls_handshake_ms,30,2.926000,6.731000,ML-DSA-65,X25519MLKEM768,11141
+pqc,request_ttfb_ms,30,0.462500,0.736000,ML-DSA-65,X25519MLKEM768,11141
+pqc,total_ttfb_ms,30,3.811000,7.875000,ML-DSA-65,X25519MLKEM768,11141

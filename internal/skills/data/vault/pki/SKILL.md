@@ -28,7 +28,7 @@ This skill covers the two-tier PKI CA chain and the K8s, ACME, and HSM demo mode
 
 ### `--k8s` mode (adds cert-manager + nginx demo)
 
-- Shared KinD cluster on `hal-net` via `ensureHALKindCluster()` (ports 30080→8088, 30082→8089, 30083→8090, 30084→8091, 30085→8093 for PQC)
+- Shared KinD cluster on `hal-net` via `ensureHALKindCluster()` (ports 30080→8088, 30082→8089, 30083→8090, 30084→8091, 30085→8093 for workload PQC, and 30086–30089→8094–8097 for browser agility)
 - Jetstack cert-manager (Helm, OCI chart, `webhook.hostNetwork=true` for KinD)
 - Dedicated Vault Kubernetes auth mount: `kubernetes-pki/`
 - ClusterIssuer: `vault-pki-issuer` → `pki-int/sign/hal-role`
@@ -182,6 +182,21 @@ when mapped, otherwise the status-provided port-forward. Browser ECDSA HTTPS
 and internal ML-DSA/ML-KEM-768 mTLS are separate trust decisions. Only actual
 verified connection evidence establishes authentication and negotiation;
 readiness and parsed certificates do not. See `docs/commands/vault-pki.md`.
+
+### Browser crypto agility
+
+With a running, licensed Vault Enterprise 2.2.0+ instance, use
+`hal vault pki enable --agility` for a separate browser app. It enables missing
+conventional PKI and PQC lab prerequisites. Traditional
+is RSA/X25519 at `traditional.agility.localhost:8094`; Hybrid key exchange is
+RSA/X25519MLKEM768 at `hybrid.agility.localhost:8095`; Hybrid + PQC certificate
+is ML-DSA-65/X25519MLKEM768 at `pqc.agility.localhost:8096`; experimental
+Pure PQC is ML-DSA-65/MLKEM768 at `pure.agility.localhost:8097`.
+`status|update|disable --agility` manage its roles and namespace. Disable also
+removes prerequisites created by this agility lifecycle; pre-existing CAs and
+other KinD users remain. Chrome 150+ and manual trust of both private roots are needed.
+The page cannot report Chrome trust or a failed handshake. See
+`docs/commands/vault-pki.md` for trust setup and removal.
 
 
 PQC workload certificates default to `--pqc-cert-ttl 10s` (range 10s–24h).

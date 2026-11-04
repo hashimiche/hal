@@ -1,0 +1,30 @@
+{
+  "started_at_utc": "2026-10-27T15:57:19.546447+00:00",
+  "machine": "Darwin 25.6.0 arm64",
+  "openssl_library": "3.6.3",
+  "openssl_cli": "OpenSSL 3.6.3 9 Jun 2026 (Library: OpenSSL 3.6.3 9 Jun 2026)",
+  "network_path": "127.0.0.1:8094-8096 to KinD node loopback host mappings to one NGINX app pod",
+  "server_image": "docker.io/library/nginx@sha256:1dd3048a04f4b76ebd706c1bbb9df7d9d53b4f8253b32ce14467088c9b5ada0f",
+  "server_nginx_config_sha256": "609f0503bbd296fc07b4a4c2776cc33839b84adfb19b1cd0579fbea4bc599c30",
+  "tls_version": "TLSv1.3",
+  "cipher_suite": "TLS_AES_256_GCM_SHA384",
+  "http_request": "GET /benchmark HTTP/1.1 with Connection: close",
+  "http_response_body": "HAL crypto agility benchmark v1",
+  "runs_per_mode": 30,
+  "warmups_per_mode": 3,
+  "sampling_order": "round robin Traditional, Hybrid, PQC",
+  "sample_timing": "monotonic clock in one process; new TCP socket and SSL object per sample",
+  "certificate_validation": "trust root, DNS hostname, exact Vault leaf SHA-256, TLS version, cipher and negotiated group",
+  "resumed_sessions": "not measured; client cache/tickets and server cache/tickets disabled; every row requires session_reused=false",
+  "tcp_connect_ms": "socket connect start to TCP connect completion",
+  "tls_handshake_ms": "immediately before SSL_connect to verified handshake completion",
+  "request_ttfb_ms": "after complete HTTP request write to first SSL_read bytes",
+  "total_ttfb_ms": "before TCP connect to first SSL_read bytes",
+  "excluded": [
+    "Vault certificate issuance",
+    "PQC workload backend mTLS"
+  ],
+  "raw_csv_sha256": "26cb00f91d35b9abbd4446c48efc647ff26d552e45d1af70e4593527f1be458e",
+  "benchmark_c_sha256": "8f26bede68af7fd3f88b033200e276a77f401a02a92f448c62aa5fee00351e63",
+  "benchmark_python_sha256": "59163eab8604575d983aaa53f9fafd3c19170b3e5b4fd229576dbc6f062408a5"
+}

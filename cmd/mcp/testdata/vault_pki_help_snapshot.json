@@ -9,6 +9,14 @@
       "name": "--acme-cert-ttl string"
     },
     {
+      "description": "Deploy four browser HTTPS modes; enable missing conventional PKI and PQC lab prerequisites",
+      "name": "--agility"
+    },
+    {
+      "description": "NGINX/OpenSSL image for the browser crypto agility demo (default \"docker.io/library/nginx@sha256:1dd3048a04f4b76ebd706c1bbb9df7d9d53b4f8253b32ce14467088c9b5ada0f\")",
+      "name": "--agility-image string"
+    },
+    {
       "description": "Allowed domains for 'hal-role' (default \"hal.local,cluster.local,svc.cluster.local\")",
       "name": "--allowed-domains string"
     },

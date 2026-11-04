@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>HAL · Crypto agility</title>
+  <style>
+    :root {
+      color-scheme:light;
+      font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
+      --background:#fff;--layer:#f4f4f4;--layer-hover:#e8e8e8;
+      --text:#161616;--text-secondary:#525252;--border:#e0e0e0;
+      --blue:#0f62fe;--blue-hover:#0043ce;--blue-soft:#edf5ff;
+      --green:#198038;--green-soft:#defbe6;--red:#da1e28;
+      background:var(--background);color:var(--text);
+    }
+    * { box-sizing:border-box }
+    body { max-width:1200px; margin:0 auto; padding:48px 32px 80px }
+    header { max-width:900px; padding-bottom:32px; border-bottom:1px solid var(--border) }
+    .eyebrow { color:var(--text-secondary); font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase }
+    h1 { font-size:clamp(36px,5vw,54px); font-weight:400; letter-spacing:-.025em; line-height:1.12; margin:20px 0 16px }
+    h2 { font-size:24px; font-weight:400; line-height:1.3; margin:0 0 16px }
+    p { color:var(--text-secondary); font-size:14px; line-height:1.6; margin:0 0 16px }
+    header p { font-size:16px; max-width:720px; margin-bottom:0 }
+    button { font:inherit; cursor:pointer }
+    a:focus-visible,button:focus-visible { outline:2px solid var(--blue); outline-offset:3px }
+    nav { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin:40px 0 24px }
+    nav a { display:block; min-height:112px; padding:20px 24px; border:1px solid var(--border); border-left:4px solid transparent; color:var(--text); text-decoration:none; background:var(--layer) }
+    nav a:hover { background:var(--layer-hover); border-left-color:var(--blue) }
+    nav a[aria-current] { background:var(--blue-soft); border-left-color:var(--blue) }
+    nav strong { display:block; font-size:20px; font-weight:600; line-height:1.3 }
+    nav small { display:block; color:var(--text-secondary); font-size:13px; line-height:1.5; margin-top:8px; overflow-wrap:anywhere }
+    .experimental { background:#fff1c7; border-left:4px solid #b28600; color:var(--text); padding:20px 24px; margin-bottom:32px }
+    .tabs { display:flex; gap:0; border-bottom:1px solid var(--border); margin:32px 0 24px }
+    .tabs button { min-width:144px; padding:14px 24px; border:0; border-bottom:2px solid transparent; background:#fff; color:var(--text-secondary); font-size:14px; text-align:left }
+    .tabs button:hover { background:var(--layer) }
+    .tabs button[aria-selected="true"] { border-bottom-color:var(--blue); color:var(--text); font-weight:600 }
+    .status { background:var(--layer); border-left:4px solid var(--blue); color:var(--text); padding:16px 20px; margin-bottom:32px }
+    .status.ok { background:var(--green-soft); border-left-color:var(--green) }
+    .status.bad { background:#fff1f1; border-left-color:var(--red) }
+    section { border-top:1px solid var(--border); padding:28px 0 32px }
+    section p:last-child { margin-bottom:0 }
+    dl { display:grid; grid-template-columns:minmax(180px,1fr) 2fr; gap:12px 24px; margin:0 }
+    dt { color:var(--text-secondary); font-size:14px }
+    dd { margin:0; overflow-wrap:anywhere; color:var(--text); font:13px/1.5 'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace }
+    code { background:var(--layer); color:var(--text); padding:1px 3px; overflow-wrap:anywhere; font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace }
+    .note { font-size:12px }
+    .action { min-height:48px; min-width:224px; background:var(--blue); color:#fff; border:0; border-radius:0; padding:12px 24px; margin:8px 0 16px; text-align:left; font-size:14px; font-weight:600 }
+    .action:hover { background:var(--blue-hover) }
+    .action:disabled { opacity:.6; cursor:wait }
+    .table-wrap { overflow-x:auto; margin:24px 0 }
+    table { width:100%; border-collapse:collapse; font-size:13px; min-width:720px }
+    th,td { text-align:left; padding:14px 16px; border-bottom:1px solid var(--border); vertical-align:top }
+    th { background:var(--layer); color:var(--text); font-weight:600 }
+    td:first-child { font-weight:600 }
+    tbody tr:hover { background:var(--blue-soft) }
+    .perf-frame { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; border:0 }
+    @media(max-width:672px) { body {padding:32px 16px 56px} nav {grid-template-columns:1fr; margin-top:32px} nav a {min-height:0} .tabs button {flex:1; min-width:0} dl {grid-template-columns:1fr; gap:4px} dd {margin-bottom:12px} }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">HASHICORP ACADEMY LABS / VAULT PKI / LOCAL LAB</div>
+    <h1>Crypto agility, in the browser</h1>
+    <p class="intro">Select a mode to navigate to a different local hostname. Each navigation opens a new HTTPS connection with its own server certificate and required key exchange group.</p>
+  </header>
+  <main>
+  <nav aria-label="TLS mode">
+    <a href="https://traditional.agility.localhost:8094/" data-mode="traditional"><strong>Traditional</strong><small>RSA certificate · X25519</small></a>
+    <a href="https://hybrid.agility.localhost:8095/" data-mode="hybrid"><strong>Hybrid key exchange</strong><small>RSA certificate · X25519MLKEM768 hybrid key exchange</small></a>
+    <a href="https://pqc.agility.localhost:8096/" data-mode="pqc"><strong>Hybrid + PQC certificate</strong><small>Vault-issued ML-DSA-65 certificate · X25519MLKEM768 hybrid key exchange</small></a>
+    <a href="https://pure.agility.localhost:8097/" data-mode="pure" target="_blank" rel="noopener"><strong>Pure PQC · experimental</strong><small>ML-DSA-65 certificate · standalone MLKEM768 key exchange</small></a>
+  </nav>
+  <p class="experimental" role="note"><strong>Experimental pure PQC:</strong> The connection will likely fail in a standard browser because it requires standalone MLKEM768. The link opens a new tab so this demo stays available. Use an OpenSSL 3.5+ client to verify the listener.</p>
+  <div class="tabs" role="tablist" aria-label="Demo view">
+    <button id="evidence-tab" type="button" role="tab" aria-selected="true" aria-controls="evidence-panel">TLS evidence</button>
+    <button id="performance-tab" type="button" role="tab" aria-selected="false" aria-controls="performance-panel" tabindex="-1">Performance</button>
+  </div>
+  <div id="evidence-panel" role="tabpanel" aria-labelledby="evidence-tab">
+    <p id="status" class="status" role="status">Reading server TLS evidence…</p>
+    <section><h2>Configured certificate</h2><dl id="configured"></dl></section>
+    <section><h2>Server-observed connection</h2><dl id="observed"></dl></section>
+  </div>
+  <div id="performance-panel" role="tabpanel" aria-labelledby="performance-tab" hidden>
+    <h2>Local connection comparison</h2>
+    <p class="intro">These measurements describe this browser and local HAL lab. They are not universal algorithm rankings. Chain size is the DER bytes sent for the leaf and intermediate certificates, excluding the trusted root.</p>
+    <button id="measure-browser" class="action" type="button">Measure browser page loads</button>
+    <p id="performance-status" class="note" role="status">Browser timings are unavailable until measured.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th scope="col">Mode</th><th scope="col">Chain size</th><th scope="col">Connection</th><th scope="col">TLS</th><th scope="col">Time to first byte</th><th scope="col">Browser sample</th></tr></thead>
+      <tbody>
+        <tr data-perf-mode="traditional"><td>Traditional</td><td data-field="chain">Unavailable</td><td data-field="connection">Unavailable</td><td data-field="tls">Unavailable</td><td data-field="ttfb">Unavailable</td><td data-field="status">Not measured</td></tr>
+        <tr data-perf-mode="hybrid"><td>Hybrid key exchange</td><td data-field="chain">Unavailable</td><td data-field="connection">Unavailable</td><td data-field="tls">Unavailable</td><td data-field="ttfb">Unavailable</td><td data-field="status">Not measured</td></tr>
+        <tr data-perf-mode="pqc"><td>Hybrid + PQC certificate</td><td data-field="chain">Unavailable</td><td data-field="connection">Unavailable</td><td data-field="tls">Unavailable</td><td data-field="ttfb">Unavailable</td><td data-field="status">Not measured</td></tr>
+        <tr data-perf-mode="pure"><td>Pure PQC · experimental</td><td data-field="chain">Unavailable</td><td data-field="connection">Unavailable</td><td data-field="tls">Unavailable</td><td data-field="ttfb">Unavailable</td><td data-field="status">Not measured</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">Browser values are medians of up to eight page navigations per mode, after one warmup per mode. Sampling order rotates so each mode occupies each position twice. Pure PQC is expected to be unavailable in standard browsers. Connection includes TCP and TLS; TLS is its portion of that interval. Time to first byte is <code>responseStart − requestStart</code>. Missing or reused connection timing is excluded; if none is available, the cell shows unavailable. The benchmark command in <code>docs/commands/vault-pki.md</code> records at least 30 fresh, verified handshakes per mode with raw samples and median/p95.</p>
+  </div>
+  </main>
+  <script>
+    const current = location.hostname.split('.')[0];
+    document.querySelectorAll('nav a').forEach(a => { if (a.dataset.mode === current) a.setAttribute('aria-current','page'); });
+    const labels = {
+      mode:'Mode', certificate_authentication:'Certificate authentication', certificate_dns_name:'DNS identity',
+      certificate_sha256_fingerprint:'Certificate SHA-256 fingerprint', required_group:'Required key exchange',
+      sni:'SNI', tls_version:'TLS version', cipher_suite:'Cipher suite',
+      local_handshake_signature_scheme:'Server handshake signature', negotiated_group:'Negotiated key exchange'
+    };
+    function fill(id, data) {
+      const root = document.getElementById(id);
+      Object.entries(data).forEach(([key,value]) => {
+        const dt=document.createElement('dt'), dd=document.createElement('dd');
+        dt.textContent=labels[key]||key; dd.textContent=value ?? 'Unavailable';
+        root.append(dt,dd);
+      });
+    }
+    fetch('/diagnostics', {cache:'no-store'}).then(async response => {
+      const data = await response.json();
+      fill('configured',data.configured);
+      fill('observed',data.server_observed);
+      const status=document.getElementById('status');
+      status.classList.add(response.ok && data.server_policy_match ? 'ok':'bad');
+      status.textContent=response.ok && data.server_policy_match
+        ? 'Server-observed TLS settings match this mode. Inspect Chrome to confirm trust.'
+        : 'Server TLS evidence does not match this mode. Check the deployment and do not treat this connection as verified.';
+    }).catch(() => {
+      const status=document.getElementById('status');
+      status.classList.add('bad');
+      status.textContent='Diagnostics could not be loaded. This page makes no TLS evidence claim.';
+    });
+  </script>
+  <script src="/performance.js" defer></script>
+</body>
+</html>

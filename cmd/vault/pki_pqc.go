@@ -43,7 +43,7 @@ var pqcCertTTL = pqcDefaultCertTTL
 func validatePQCFlags(cmd *cobra.Command, action string) error {
 	// PQC currently has one deployment mode: the shared Kubernetes cluster.
 	// An explicit --k8s remains accepted; status never provisions infrastructure.
-	for _, flag := range []string{"acme", "hsm", "no-hsm", "force", "root-mount", "int-mount", "root-ttl", "int-ttl", "allowed-domains", "max-cert-ttl", "acme-cert-ttl", "cert-manager-version", "vault-pki-web-backend-image", "vault-pki-web-backend-tag", "vault-pki-caddy-image", "vault-pki-caddy-tag", "softhsm-token-label", "softhsm-pin", "softhsm-so-pin", "softhsm-managed-key", "softhsm-key-label", "softhsm-hmac-label"} {
+	for _, flag := range []string{"acme", "agility-image", "hsm", "no-hsm", "force", "root-mount", "int-mount", "root-ttl", "int-ttl", "allowed-domains", "max-cert-ttl", "acme-cert-ttl", "cert-manager-version", "vault-pki-web-backend-image", "vault-pki-web-backend-tag", "vault-pki-caddy-image", "vault-pki-caddy-tag", "softhsm-token-label", "softhsm-pin", "softhsm-so-pin", "softhsm-managed-key", "softhsm-key-label", "softhsm-hmac-label"} {
 		if cmd.Flags().Changed(flag) {
 			return fmt.Errorf("--pqc cannot be combined with --%s; PQC resources are isolated from conventional PKI/ACME/HSM", flag)
 		}
@@ -607,6 +607,10 @@ func runPQC(cmd *cobra.Command, args []string) error {
 	if update {
 		action = "update"
 	}
+	return runPQCAction(cmd, action)
+}
+
+func runPQCAction(cmd *cobra.Command, action string) error {
 	if e := validatePQCFlags(cmd, action); e != nil {
 		return e
 	}
@@ -629,6 +633,13 @@ func runPQC(cmd *cobra.Command, args []string) error {
 		return e
 	}
 	if action == "disable" {
+		active, err := agilityDependencyActive()
+		if err != nil {
+			return err
+		}
+		if active {
+			return fmt.Errorf("crypto agility uses the PQC CA; run hal vault pki disable --agility first")
+		}
 		if e := pqcDisable(client); e != nil {
 			return e
 		}
@@ -758,8 +769,26 @@ func init() {
 	original := vaultPKICmd.Run
 	vaultPKICmd.Run = nil
 	vaultPKICmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if pkiAgility {
+			return runAgility(cmd, args)
+		}
 		if pkiPQC {
 			return runPQC(cmd, args)
+		}
+		if cmd.Flags().Changed("agility-image") {
+			return fmt.Errorf("--agility-image requires --agility")
+		}
+		teardown := (pkiEnable || (len(args) > 0 && args[0] == "enable")) && !pkiK8s && !pkiACME ||
+			pkiDisable || (len(args) > 0 && args[0] == "disable") ||
+			((pkiUpdate || (len(args) > 0 && args[0] == "update")) && ((!pkiK8s && !pkiACME) || pkiForce))
+		if teardown && !global.DryRun {
+			active, err := agilityDependencyActive()
+			if err != nil {
+				return err
+			}
+			if active {
+				return fmt.Errorf("crypto agility uses the conventional CA; run hal vault pki disable --agility first")
+			}
 		}
 		for _, f := range []string{"pqc-image", "pqc-cluster-domain", "pqc-cert-ttl"} {
 			if cmd.Flags().Changed(f) {

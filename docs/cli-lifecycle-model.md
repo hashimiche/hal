@@ -192,6 +192,7 @@ are. The canonical namespace list to check:
 | `pki-demo` | `hal vault pki --k8s` |
 | `pki-acme-demo` | `hal vault pki --acme` |
 | `hal-pqc` | `hal vault pki --pqc` |
+| `hal-crypto-agility` | `hal vault pki --agility` |
 
 When the guard preserves the cluster, the `disable` path must still delete its
 **own** namespace(s) before returning. A feature that leaves its namespace
@@ -212,12 +213,16 @@ in `cmd/vault/helper.go`). All host port mappings are declared upfront:
 | `8090` | `30083` | `hal vault pki --acme` |
 | `8091` | `30084` | `hal vault database --k8s` |
 | `8093` | `30085` | `hal vault pki --pqc` |
+| `8094` | `30086` | `hal vault pki --agility` Traditional |
+| `8095` | `30087` | `hal vault pki --agility` Hybrid key exchange |
+| `8096` | `30088` | `hal vault pki --agility` Hybrid + PQC certificate |
+| `8097` | `30089` | `hal vault pki --agility` Pure PQC (experimental) |
 
 When adding a new `--k8s` feature, reserve the next available pair and add it
 to `writeHALKindConfig()` so the port is pre-mapped on any existing cluster.
 Host port `8092` is taken by the Agentic IAM chat (`hal-agentic-iam-chat`,
 `http://agentic.localhost:8092`), which is not on KinD: the next pair starts
-at `8094` (8093 is reserved for PQC PKI).
+at `8098` (8093 is reserved for PQC PKI; 8094–8097 are reserved for crypto agility).
 
 ### Network
 KinD nodes must be on `hal-net` so Vault and other HAL containers can reach the
@@ -351,3 +356,23 @@ cleanup. `--pqc-image` selects the stock NGINX image, pinned by digest by defaul
 `--kind-node-image` controls new nodes. No custom TLS image build is needed.
 Status is deployment readiness, never cryptographic proof. See
 [Vault PKI](commands/vault-pki.md).
+
+## Browser crypto agility lifecycle
+
+`hal vault pki enable|update|status|disable --agility` provisions missing
+conventional PKI and PQC lab prerequisites and owns two dedicated browser
+roles, namespace `hal-crypto-agility`, and local credentials under
+`~/.hal/crypto-agility`. Ownership markers track which prerequisites agility
+created. Disable removes those prerequisites and preserves resources that
+already existed; an owned KinD cluster is removed only when no other user
+namespace remains. The conventional and PQC CA teardown/rebuild paths refuse
+to run while agility is active. Status is read-only; dry-run creates no state.
+Traditional uses Vault RSA + X25519; Hybrid key exchange uses Vault RSA +
+X25519MLKEM768; Hybrid + PQC certificate uses Vault ML-DSA-65 +
+X25519MLKEM768; experimental Pure PQC uses Vault ML-DSA-65 + MLKEM768.
+The one NGINX application has four TLS listeners because a one-port SNI setup
+did not enforce distinct groups in the tested runtime. Existing KinD clusters
+are never recreated to add the four ports; use one loopback port-forward for
+8094:8443, 8095:8444, 8096:8445 and 8097:8446 if mappings are missing. Trust roots
+are installed and removed only by the user. See
+[Vault PKI](commands/vault-pki.md#browser-facing-crypto-agility-demo---agility).

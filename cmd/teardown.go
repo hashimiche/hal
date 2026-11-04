@@ -163,6 +163,9 @@ func runGlobalTeardown() globalTeardownResult {
 	if err := global.RemovePQCPKIState(); err != nil {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("PQC PKI state cleanup failed: %v", err))
 	}
+	if err := global.RemoveCryptoAgilityState(); err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("crypto agility state cleanup failed: %v", err))
+	}
 
 	// Every lab is gone, so the credentials they generated go with them.
 	if err := labsecrets.RemoveStore(); err != nil {

@@ -216,3 +216,20 @@ const (
 	pqcDefaultDomain    = "cluster.local"
 	pqcDefaultImage     = "docker.io/library/nginx@sha256:1dd3048a04f4b76ebd706c1bbb9df7d9d53b4f8253b32ce14467088c9b5ada0f"
 )
+
+const (
+	agilityNamespace      = global.CryptoAgilityNamespace
+	agilityRole           = "hal-crypto-agility-browser"
+	agilityTraditionalDNS = "traditional.agility.localhost"
+	agilityHybridDNS      = "hybrid.agility.localhost"
+	agilityPQCDNS         = "pqc.agility.localhost"
+	agilityPureDNS        = "pure.agility.localhost"
+	agilityNodePort       = 30086
+	agilityHybridNodePort = 30087
+	agilityPQCNodePort    = 30088
+	agilityPureNodePort   = 30089
+	agilityHostPort       = 8094
+	agilityHybridHostPort = 8095
+	agilityPQCHostPort    = 8096
+	agilityPureHostPort   = 8097
+)

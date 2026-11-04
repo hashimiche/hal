@@ -3,6 +3,7 @@ package mcp
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -368,20 +369,30 @@ func TestVaultPKIIndependentExecutions(t *testing.T) {
 			t.Fatal("PQC execution changed conventional PKI success semantics")
 		}
 		var payload struct {
-			Data   map[string]toolExecution `json:"data"`
-			Checks []opCheck                `json:"checks"`
+			Data                map[string]toolExecution `json:"data"`
+			Checks              []opCheck                `json:"checks"`
+			RecommendedCommands []string                 `json:"recommended_commands"`
 		}
 		if err := json.Unmarshal([]byte(result.Content[0].Text), &payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload.Data["execution"].Command != "hal vault pki" || payload.Data["pqc_execution"].Command != "hal vault pki status --pqc" {
+		if payload.Data["execution"].Command != "hal vault pki" || payload.Data["pqc_execution"].Command != "hal vault pki status --pqc" || payload.Data["agility_execution"].Command != "hal vault pki status --agility" {
 			t.Fatal("independent execution payloads missing")
 		}
 		if payload.Data["pqc_execution"].ExitCode != pqcExit {
 			t.Fatal("PQC failure hidden")
 		}
-		if len(payload.Checks) != 2 || payload.Checks[1].Status != statusFromExecution(payload.Data["pqc_execution"]) {
-			t.Fatal("independent PQC check missing")
+		if !slices.Contains(payload.RecommendedCommands, "hal vault pki enable --agility") {
+			t.Fatal("agility one-command enable recommendation missing")
+		}
+		checksByName := map[string]string{}
+		for _, check := range payload.Checks {
+			checksByName[check.Name] = check.Status
+		}
+		if len(payload.Checks) != 3 ||
+			checksByName["vault_pqc_pki_status"] != statusFromExecution(payload.Data["pqc_execution"]) ||
+			checksByName["vault_crypto_agility_status"] != statusFromExecution(payload.Data["agility_execution"]) {
+			t.Fatal("independent PKI checks missing")
 		}
 	}
 }

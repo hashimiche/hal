@@ -546,12 +546,13 @@ func disableDatabaseVSOCluster() {
 		{"pki-demo", "hal vault pki --k8s"},
 		{"pki-acme-demo", "hal vault pki --acme"},
 		{pqcNamespace, "hal vault pki --pqc --k8s"},
+		{agilityNamespace, "hal vault pki --agility"},
 	}
 
 	for _, t := range coTenants {
 		out, lookupErr := exec.Command("kubectl", "get", "namespace", t.ns,
 			"--ignore-not-found", "-o", "name").Output()
-		if (t.ns == pqcNamespace && lookupErr != nil) || strings.TrimSpace(string(out)) != "" {
+		if ((t.ns == pqcNamespace || t.ns == agilityNamespace) && lookupErr != nil) || strings.TrimSpace(string(out)) != "" {
 			// Remove our own namespace (VaultDynamicSecret, synced Secret,
 			// demo app, proxy) before preserving the cluster. If db-app were
 			// left behind, the other features' co-tenant guards would keep

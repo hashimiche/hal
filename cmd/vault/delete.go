@@ -179,6 +179,11 @@ var vaultDestroyCmd = &cobra.Command{
 		} else if err := global.RemovePQCPKIState(); err != nil {
 			fmt.Printf("Warning: %v\n", err)
 		}
+		if global.DryRun {
+			fmt.Println("[DRY RUN] Would remove owned crypto agility local credentials and configuration")
+		} else if err := global.RemoveCryptoAgilityState(); err != nil {
+			fmt.Printf("Warning: %v\n", err)
+		}
 
 		// 5. Attempt to clean the network (Only deletes hal-net if NO containers are using it)
 		global.CleanNetworkIfEmpty(engine)

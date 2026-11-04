@@ -149,7 +149,7 @@ func mcpOpsTools() []map[string]interface{} {
 		},
 		{
 			"name":        "get_vault_pki_status",
-			"description": "Return Vault PKI readiness: Root/Intermediate CA engines, hal-role, optional auto-detected SoftHSM2 PKCS#11 managed key, cert-manager (--k8s), ACME/Caddy (--acme), and isolated ML-DSA/ML-KEM-768 (--pqc) workload readiness. Readiness is not cryptographic proof.",
+			"description": "Return Vault PKI readiness: conventional engines and integrations, isolated ML-DSA/ML-KEM-768 workload readiness (--pqc), and browser crypto agility readiness (--agility). Readiness is not cryptographic proof or browser trust.",
 			"inputSchema": map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
 		},
 		{
@@ -401,11 +401,12 @@ func handleOpsTool(name string, args map[string]interface{}) (mcpToolCallResult,
 		}
 		execRes := runHAL("vault", "pki")
 		pqcRes := runHAL("vault", "pki", "status", "--pqc")
-		checks := []opCheck{{Name: "vault_pki_status", Status: statusFromExecution(execRes), Details: "vault pki engines + cert-manager/acme demo check"}, {Name: "vault_pqc_pki_status", Status: statusFromExecution(pqcRes), Details: "independent PQC readiness; not cryptographic proof"}}
+		agilityRes := runHAL("vault", "pki", "status", "--agility")
+		checks := []opCheck{{Name: "vault_pki_status", Status: statusFromExecution(execRes), Details: "vault pki engines + cert-manager/acme demo check"}, {Name: "vault_pqc_pki_status", Status: statusFromExecution(pqcRes), Details: "independent PQC workload readiness; not cryptographic proof"}, {Name: "vault_crypto_agility_status", Status: statusFromExecution(agilityRes), Details: "browser demo readiness; not browser trust or negotiated TLS proof"}}
 		if execRes.ExitCode != 0 {
-			return opErrorForTool("get_vault_pki_status", classifyContractError(execRes.Output), "vault pki check failed; ensure Vault is reachable and PKI engines are enabled", map[string]interface{}{"execution": execRes, "pqc_execution": pqcRes}, []string{"hal vault status", "hal vault pki enable"}, checks, nil, nil), true
+			return opErrorForTool("get_vault_pki_status", classifyContractError(execRes.Output), "vault pki check failed; ensure Vault is reachable and PKI engines are enabled", map[string]interface{}{"execution": execRes, "pqc_execution": pqcRes, "agility_execution": agilityRes}, []string{"hal vault status", "hal vault pki enable"}, checks, nil, nil), true
 		}
-		return opSuccessForTool("get_vault_pki_status", "vault pki status collected", map[string]interface{}{"execution": execRes, "pqc_execution": pqcRes}, []string{"hal vault pki", "hal vault pki enable", "hal vault create --edition ent-hsm --mode prod", "hal vault pki enable --no-hsm", "hal vault pki enable --acme", "hal vault pki enable --k8s", "hal vault pki status --pqc", "hal vault pki enable --pqc --dry-run"}, checks, nil, nil, []string{"https://developer.hashicorp.com/vault/docs/secrets/pki", "https://developer.hashicorp.com/vault/tutorials/pki/managed-key-pki"}), true
+		return opSuccessForTool("get_vault_pki_status", "vault pki status collected", map[string]interface{}{"execution": execRes, "pqc_execution": pqcRes, "agility_execution": agilityRes}, []string{"hal vault pki", "hal vault pki enable", "hal vault create --edition ent-hsm --mode prod", "hal vault pki enable --no-hsm", "hal vault pki enable --acme", "hal vault pki enable --k8s", "hal vault pki status --pqc", "hal vault pki enable --pqc --dry-run", "hal vault pki status --agility", "hal vault pki enable --agility --dry-run", "hal vault pki enable --agility"}, checks, nil, nil, []string{"https://developer.hashicorp.com/vault/docs/secrets/pki", "https://developer.hashicorp.com/vault/tutorials/pki/managed-key-pki"}), true
 
 	case "get_ldap_status":
 		if err := ensureOnlyKeys(args, map[string]bool{}); err != nil {

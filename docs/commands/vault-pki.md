@@ -11,7 +11,7 @@ PKI is a Vault feature, not a standalone product. It lives under `hal vault pki`
 
 ## Related
 - Vault must be running: `hal vault create`
-- KinD cluster (shared with or independent of `hal vault k8s`): used only when `--k8s` is passed
+- KinD cluster (shared with `hal vault k8s`): used by `--k8s`, `--acme`, `--pqc`, and `--agility`
 - `--acme` flag: enables Vault's built-in ACME endpoint, deploys Caddy on KinD, live cert-renewal web page
 - HSM-backed PKI is auto-selected on an `ent-hsm` deployment; `--hsm` asserts
   that mode is available and `--no-hsm` opts out.
@@ -20,6 +20,9 @@ PKI is a Vault feature, not a standalone product. It lives under `hal vault pki`
 - HAL CLI is available in your local environment.
 - `hal vault create` has been run and Vault is healthy at `http://127.0.0.1:8200`.
 - For `--k8s`: `kind`, `kubectl`, and `helm` must be installed and in PATH.
+- For `--agility`: `kind`, `kubectl`, OpenSSL 3.5+, and a running, licensed
+  Vault Enterprise 2.2.0+ with ML-DSA issuance. HAL provisions missing CA
+  hierarchies and the PQC workload lab.
 - For HSM-backed CAs: deploy first with
   `hal vault create --edition ent-hsm --mode prod`.
 
@@ -354,6 +357,8 @@ Flags (mode selection and enable/update):
   --pqc-cert-ttl string       PQC workload certificate TTL (default "10s", range 10s–24h)
   --pqc-image string          Stock NGINX image with njs and PQC TLS support (pinned digest by default)
   --pqc-cluster-domain string Kubernetes Service DNS domain (default "cluster.local")
+  --agility                   Enable missing PKI/PQC prerequisites and deploy four browser HTTPS modes
+  --agility-image string      NGINX/OpenSSL image for crypto agility (pinned digest by default)
 
 Global flags: --debug, --dry-run, --network-subnet, --verbose
 ```
@@ -690,3 +695,204 @@ after the run. This suite does not create a KinD cluster or exercise the HAL
 Kubernetes deployment lifecycle. The 2026-10-20 and 2026-10-22 deployment
 results above remain historical. No result is recorded for other operating
 systems, Vault or Kubernetes versions, container engines or image overrides.
+
+## Browser-facing crypto agility demo (`--agility`)
+
+This opt-in lifecycle runs the conventional PKI and `--pqc` enable flows as
+needed, then deploys the browser application. It reuses healthy CA hierarchies
+that already exist, and records ownership of any conventional PKI, PQC lab, or
+KinD cluster it creates in `~/.hal/crypto-agility/`. It owns its browser
+issuance roles, namespace `hal-crypto-agility`, and one NGINX application.
+The running Vault must already meet the Enterprise and license requirements;
+HAL does not replace an incompatible Vault deployment. Both CA hierarchies
+must remain present while agility is enabled; HAL refuses their destructive
+disable/rebuild paths until `hal vault pki disable --agility`.
+
+| Mode | URL | Certificate authentication | TLS 1.3 key exchange |
+| --- | --- | --- | --- |
+| Traditional | `https://traditional.agility.localhost:8094/` | Vault-issued RSA leaf, conventional root | X25519 |
+| Hybrid key exchange | `https://hybrid.agility.localhost:8095/` | Vault-issued RSA leaf, conventional root | X25519MLKEM768 |
+| Hybrid + PQC certificate | `https://pqc.agility.localhost:8096/` | Vault-issued ML-DSA-65 leaf, PQC root | X25519MLKEM768 |
+| Pure PQC (experimental) | `https://pure.agility.localhost:8097/` | Vault-issued ML-DSA-65 leaf, PQC root | MLKEM768 |
+
+The four links navigate to distinct DNS/SNI names and TCP ports. NGINX on the
+tested image applied the default server's group restriction across all SNI
+names when they shared one listen port. HAL therefore uses four listeners in
+one pod and four ports on one Service. A positive OpenSSL handshake with the
+required group and a negative handshake with a different group are run after
+deployment through the host mappings or a temporary loopback port-forward.
+TLS 1.3 only, disabled
+session tickets/cache, HTTP/1.1 and closed keep-alive connections prevent
+session reuse or HTTP/2 coalescing from confusing mode changes. Browser
+certificates have one exact DNS SAN, serverAuth EKU, a seven-day lifetime,
+validated chain and no CA private key material outside Vault.
+
+```sh
+hal vault pki enable --agility --dry-run
+hal vault pki enable --agility
+hal vault pki status --agility
+hal vault pki update --agility          # rotate all four browser leaves, retain CAs
+hal vault pki disable --agility         # remove agility and prerequisites it created
+```
+
+Disable preserves CA hierarchies and the PQC lab that existed before agility
+was enabled. It removes a KinD cluster created by this lifecycle only when no
+other user namespace remains. If another PKI integration began using the
+conventional CA, disable asks you to remove that integration first. A failed
+enable can be retried or disabled using its ownership markers.
+
+`--agility-image` overrides the pinned NGINX/OpenSSL image and
+`--kind-node-image` controls a newly created KinD node. Existing clusters
+are preserved. If the cluster predates the 8094–8097 mappings, keep this
+port-forward running in another terminal and use the same browser URLs:
+
+```sh
+kubectl --context kind-kind -n hal-crypto-agility port-forward --address 127.0.0.1 service/app 8094:8443 8095:8444 8096:8445 8097:8446
+```
+
+### Explicit private-root trust
+
+Chrome 150+ supports ML-DSA certificates in private PKI, provided the root is
+explicitly trusted. This enables the Hybrid + PQC certificate mode to use an
+ML-DSA-65 certificate with `X25519MLKEM768` key exchange. The experimental
+Pure PQC listener requires standalone `MLKEM768`. Chromium's
+[default TLS group list](https://chromium.googlesource.com/chromium/src/+/lkgr/services/network/public/mojom/ssl_config.mojom)
+does not offer that group, so its page will likely fail before loading in
+default Chrome. Use an OpenSSL 3.5+ client to verify the pure TLS handshake.
+This is **not** a
+publicly trusted PQC certificate; see
+[Chrome's private PKI support note](https://googlechrome.github.io/chromerootprogram/cqrp/testing/)
+and [Chrome 150 release notes](https://support.google.com/chrome/a/answer/10314655).
+HAL never installs roots or bypasses verification.
+
+1. Check your Chrome version at `chrome://settings/help` (150 or later).
+2. Print and compare the two root fingerprints before import:
+   ```sh
+   openssl x509 -in ~/.hal/crypto-agility/traditional-root.pem -noout -subject -fingerprint -sha256
+   openssl x509 -in ~/.hal/crypto-agility/pqc-root.pem -noout -subject -fingerprint -sha256
+   ```
+3. In Chrome, open `chrome://certificate-manager` and use **Local certificates**
+   to import and trust the conventional root for Traditional and Hybrid key
+   exchange. Import and trust the PQC root for Hybrid + PQC certificate. A
+   browser that supports `MLKEM768` and ML-DSA-65 also needs the PQC root for
+   Pure PQC.
+   On macOS, if the browser directs you to Keychain Access, import the root
+   into your **login** keychain, open its Trust settings, and explicitly set
+   it to **Always Trust**. Restart the browser after changing trust.
+4. Open the Traditional, Hybrid key exchange, and Hybrid + PQC certificate URLs
+   in Chrome. Use Chrome's site information
+   → **Connection is secure** → **Certificate is valid** to inspect the DNS SAN,
+   issuer/chain, algorithm and
+   SHA-256 fingerprint. The page separates configured certificate details from
+   server-observed TLS version, cipher, signature scheme and negotiated group.
+   The page cannot read Chrome's trust verdict, and a failed handshake cannot
+   load the page. To verify the pure PQC listener, run:
+   ```sh
+   openssl s_client -connect 127.0.0.1:8097 -servername pure.agility.localhost -tls1_3 -groups MLKEM768 -verify_return_error -verify_hostname pure.agility.localhost -CAfile ~/.hal/crypto-agility/pqc-root.pem -brief </dev/null
+   ```
+5. When finished, remove the imported roots from
+   `chrome://certificate-manager` or the macOS login keychain, matching the
+   fingerprints recorded in step 2, then restart Chrome. Removing the
+   `--agility` lab does not remove manually installed roots.
+
+The conventional `pki.localhost:8089` certificate lacks a matching SAN, and
+the workload lab's `pqc.localhost:8093` browser certificate is self-signed
+ECDSA. Neither is browser-facing evidence for this demo. Workload mTLS success
+also does not prove Chrome trusted the agility PQC leaf.
+
+### Performance comparison
+
+Select the **Performance** tab on any agility URL. It shows the DER size of the
+leaf-plus-intermediate chain actually configured for each listener; the trusted
+root and PEM text are excluded. Click **Measure browser page loads** to load
+the four modes in local frames when the browser supports their TLS groups. A
+browser without standalone `MLKEM768` support cannot measure Pure PQC.
+The tab warms each mode once, then takes eight
+samples per mode in rotating order, so each mode occupies each position twice.
+It shows the median of available fresh-connection samples and the count
+used. Each frame checks its own
+`/diagnostics` response, then reports its `PerformanceNavigationTiming` values
+back to the tab. **Connection** is `connectEnd - connectStart` (TCP plus TLS),
+**TLS** is `connectEnd - secureConnectionStart`, and **time to first byte** is
+`responseStart - requestStart`. These browser medians are local observations,
+not universal algorithm rankings. If the browser omits timing fields, reports
+a reused connection, or cannot load a mode, that sample is excluded. A mode
+with no valid samples shows **Unavailable**, never zero. Browser timing is not
+a certificate trust verdict. The first page navigation, certificate validation,
+browser scheduling, and different browser TLS implementations can affect the
+results; use the CLI benchmark below for verified full handshakes and raw data.
+
+For repeatable measurements, run from the repository root after enabling the
+agility lab. This requires Python 3, a C compiler, `pkg-config`, and OpenSSL
+3.5+ development headers and libraries. The command defaults to 30 measured
+runs and three warmups per mode, and writes a new timestamped directory under
+`~/.hal/crypto-agility/benchmarks/`:
+
+```sh
+python3 scripts/benchmark_crypto_agility.py --runs 30 --warmups 3
+```
+
+Use `--out <new-directory>` to save results elsewhere. The files are `raw.csv`
+(one row per connection, including selected leaf subject, SHA-256 fingerprint,
+public-key algorithm, negotiated group, chain bytes, cipher, and session reuse),
+`summary.csv` (median and nearest-rank p95), and `setup.json` (machine, OpenSSL,
+network path, deployed image and config hash, timing definitions, and source
+hashes). The script refuses fewer than 30 runs or an existing output directory.
+Each run uses a new TCP socket
+and SSL object in one process, verifies the root, DNS hostname and exact local
+Vault leaf, pins TLS 1.3 and `TLS_AES_256_GCM_SHA384`, and checks the negotiated
+group. Warmups are verified but omitted from the raw results. The script
+round-robins the modes to reduce time drift. All four listeners return the
+same fixed `/benchmark` response, and the client validates that body. This
+request reaches the agility app directly: Vault issuance and the separate PQC
+workload's backend mTLS are excluded. Server and client session caches and
+tickets are disabled; all samples are **full handshakes** and the script fails
+if a session is reused. A resumed-session cohort is unavailable in this lab
+and is never mixed into the full-handshake figures.
+
+One local run before the pure PQC group change on 2026-10-27 used macOS arm64,
+OpenSSL 3.6.3, loopback KinD host-port mappings, the pinned NGINX 1.31.3 /
+OpenSSL 3.5.7 server image,
+and 30 samples per mode. Its PQC listener used `X25519MLKEM768`; these numbers
+are historical hybrid key exchange results, not measurements of `MLKEM768`.
+The table is a local measurement, not an algorithm ranking; host scheduling
+and TLS implementation costs affect these values.
+
+| Mode | Chain DER bytes | TLS handshake median / p95 | Request to first byte median / p95 | Connect to first byte median / p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Traditional | 2,722 | 2.459 / 5.404 ms | 0.499 / 0.742 ms | 3.277 / 6.553 ms |
+| Hybrid key exchange | 2,712 | 2.688 / 3.870 ms | 0.505 / 0.710 ms | 3.533 / 4.869 ms |
+| Hybrid + PQC certificate | 11,141 | 2.926 / 6.731 ms | 0.463 / 0.736 ms | 3.811 / 7.875 ms |
+
+The [raw samples](../benchmarks/crypto-agility-2026-10-27-local/raw.csv),
+[full summary](../benchmarks/crypto-agility-2026-10-27-local/summary.csv), and
+[test setup](../benchmarks/crypto-agility-2026-10-27-local/setup.json) are kept
+with this guide. Repeating the command creates a new result directory; leaf
+fingerprints and DER sizes can change when `update --agility` rotates leaves.
+
+### Local verification record (2026-10-27)
+
+Before the pure PQC group change, the pinned NGINX 1.31.3 / OpenSSL 3.5.7 image was tested with temporary local
+RSA and ML-DSA-65 certificates. Config syntax passed; each of the three original ports
+accepted its required group and rejected the other group. NGINX diagnostics
+reported TLS 1.3, the expected signature scheme and negotiated group. Chrome
+156 reached `ERR_CERT_AUTHORITY_INVALID` for each untrusted temporary leaf,
+including ML-DSA-65, without any verification bypass. The local KinD cluster
+was absent and the available Vault deployment was not used for browser
+issuance, so this record does **not** claim a Chrome-accepted Vault-issued
+ML-DSA chain. Later on 2026-10-27, the live `--agility` deployment passed
+HAL's positive and negative TLS group probes against the local Vault-issued
+certificates. After explicitly trusting both demo roots, the operator reported
+that the agility demo worked in Chrome. This browser result is operator-reported;
+no automated capture of Chrome's certificate viewer was retained.
+
+The operator later clarified that Hybrid loads in Firefox while PQC returns
+`SSL_ERROR_NO_CYPHER_OVERLAP`. At the time, both modes required
+`X25519MLKEM768`, so this Firefox session could negotiate the hybrid key
+exchange group. The PQC failure
+therefore points toward the ML-DSA-65 certificate authentication or its trust
+path. The browser error alone does not identify the exact rejection.
+
+The macOS `curl` build linked to LibreSSL 3.3.6 completed Traditional but
+failed the Hybrid and PQC handshakes before HTTP, illustrating an unsupported
+client. No page can report success in that case.
