@@ -18,6 +18,7 @@ This file covers the root `hal` command, persistent flags, and global commands t
 - `hal status`
   - Purpose: global multi-product status summary
   - Behavior: reports deployment state for AAP, Vault, Boundary, Consul, Nomad, TFE, and Observability
+  - `--json`: prints the live lab snapshot as one JSON document on stdout and nothing else (read-only, `hal.mcp/readonly`)
   - Spec: [global-status.md](global-status.md)
 
 - `hal capacity`

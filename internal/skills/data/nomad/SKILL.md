@@ -12,6 +12,7 @@ Use this router when the user asks for Nomad workflows in hal but has not select
 - Route create/deploy requests to the create skill.
 - Route workload requests to the job skill.
 - Route health checks to the status skill.
+- Route "show me the logs" requests to `hal nomad logs [--tail N]` (read-only; the systemd journal of the Multipass VM).
 - Route teardown requests to the delete skill.
 - Route observability requests to the obs skill (`hal nomad obs create|update|delete|status`).
 

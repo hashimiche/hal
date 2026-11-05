@@ -14,6 +14,10 @@
   - Show Consul deployment health and status
   - Spec: [consul-status.md](consul-status.md)
 
+- `hal consul logs [--tail N]`
+  - Print recent Consul container logs (read-only)
+  - Spec: [consul-logs.md](consul-logs.md)
+
 - `hal consul delete`
   - Destroy local Consul server resources
   - Spec: [consul-destroy.md](consul-destroy.md)

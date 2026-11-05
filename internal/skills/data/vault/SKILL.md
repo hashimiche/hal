@@ -34,6 +34,7 @@ If obs comes after Vault, prefer `hal vault obs create` to backfill metrics/dash
 - Use delete when the user asks for full Vault ecosystem teardown.
 - Use obs when the user asks to wire Vault metrics into Grafana or Prometheus, or manage Vault observability artifacts.
 - Use status when the user asks whether Vault and add-on scenarios are currently healthy.
+- Use logs when the user asks for recent Vault logs or why Vault failed to start: `hal vault logs [--tail N] [--component NAME]` (read-only).
 
 ## Shared Lab Assumptions
 

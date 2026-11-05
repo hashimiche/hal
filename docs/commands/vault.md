@@ -14,6 +14,10 @@
   - Deep status for Vault container, API, and related integrations
   - Spec: [vault-status.md](vault-status.md)
 
+- `hal vault logs [--tail N] [--component NAME]`
+  - Print recent logs of a Vault ecosystem container (read-only)
+  - Spec: [vault-logs.md](vault-logs.md)
+
 - `hal vault delete`
   - Destroy Vault and associated extension resources
   - Spec: [vault-destroy.md](vault-destroy.md)

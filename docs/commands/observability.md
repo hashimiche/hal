@@ -14,6 +14,10 @@
   - Show observability component health/status
   - Spec: [observability-status.md](observability-status.md)
 
+- `hal obs logs [--tail N] [--component NAME]`
+  - Print recent logs of a PLG stack container (read-only)
+  - Spec: [observability-logs.md](observability-logs.md)
+
 - `hal obs delete`
   - Destroy observability stack and local state
   - Spec: [observability-destroy.md](observability-destroy.md)

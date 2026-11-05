@@ -37,7 +37,10 @@ var rootCmd = &cobra.Command{
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+		// Errors go to stderr so that stdout stays the command's result only:
+		// `hal status --json` must print nothing but JSON there, even when a
+		// flag is mistyped.
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }

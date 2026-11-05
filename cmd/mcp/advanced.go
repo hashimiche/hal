@@ -196,12 +196,12 @@ func validateCommand(proposed string) map[string]interface{} {
 		"health":    {"create", "update", "delete"},
 		"plus":      {"create", "status", "delete"},
 		"mcp":       {"create", "serve", "status", "delete"},
-		"vault":     {"create", "status", "delete", "update", "audit", "oidc", "jwt", "k8s", "ldap", "database", "db", "userpass", "up", "os", "pki", "obs", "agentic-iam", "agentic"},
-		"consul":    {"create", "status", "delete", "update", "obs"},
-		"nomad":     {"create", "status", "delete", "update", "job", "obs"},
-		"boundary":  {"create", "status", "delete", "update", "mariadb", "ssh", "obs"},
-		"terraform": {"create", "status", "delete", "update", "agent", "api-workflow", "api", "vcs-workflow", "vcs", "workspace", "ws", "twin", "bis", "dup", "saml", "obs"},
-		"obs":       {"create", "status", "delete", "update"},
+		"vault":     {"create", "status", "delete", "update", "logs", "audit", "oidc", "jwt", "k8s", "ldap", "database", "db", "userpass", "up", "os", "pki", "obs", "agentic-iam", "agentic"},
+		"consul":    {"create", "status", "delete", "update", "logs", "obs"},
+		"nomad":     {"create", "status", "delete", "update", "logs", "job", "obs"},
+		"boundary":  {"create", "status", "delete", "update", "logs", "mariadb", "ssh", "obs"},
+		"terraform": {"create", "status", "delete", "update", "logs", "agent", "api-workflow", "api", "vcs-workflow", "vcs", "workspace", "ws", "twin", "bis", "dup", "saml", "obs"},
+		"obs":       {"create", "status", "delete", "update", "logs"},
 	}
 
 	root := parts[1]

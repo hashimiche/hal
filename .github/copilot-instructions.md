@@ -44,6 +44,7 @@ Treat `docs/cli-lifecycle-model.md` as the source of truth for command lifecycle
 - Password retrieval family: `hal <product> password status`.
 - Scoped updates: allow `--target` on `update` where a scope owns multiple components.
 - Terraform twin handling is product-target based: use `hal terraform <create|update|status|delete> --target twin` instead of a dedicated `hal terraform twin` command.
+- Observation is not a lifecycle verb: `hal <product> logs [--tail N] [--component NAME]` (consul, vault, nomad, boundary, terraform, obs) and `hal status --json` are read-only and carry the `hal.mcp/readonly` cobra annotation (`global.AnnotationMCPReadOnly`, ADR 0003). Declare MCP annotations through `internal/global/mcp_annotations.go`, never as a hand-typed string.
 
 ### Documentation maintenance rule
 

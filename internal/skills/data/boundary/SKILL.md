@@ -12,6 +12,7 @@ Use this router when the user asks for Boundary workflows in hal but has not sel
 - Route create/deploy requests to the create skill.
 - Route teardown or cleanup requests to the delete skill.
 - Route health checks to the status skill.
+- Route "show me the logs" requests to `hal boundary logs [--tail N] [--component NAME]` (read-only).
 - Route feature-specific requests to mariadb, ssh, or setup.
 - Route observability requests to the obs skill (`hal boundary obs create|update|delete|status`).
 
