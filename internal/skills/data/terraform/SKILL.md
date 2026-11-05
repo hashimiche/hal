@@ -11,6 +11,7 @@ Use this router when the user asks for Terraform workflows in hal but has not se
 
 - Route create/deploy requests to the create skill.
 - Route status checks to the status skill.
+- Route "show me the logs" requests to `hal terraform logs [--tail N] [--component NAME]` (read-only; `--component tfe-bis` for the twin).
 - Route teardown requests to the delete skill.
 - Route twin-instance requests to target-based product lifecycle commands (`hal terraform create|update|status|delete --target twin`).
 - Route workspace wiring requests to `hal terraform vcs-workflow enable`.

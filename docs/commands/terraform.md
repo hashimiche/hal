@@ -17,6 +17,10 @@
   - Supports `--target primary|twin|both` (default `primary`)
   - Spec: [terraform-status.md](terraform-status.md)
 
+- `hal terraform logs [--tail N] [--component NAME]`
+  - Print recent logs of a Terraform Enterprise container, primary or twin (read-only)
+  - Spec: [terraform-logs.md](terraform-logs.md)
+
 - `hal terraform delete`
   - Destroy Terraform Enterprise stack and local state
   - Supports `--target primary|twin|both` (default `primary`)

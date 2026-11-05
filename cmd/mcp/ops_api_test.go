@@ -324,6 +324,9 @@ func TestValidateCommandReflectsCurrentSurface(t *testing.T) {
 		"hal vault pki", "hal vault userpass", "hal vault os", "hal vault obs", "hal vault db",
 		"hal boundary ssh", "hal boundary obs", "hal consul obs", "hal nomad obs",
 		"hal plus status", "hal health create", "hal creds status",
+		"hal consul logs", "hal vault logs", "hal nomad logs", "hal boundary logs",
+		"hal terraform logs", "hal obs logs", "hal vault logs --tail 20",
+		"hal status --json",
 	}
 	for _, c := range valid {
 		res := validateCommand(c)
@@ -332,7 +335,7 @@ func TestValidateCommandReflectsCurrentSurface(t *testing.T) {
 		}
 	}
 
-	invalid := []string{"hal terraform cli", "hal vault bogus", "hal boundary nope"}
+	invalid := []string{"hal terraform cli", "hal vault bogus", "hal boundary nope", "hal plus logs"}
 	for _, c := range invalid {
 		res := validateCommand(c)
 		if ok, _ := res["valid"].(bool); ok {

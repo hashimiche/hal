@@ -82,9 +82,26 @@ Download the latest release from the [Releases page](https://github.com/hashimic
 
 ```bash
 hal status
+hal status --json   # the same snapshot as one JSON document on stdout, nothing else
 ```
 
-Shows the health of every product HAL knows about in one pass.
+Shows the health of every product HAL knows about in one pass. With `--json`,
+stdout carries only the JSON snapshot (no banner, no colors); errors go to stderr
+with a non-zero exit, so it is safe to pipe into `jq` or a program.
+
+#### `hal <product> logs` — recent logs
+
+```bash
+hal vault logs                      # last 100 lines of hal-vault
+hal vault logs --tail 20
+hal obs logs --component loki       # another container the product owns
+```
+
+Available for `consul`, `vault`, `nomad`, `boundary`, `terraform` and `obs`.
+Read-only: it prints the last `--tail` lines (default 100, capped at 1000) and
+never follows the stream. `--component` picks another container the product owns
+(see `hal <product> logs --help`). Nomad reads the systemd journal of its
+Multipass VM. A missing container prints a clear message on stderr and exits `1`.
 
 #### `hal capacity` — resource advisor
 

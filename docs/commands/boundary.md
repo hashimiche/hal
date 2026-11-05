@@ -14,6 +14,10 @@
   - Show Boundary and target status
   - Spec: [boundary-status.md](boundary-status.md)
 
+- `hal boundary logs [--tail N] [--component NAME]`
+  - Print recent logs of a Boundary container (read-only)
+  - Spec: [boundary-logs.md](boundary-logs.md)
+
 - `hal boundary delete`
   - Destroy Boundary and associated target resources
   - Spec: [boundary-destroy.md](boundary-destroy.md)

@@ -22,6 +22,8 @@ hal obs update
 hal obs delete
 ```
 
+Recent logs of a stack container (read-only, default 100 lines): `hal obs logs [--tail N] [--component loki|prometheus|promtail]`.
+
 ## Version Pinning (Optional)
 
 ```

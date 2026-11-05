@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	"hal/cmd/boundary"
@@ -37,7 +36,9 @@ var rootCmd = &cobra.Command{
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+		// cobra has already printed the error, on stderr. It used to be printed
+		// again here on stdout, which broke `hal status --json`: stdout must
+		// hold the command's result only, even when a flag is mistyped.
 		os.Exit(1)
 	}
 }

@@ -20,8 +20,19 @@ const (
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show the global status of all HAL deployments",
-	Long:  `Displays a high-level overview of which HashiCorp products are currently running locally.`,
+	Long: `Displays a high-level overview of which HashiCorp products are currently running locally.
+
+With --json, prints the live lab snapshot as a single JSON document on stdout
+and nothing else (no banner, no colors). Errors go to stderr with a non-zero exit.`,
+	Annotations: global.MCPReadOnlyAnnotations(),
 	Run: func(cmd *cobra.Command, args []string) {
+		if statusJSON {
+			if code := runStatusJSON(cmd.OutOrStdout(), cmd.ErrOrStderr(), statusJSONRuntime); code != 0 {
+				statusJSONRuntime.exit(code)
+			}
+			return
+		}
+
 		engine, err := global.DetectEngine()
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
@@ -333,5 +344,6 @@ func checkMultipass(name string) bool {
 }
 
 func init() {
+	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "Print the lab status snapshot as JSON (stdout carries only the JSON)")
 	rootCmd.AddCommand(statusCmd)
 }

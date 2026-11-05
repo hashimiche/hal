@@ -12,6 +12,7 @@ Use this router when the user asks for Consul workflows in hal but has not selec
 - Route create/deploy requests to the create skill.
 - Route teardown requests to the delete skill.
 - Route health checks to the status skill.
+- Route "show me the logs" or "why did it crash" requests to `hal consul logs [--tail N]` (read-only, never `podman logs`).
 - Route observability requests to the obs skill (`hal consul obs create|update|delete|status`).
 
 ## Lab Assumptions

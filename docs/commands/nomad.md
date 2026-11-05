@@ -14,6 +14,10 @@
   - Show Nomad cluster health/status
   - Spec: [nomad-status.md](nomad-status.md)
 
+- `hal nomad logs [--tail N]`
+  - Print recent Nomad systemd journal from the Multipass VM (read-only)
+  - Spec: [nomad-logs.md](nomad-logs.md)
+
 - `hal nomad delete`
   - Destroy Nomad VM resources
   - Spec: [nomad-destroy.md](nomad-destroy.md)
