@@ -57,15 +57,15 @@ If Vault MCP is available, inspect:
 
 Also verify the cluster side with CLI:
 
-    kubectl get ns
-    kubectl get pods -n vso
-    kubectl get pods -n app1
-    helm list -n vso
+    kubectl --context kind-kind get ns
+    kubectl --context kind-kind get pods -n vso
+    kubectl --context kind-kind get pods -n app1
+    helm --kube-context kind-kind list -n vso
 
 Mode-specific checks:
 
-    kubectl get vaultstaticsecret vso-mysecret -n app1
-    kubectl get csisecrets hal-csi-secrets -n app1
+    kubectl --context kind-kind get vaultstaticsecret vso-mysecret -n app1
+    kubectl --context kind-kind get csisecrets hal-csi-secrets -n app1
 
 ### Step 3: Present structured results
 

@@ -1122,14 +1122,14 @@ func componentContext(component string) (map[string]interface{}, []string, error
 			"component":   "vault_vso",
 			"implemented": "hal vault k8s workflow",
 			"runtime":     "vault-secrets-operator in namespace vso",
-			"health_hint": "helm list -n vso",
+			"health_hint": "helm --kube-context kind-kind list -n vso",
 		}, []string{"hal vault k8s", "hal vault k8s enable"}, nil
 	case "vault_csi":
 		return map[string]interface{}{
 			"component":   "vault_csi",
 			"implemented": "hal vault k8s --csi",
 			"runtime":     "VSO CSI projection mode",
-			"health_hint": "kubectl get pods -n vso",
+			"health_hint": "kubectl --context kind-kind get pods -n vso",
 		}, []string{"hal vault k8s enable --csi", "hal vault k8s"}, nil
 	case "vault_ldap":
 		return map[string]interface{}{

@@ -214,8 +214,8 @@ vault list pki-int/certs
 
 **Inspect the issued TLS certificate:**
 ```bash
-kubectl describe certificate hal-web-pki-cert -n pki-demo
-kubectl get secret hal-web-pki-tls -n pki-demo \
+kubectl --context kind-kind describe certificate hal-web-pki-cert -n pki-demo
+kubectl --context kind-kind get secret hal-web-pki-tls -n pki-demo \
   -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -text
 ```
 
@@ -266,8 +266,8 @@ https://acme.localhost:8090
 
 ### Inspect
 ```bash
-kubectl exec -n pki-acme-demo deploy/hal-caddy-acme -- ls /data/caddy/certificates/
-kubectl logs -n pki-acme-demo deploy/hal-caddy-acme
+kubectl --context kind-kind exec -n pki-acme-demo deploy/hal-caddy-acme -- ls /data/caddy/certificates/
+kubectl --context kind-kind logs -n pki-acme-demo deploy/hal-caddy-acme
 ```
 
 ---

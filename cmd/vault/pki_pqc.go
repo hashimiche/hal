@@ -134,7 +134,7 @@ func pqcExec(input []byte, name string, args ...string) ([]byte, error) {
 	return out, nil
 }
 func pqcKube(input []byte, args ...string) ([]byte, error) {
-	return pqcExec(input, "kubectl", append([]string{"--context", "kind-kind", "--request-timeout=15s"}, args...)...)
+	return pqcExec(input, "kubectl", append([]string{"--context", global.KubeContext, "--request-timeout=15s"}, args...)...)
 }
 func pqcOwnedMount(m *vaultapi.MountOutput) bool {
 	return m != nil && m.Type == "pki" && m.Description == pqcMountDescription

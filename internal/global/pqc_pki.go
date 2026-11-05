@@ -44,7 +44,7 @@ func RemovePQCPKIState() error {
 
 // PQCPKIReadiness is deployment readiness, never a cryptographic attestation.
 func PQCPKIReadiness() string {
-	out, err := exec.Command("kubectl", "--context", "kind-kind", "--request-timeout=3s", "get", "deployments", "-n", PQCPKINamespace, "-l", "app.kubernetes.io/managed-by="+PQCPKIOwner, "-o", "json").Output()
+	out, err := exec.Command("kubectl", "--context", KubeContext, "--request-timeout=3s", "get", "deployments", "-n", PQCPKINamespace, "-l", "app.kubernetes.io/managed-by="+PQCPKIOwner, "-o", "json").Output()
 	if err != nil {
 		return "down"
 	}

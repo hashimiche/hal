@@ -118,10 +118,10 @@ If MCP is unavailable, use:
 
 For K8s state:
 
-    kubectl get clusterissuer vault-pki-issuer
-    kubectl get certificate hal-web-pki-cert -n pki-demo
-    kubectl get pods -n pki-demo
-    kubectl get pods -n pki-acme-demo
+    kubectl --context kind-kind get clusterissuer vault-pki-issuer
+    kubectl --context kind-kind get certificate hal-web-pki-cert -n pki-demo
+    kubectl --context kind-kind get pods -n pki-demo
+    kubectl --context kind-kind get pods -n pki-acme-demo
 
 ### Step 3: Present structured results
 
@@ -147,11 +147,11 @@ Confirm CA chain is built and which demo modes are active.
       ttl="24h"
 
     # Inspect the Caddy cert via kubectl exec
-    kubectl exec -n pki-acme-demo deploy/hal-caddy-acme -- \
+    kubectl --context kind-kind exec -n pki-acme-demo deploy/hal-caddy-acme -- \
       ls /data/caddy/certificates/
 
     # Inspect the cert-manager certificate
-    kubectl get secret hal-web-pki-tls -n pki-demo \
+    kubectl --context kind-kind get secret hal-web-pki-tls -n pki-demo \
       -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -text
 
 ## Handling Edge Cases
@@ -159,7 +159,7 @@ Confirm CA chain is built and which demo modes are active.
 1. **Vault is not running:** Instruct the user to run `hal vault create` first.
 2. **`kind`/`kubectl`/`helm` missing:** Required for `--k8s` and `--acme`; install them first.
 3. **cert-manager webhook not ready:** The code retries up to 10× with 10s sleep between attempts. If it times out, check `kubectl get pods -n cert-manager`.
-4. **Caddy ACME exchange fails:** Check `kubectl logs -n pki-acme-demo deploy/hal-caddy-acme`. Common causes: Vault ACME `config/acme max_ttl` not set, DNS resolution of `vault.localhost` from inside the pod, or the KinD node not on `hal-net` (re-run `hal vault pki enable --acme` so `ensureHALKindCluster()` attaches it).
+4. **Caddy ACME exchange fails:** Check `kubectl --context kind-kind logs -n pki-acme-demo deploy/hal-caddy-acme`. Common causes: Vault ACME `config/acme max_ttl` not set, DNS resolution of `vault.localhost` from inside the pod, or the KinD node not on `hal-net` (re-run `hal vault pki enable --acme` so `ensureHALKindCluster()` attaches it).
 5. **TTL still shows 12h after update:** Vault 2.x `config/acme max_ttl` defaults to `2160h` and caps all ACME certs on the mount regardless of role TTL. `update --acme` re-syncs both. Use `vault read pki-int/config/acme` to verify.
 6. **Old cert TTL after update:** `update --acme` automatically does `kubectl rollout restart` to clear the emptyDir cert cache. If the pod still shows the old cert, run the restart manually.
 7. **`allow_any_name` requirement:** The `acme-demo` role must have `allow_any_name=true` because Caddy requests a cert for `acme.localhost` which does not match the `hal.local` domain list. This is already set by the code.
