@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -44,6 +43,7 @@ const (
 type globalTeardownResult struct {
 	DockerContainersRemoved int
 	KindClustersDeleted     int
+	KindClustersSkipped     []string // kind clusters left alone because HAL did not create them
 	MultipassVMsDeleted     int
 	ObsStatus               CleanStatus
 	MCPStatus               CleanStatus
@@ -59,39 +59,12 @@ func runGlobalTeardown() globalTeardownResult {
 		containerEngines = []string{detectContainerEngine()}
 	}
 
-	kindClusters, err := listKindClusters()
-	if err != nil {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("kind discovery failed: %v", err))
-	} else {
-		for _, cluster := range kindClusters {
-			if !isHALKindCluster(cluster) {
-				continue
-			}
-			if err := kindDeleteCluster(cluster); err != nil {
-				if isKindPodmanLabelTemplateError(err) {
-					continue
-				}
-				result.Warnings = append(result.Warnings, fmt.Sprintf("kind delete cluster %q failed: %v", cluster, err))
-			} else {
-				result.KindClustersDeleted++
-			}
-		}
-	}
-
-	// KinD node containers are named kind-control-plane (not hal-*), so they
-	// survive the HAL container sweep if the kind CLI is missing or delete fails.
-	// Always sweep by cluster label and well-known names after the CLI attempt.
-	kindNodesRemoved := 0
-	for _, containerEngine := range containerEngines {
-		removed, warnings := removeLeftoverKindNodes(containerEngine)
-		kindNodesRemoved += removed
-		result.DockerContainersRemoved += removed
-		result.Warnings = append(result.Warnings, warnings...)
-		_ = exec.Command(containerEngine, "network", "rm", "kind").Run()
-	}
-	if result.KindClustersDeleted == 0 && kindNodesRemoved > 0 {
-		result.KindClustersDeleted = 1
-	}
+	// Only kind clusters HAL created are deleted (ADR 0003, decision 6): a user's
+	// own cluster, including a default one named "kind", is never touched.
+	kindDeleted, kindSkipped, kindWarnings := teardownKindClusters(containerEngines)
+	result.KindClustersDeleted = kindDeleted
+	result.KindClustersSkipped = kindSkipped
+	result.Warnings = append(result.Warnings, kindWarnings...)
 
 	for _, containerEngine := range containerEngines {
 		dockerIDs, err := listHALContainerIDs(containerEngine)
@@ -142,23 +115,9 @@ func runGlobalTeardown() globalTeardownResult {
 		}
 	}
 
-	multipassVMs, err := listHALMultipassVMs()
-	if err != nil {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("multipass discovery failed: %v", err))
-	} else {
-		for _, vm := range multipassVMs {
-			if err := exec.Command("multipass", "delete", vm).Run(); err != nil {
-				result.Warnings = append(result.Warnings, fmt.Sprintf("multipass delete %q failed: %v", vm, err))
-				continue
-			}
-			result.MultipassVMsDeleted++
-		}
-		if result.MultipassVMsDeleted > 0 {
-			if err := exec.Command("multipass", "purge").Run(); err != nil {
-				result.Warnings = append(result.Warnings, fmt.Sprintf("multipass purge failed: %v", err))
-			}
-		}
-	}
+	multipassDeleted, multipassWarnings := teardownMultipassVMs()
+	result.MultipassVMsDeleted = multipassDeleted
+	result.Warnings = append(result.Warnings, multipassWarnings...)
 
 	if err := global.RemovePQCPKIState(); err != nil {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("PQC PKI state cleanup failed: %v", err))
@@ -218,184 +177,38 @@ func runGlobalTeardown() globalTeardownResult {
 	return result
 }
 
-const kindClusterLabelKey = "io.x-k8s.kind.cluster"
-
-func listKindClusters() ([]string, error) {
-	viaCLI, cliErr := listKindClustersViaCLI()
-	if cliErr == nil {
-		return viaCLI, nil
-	}
-
-	var viaEngine []string
-	engines := detectContainerEngines()
-	if len(engines) == 0 {
-		engines = []string{detectContainerEngine()}
-	}
+// teardownKindClusters deletes the kind clusters HAL created on every engine
+// and leaves all others alone. The skipped clusters are returned (as
+// "name (engine)") so the command can tell the user why they survived; that is
+// the lab invariant working, not a failure, so they are not warnings.
+func teardownKindClusters(engines []string) (deleted int, skipped, warnings []string) {
 	for _, engine := range engines {
-		found, err := listKindClustersViaEngine(engine)
-		if err != nil {
+		res := global.DeleteHALKindClusters(engine)
+		deleted += len(res.Deleted)
+		warnings = append(warnings, res.Warnings...)
+		for _, name := range res.Skipped {
+			skipped = append(skipped, fmt.Sprintf("%s (%s)", name, engine))
+		}
+	}
+	return deleted, skipped, warnings
+}
+
+// teardownMultipassVMs deletes every HAL (hal-*) Multipass VM, purging each one
+// individually. It never runs a bare `multipass purge`, which would also destroy
+// VMs the user deleted themselves.
+func teardownMultipassVMs() (deleted int, warnings []string) {
+	vms, err := global.ListHALMultipassVMs()
+	if err != nil {
+		return 0, []string{fmt.Sprintf("multipass discovery failed: %v", err)}
+	}
+	for _, vm := range vms {
+		if err := global.DeleteMultipassVM(vm); err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s failed: %v", global.MultipassDeleteCommand(vm), err))
 			continue
 		}
-		viaEngine = append(viaEngine, found...)
+		deleted++
 	}
-	viaEngine = uniqueStrings(viaEngine)
-	if len(viaEngine) > 0 {
-		return viaEngine, nil
-	}
-
-	// Podman 6 stores Labels as a slice, so older kind CLIs fail
-	// `kind get clusters` with {{index .Labels ...}}. Engine discovery is the
-	// source of truth; if it found nothing, there is nothing left to delete.
-	if isKindPodmanLabelTemplateError(cliErr) {
-		return nil, nil
-	}
-	return nil, cliErr
-}
-
-func listKindClustersViaCLI() ([]string, error) {
-	out, err := kindCommand("get", "clusters").CombinedOutput()
-	if err != nil {
-		if strings.Contains(strings.ToLower(string(out)), "no kind clusters") {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return parseKindClustersOutput(string(out)), nil
-}
-
-func listKindClustersViaEngine(engine string) ([]string, error) {
-	formats := []string{
-		`{{.Label "` + kindClusterLabelKey + `"}}`,
-		`{{index .Labels "` + kindClusterLabelKey + `"}}`,
-	}
-	var lastErr error
-	for _, format := range formats {
-		out, err := exec.Command(engine, "ps", "-a",
-			"--filter", "label="+kindClusterLabelKey,
-			"--format", format).CombinedOutput()
-		if err != nil {
-			lastErr = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
-			if isKindPodmanLabelTemplateError(lastErr) {
-				continue
-			}
-			return nil, lastErr
-		}
-		return parseKindClustersOutput(string(out)), nil
-	}
-	return nil, lastErr
-}
-
-func isKindPodmanLabelTemplateError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "cannot index slice/array with type string") ||
-		(strings.Contains(msg, "index .labels") && strings.Contains(msg, "io.x-k8s.kind.cluster"))
-}
-
-func uniqueStrings(in []string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		if s == "" || seen[s] {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
-
-func parseKindClustersOutput(out string) []string {
-	clusters := []string{}
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		cluster := strings.TrimSpace(line)
-		if cluster == "" {
-			continue
-		}
-		clusters = append(clusters, cluster)
-	}
-	return clusters
-}
-
-func isHALKindCluster(name string) bool {
-	// "kind" is the default cluster name used in local labs when no explicit name is provided.
-	return name == "kind" || name == "hal-k8s" || strings.HasPrefix(name, "hal-")
-}
-
-func kindCommand(args ...string) *exec.Cmd {
-	cmd := exec.Command("kind", args...)
-	env := os.Environ()
-	if detectContainerEngine() == "podman" {
-		env = append(env, "KIND_EXPERIMENTAL_PROVIDER=podman")
-	}
-	cmd.Env = env
-	return cmd
-}
-
-func kindDeleteCluster(name string) error {
-	out, err := kindCommand("delete", "cluster", "--name", name).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-// removeLeftoverKindNodes force-removes KinD node containers. These are labeled
-// io.x-k8s.kind.cluster and named like kind-control-plane — never hal-* — so the
-// HAL name sweep cannot see them.
-func removeLeftoverKindNodes(engine string) (int, []string) {
-	var warnings []string
-	ids, err := listKindNodeContainerIDs(engine)
-	if err != nil {
-		return 0, []string{fmt.Sprintf("kind node discovery via %s failed: %v", engine, err)}
-	}
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	args := append([]string{"rm", "-f"}, ids...)
-	if err := exec.Command(engine, args...).Run(); err != nil {
-		warnings = append(warnings, fmt.Sprintf("kind node removal via %s failed: %v", engine, err))
-		return 0, warnings
-	}
-	return len(ids), nil
-}
-
-func listKindNodeContainerIDs(engine string) ([]string, error) {
-	seen := map[string]bool{}
-	var ids []string
-
-	add := func(raw []byte, err error) error {
-		if err != nil {
-			return err
-		}
-		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
-			id := strings.TrimSpace(line)
-			if id == "" || seen[id] {
-				continue
-			}
-			seen[id] = true
-			ids = append(ids, id)
-		}
-		return nil
-	}
-
-	labeled, err := exec.Command(engine, "ps", "-a",
-		"--filter", "label="+kindClusterLabelKey,
-		"--format", "{{.ID}}").CombinedOutput()
-	if err := add(labeled, err); err != nil {
-		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(labeled)))
-	}
-
-	named, err := exec.Command(engine, "ps", "-a",
-		"--filter", "name=kind-control-plane",
-		"--format", "{{.ID}}").CombinedOutput()
-	if err := add(named, err); err != nil {
-		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(named)))
-	}
-
-	return ids, nil
+	return deleted, warnings
 }
 
 func detectContainerEngine() string {
@@ -447,28 +260,4 @@ func listHALContainerIDs(engine string) ([]string, error) {
 		}
 	}
 	return ids, nil
-}
-func listHALMultipassVMs() ([]string, error) {
-	out, err := exec.Command("multipass", "list", "--format", "csv").CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
-	}
-
-	vms := []string{}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if i == 0 && strings.HasPrefix(strings.ToLower(line), "name,") {
-			continue
-		}
-		name := strings.Split(line, ",")[0]
-		name = strings.TrimSpace(name)
-		if strings.HasPrefix(name, "hal-") {
-			vms = append(vms, name)
-		}
-	}
-	return vms, nil
 }

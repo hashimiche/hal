@@ -16,13 +16,13 @@ var autoApprove bool
 var destroyCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "Delete all HAL infrastructure globally",
-	Long:  "Completely tears down all Docker containers, KinD clusters, and Multipass VMs created by HAL.",
+	Long:  "Completely tears down all Docker containers, KinD clusters, and Multipass VMs created by HAL. A KinD cluster HAL did not create, and any other Multipass VM, is never touched.",
 	Run: func(cmd *cobra.Command, args []string) {
 		if global.DryRun {
-			fmt.Println("[DRY RUN] Would delete HAL KinD clusters")
+			fmt.Printf("[DRY RUN] Would delete the KinD clusters HAL created (nodes attached to %s); other KinD clusters are left alone\n", global.HalNetName)
 			fmt.Println("[DRY RUN] Would remove HAL containers on active Docker/Podman engines")
 			fmt.Println("[DRY RUN] Would remove the hal-tfe-cli helper image and the Agentic IAM lab's images")
-			fmt.Println("[DRY RUN] Would delete HAL Multipass VMs and purge")
+			fmt.Println("[DRY RUN] Would delete each HAL (hal-*) Multipass VM with: multipass delete --purge <vm>")
 			fmt.Println("[DRY RUN] Would remove local observability state")
 			fmt.Println("[DRY RUN] Would remove HAL MCP config and managed binary artifacts")
 			fmt.Println("[DRY RUN] Would remove hal-net Docker network")
@@ -49,6 +49,9 @@ var destroyCmd = &cobra.Command{
 		fmt.Printf("   - Docker containers removed: %d\n", result.DockerContainersRemoved)
 		fmt.Printf("   - KinD clusters deleted:     %d\n", result.KindClustersDeleted)
 		fmt.Printf("   - Multipass VMs deleted:     %d\n", result.MultipassVMsDeleted)
+		if len(result.KindClustersSkipped) > 0 {
+			fmt.Printf("   - KinD clusters left alone:  %s (not created by HAL)\n", strings.Join(result.KindClustersSkipped, ", "))
+		}
 		fmt.Printf("   - Obs state:                 %s\n", result.ObsStatus)
 		fmt.Printf("   - MCP artifacts:             %s\n", result.MCPStatus)
 		fmt.Printf("   - hal-net:                   %s\n", result.NetworkStatus)

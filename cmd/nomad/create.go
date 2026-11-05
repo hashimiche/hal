@@ -43,14 +43,13 @@ var deployCmd = &cobra.Command{
 
 		if nomadUpdate {
 			if global.DryRun {
-				fmt.Println("[DRY RUN] Would delete existing VM 'hal-nomad' and purge")
+				fmt.Printf("[DRY RUN] Would execute: %s\n", global.MultipassDeleteCommand(nomadInstance))
 			}
 			if global.Debug {
 				fmt.Println("[DEBUG] --update detected. Purging existing VM 'hal-nomad' for reconciliation...")
 			}
 			if !global.DryRun {
-				_ = exec.Command("multipass", "delete", nomadInstance).Run()
-				_ = exec.Command("multipass", "purge").Run()
+				_ = global.DeleteMultipassVM(nomadInstance)
 			}
 		}
 

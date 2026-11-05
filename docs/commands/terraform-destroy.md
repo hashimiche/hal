@@ -11,6 +11,7 @@ Tear down the local Terraform Enterprise stack and related local state for a cle
 ## Behavior
 - Stops/removes TFE stack resources managed by HAL.
 - Removes Terraform API helper containers/images (including legacy CLI helper artifacts) as part of stack teardown.
+- Removes TFE/TFC agent containers that are not named `hal-*` only when they are attached to `hal-net` (the run containers HAL's TFE starts). A TFC/TFE agent you run yourself, not on `hal-net`, is left alone.
 - Resets local deployment state used by the Terraform namespace.
 - Uses `--target` to remove primary, twin, or both scopes (`primary` by default).
 - Smart guard: `--target primary` preserves shared backend containers when the twin TFE core is still running.

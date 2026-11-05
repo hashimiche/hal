@@ -137,22 +137,15 @@ var vaultDestroyCmd = &cobra.Command{
 			teardownSharedGitLab(engine)
 		}
 
-		// 2. Destroy KinD cluster if one is running — all three --k8s Vault
+		// 2. Destroy the KinD cluster if HAL created one — all three --k8s Vault
 		//    features (hal vault k8s, hal vault database --k8s, hal vault pki
 		//    --k8s/--acme) share a single cluster that is exclusively owned by
-		//    the Vault ecosystem, so hal vault delete always removes it.
+		//    the Vault ecosystem, so hal vault delete always removes it. A
+		//    cluster HAL did not create is never touched.
 		if global.DryRun {
-			fmt.Println("[DRY RUN] Would execute: kind delete cluster (if running)")
+			fmt.Println(kindDeleteDryRun)
 		} else {
-			clusterOut, _ := exec.Command("kind", "get", "clusters").Output()
-			if strings.Contains(string(clusterOut), "kind") {
-				fmt.Println("⚙️  Destroying KinD cluster...")
-				if err := exec.Command("kind", "delete", "cluster").Run(); err != nil {
-					fmt.Printf("⚠️  Could not remove KinD cluster: %v\n", err)
-				} else {
-					fmt.Println("  ✅ Destroyed KinD cluster")
-				}
-			}
+			destroyHALKindCluster(engine)
 		}
 
 		// 3. Destroy all associated volumes

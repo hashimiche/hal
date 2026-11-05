@@ -72,8 +72,7 @@ var vaultK8sCmd = &cobra.Command{
 			fmt.Println("🔍 Checking Vault / Kubernetes Status...")
 
 			// Check KinD Cluster
-			clusterCheck, _ := exec.Command("kind", "get", "clusters").Output()
-			clusterRunning := strings.Contains(string(clusterCheck), "kind")
+			clusterRunning := halKindClusterRunning()
 
 			// Check Vault Mounts (if Vault is alive)
 			k8sMounted := false
@@ -169,7 +168,7 @@ var vaultK8sCmd = &cobra.Command{
 		// ==========================================
 		if k8sDisable || k8sUpdate {
 			if global.DryRun {
-				fmt.Println("[DRY RUN] Would execute: kind delete cluster")
+				fmt.Println(kindDeleteDryRun + " (not when another --k8s feature is still active)")
 				fmt.Println("[DRY RUN] Would call API to clean up Vault entities and auth mounts")
 			} else {
 				if k8sDisable {
@@ -256,8 +255,7 @@ var vaultK8sCmd = &cobra.Command{
 					fmt.Println("⚙️  Removing namespace 'app1'...")
 					_ = exec.Command("kubectl", "delete", "namespace", "app1", "--ignore-not-found").Run()
 				} else {
-					fmt.Println("⚙️  Destroying KinD Cluster...")
-					_ = exec.Command("kind", "delete", "cluster").Run()
+					destroyHALKindCluster(engine)
 				}
 
 				fmt.Println("✅ Kubernetes environment destroyed successfully!")

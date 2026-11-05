@@ -138,8 +138,7 @@ var vaultPKICmd = &cobra.Command{
 			}
 
 			// K8s / cert-manager layer
-			clusterOut, _ := exec.Command("kind", "get", "clusters").Output()
-			clusterRunning := strings.Contains(string(clusterOut), "kind")
+			clusterRunning := halKindClusterRunning()
 
 			if clusterRunning {
 				fmt.Println("\n  [ Kubernetes / cert-manager ]")
@@ -305,11 +304,9 @@ var vaultPKICmd = &cobra.Command{
 					fmt.Println("ℹ️  KinD cluster preserved (hal vault k8s is still active).")
 					fmt.Println("   Run 'hal vault k8s disable' to remove it.")
 				} else {
-					clusterOut, _ := exec.Command("kind", "get", "clusters").Output()
-					if strings.Contains(string(clusterOut), "kind") {
+					if halKindClusterRunning() {
 						fmt.Println("ℹ️  No active VSO deployment — removing KinD cluster.")
-						_ = exec.Command("kind", "delete", "cluster").Run()
-						fmt.Println("  ✅ KinD cluster deleted.")
+						destroyHALKindCluster(engine)
 					}
 				}
 

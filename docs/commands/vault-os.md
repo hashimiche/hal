@@ -61,7 +61,7 @@ hal vault os disable
 ```
 1. Revokes all OS secret engine leases
 2. Unmounts the `os/` secrets engine
-3. Deletes the `hal-vault-os` Multipass VM and purges its cache
+3. Deletes the `hal-vault-os` Multipass VM with `multipass delete --purge hal-vault-os` (only that VM is purged)
 
 ### Update
 ```bash

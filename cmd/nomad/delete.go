@@ -2,7 +2,6 @@ package nomad
 
 import (
 	"fmt"
-	"os/exec"
 
 	"hal/internal/global"
 
@@ -15,14 +14,12 @@ var destroyCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("⚙️  Destroying Nomad VM via Multipass...")
 		if global.DryRun {
-			fmt.Println("[DRY RUN] Would execute: multipass delete hal-nomad")
-			fmt.Println("[DRY RUN] Would execute: multipass purge")
+			fmt.Printf("[DRY RUN] Would execute: %s\n", global.MultipassDeleteCommand(nomadInstance))
 			fmt.Println("[DRY RUN] Would remove Nomad observability target file")
 			return
 		}
 
-		_ = exec.Command("multipass", "delete", nomadInstance).Run()
-		_ = exec.Command("multipass", "purge").Run()
+		_ = global.DeleteMultipassVM(nomadInstance)
 		if err := global.RemoveObsPromTargetFile("nomad"); err != nil {
 			fmt.Printf("⚠️  Could not remove Nomad observability target file: %v\n", err)
 		}

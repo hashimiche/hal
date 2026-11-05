@@ -219,6 +219,9 @@ func runCinematicDaisy(resultCh <-chan globalTeardownResult, lyrics []string) {
 	if teardownResult.KindClustersDeleted > 0 {
 		fmt.Printf("\033[2K   KinD clusters deleted: %d\n", teardownResult.KindClustersDeleted)
 	}
+	if len(teardownResult.KindClustersSkipped) > 0 {
+		fmt.Printf("\033[2K   KinD clusters left alone (not created by HAL): %s\n", strings.Join(teardownResult.KindClustersSkipped, ", "))
+	}
 	printTeardownWarnings(teardownResult)
 }
 
@@ -289,12 +292,20 @@ func runPlainDaisy() {
 		for _, warning := range result.Warnings {
 			fmt.Printf(" - %s\n", warning)
 		}
+		printSkippedKindClusters(result)
 		return
 	}
 
 	fmt.Println("HAL has been gracefully disconnected.")
 	if result.KindClustersDeleted > 0 {
 		fmt.Printf("KinD clusters deleted: %d\n", result.KindClustersDeleted)
+	}
+	printSkippedKindClusters(result)
+}
+
+func printSkippedKindClusters(result globalTeardownResult) {
+	if len(result.KindClustersSkipped) > 0 {
+		fmt.Printf("KinD clusters left alone (not created by HAL): %s\n", strings.Join(result.KindClustersSkipped, ", "))
 	}
 }
 

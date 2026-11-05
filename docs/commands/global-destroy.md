@@ -15,16 +15,21 @@ Destroy all HAL-managed infrastructure globally.
 - Older HAL docs may reference `--force` or `--yes` for non-interactive teardown. The current flag is `--auto-approve`.
 
 ## What gets removed
-1. HAL KinD clusters (`kind`, `hal-*`) plus leftover `kind-control-plane` node containers (those are not named `hal-*`, so they are swept by cluster label even if the `kind` CLI is missing or `kind get clusters` fails on Podman 6's Labels-as-slice change)
-2. All `hal-*` Docker/Podman containers (including TFE agents)
+1. The KinD cluster HAL created: the cluster named `kind` with at least one node attached to `hal-net`. If the `kind` CLI is missing or fails, that cluster's own node containers are removed through the engine. Any other KinD cluster, including a plain `kind create cluster` of your own, is **not** touched and is listed as "left alone"
+2. All `hal-*` Docker/Podman containers (including `hal-tfe-agent`), plus any other container whose name or image contains `tfe-agent` or `tfc-agent` **and** that is attached to `hal-net` (the run containers HAL's TFE starts, since HAL sets `TFE_RUN_PIPELINE_DOCKER_NETWORK=hal-net`). A TFC/TFE agent you run yourself is normally not on `hal-net` and is **not** touched
 3. The `hal-tfe-cli:latest` helper image and the Agentic IAM lab's `localhost/hal-agentic-iam:*` images (best-effort)
-4. HAL Multipass VMs (purged after deletion)
+4. HAL Multipass VMs (`hal-*`), each removed with `multipass delete --purge <vm>`. No global `multipass purge` is run, so VMs you deleted yourself stay recoverable
 5. Local observability state (`~/.hal/obs/`)
 6. HAL MCP config, PID file, and managed binary
 7. The `hal-net` Docker/Podman network (removed after all containers are gone)
 
-## KinD discovery
-`kind get clusters` on Podman 6+ can fail because older kind CLIs use `{{index .Labels "io.x-k8s.kind.cluster"}}` and Podman 6 stores Labels as a slice. Teardown lists clusters with `{{.Label "io.x-k8s.kind.cluster"}}` instead and always force-removes leftover node containers. That template error is not a teardown warning.
+## KinD discovery and ownership
+HAL's cluster is named `kind`, the same as kind's default, and carries the same `io.x-k8s.kind.cluster` label as any user cluster. HAL tells them apart by `hal-net`: `ensureHALKindCluster` always attaches the node(s) to it, a plain `kind create cluster` never does. Teardown asks the container engine (`ps -a` by label, then `inspect` for the cluster label and networks), so it also works for stopped nodes and when `kind get clusters` fails on Podman 6 with an older kind CLI. That template error is not a teardown warning.
+
+A HAL cluster whose nodes were manually detached from `hal-net` is no longer recognized; remove it with `kind delete cluster`.
+
+## Dry run
+`hal delete --dry-run` prints that only KinD clusters attached to `hal-net` are deleted and that each Multipass VM is removed with `multipass delete --purge <vm>`.
 
 ## Output statuses
 Each cleanup step reports one of three statuses:
