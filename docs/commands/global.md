@@ -32,7 +32,7 @@ This file covers the root `hal` command, persistent flags, and global commands t
 
 - `hal delete`
   - Purpose: global infrastructure teardown
-  - Scope: HAL-managed containers, KinD clusters, Multipass VMs, and observability local state
+  - Scope: HAL-created containers, KinD clusters (only those with a node on `hal-net`), Multipass VMs (`delete --purge` per VM), and observability local state
   - Safety: confirmation prompt by default
   - Override: `--yes` skips prompt
   - Supports: `--dry-run`

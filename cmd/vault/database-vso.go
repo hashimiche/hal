@@ -536,7 +536,7 @@ func disableDatabaseVSOVault(client *vault.Client) {
 // combination of --k8s features can coexist safely on the same cluster.
 // When the cluster is preserved, the db-app namespace is still removed so the
 // other features' guards never see this demo as active after its disable.
-func disableDatabaseVSOCluster() {
+func disableDatabaseVSOCluster(engine string) {
 	// Check each co-tenant namespace.
 	coTenants := []struct {
 		ns      string
@@ -565,7 +565,6 @@ func disableDatabaseVSOCluster() {
 		}
 	}
 
-	// No co-tenants — safe to delete.
-	fmt.Println("⚙️  Destroying KinD cluster...")
-	_ = exec.Command("kind", "delete", "cluster").Run()
+	// No co-tenants — safe to delete (only if HAL created the cluster).
+	destroyHALKindCluster(engine)
 }

@@ -518,14 +518,7 @@ func parseMemoryValueMB(raw string) int {
 }
 
 func isVaultK8sDeployed(engine string) bool {
-	if global.IsContainerRunning(engine, "kind-control-plane") {
-		return true
-	}
-	out, err := exec.Command("kind", "get", "clusters").Output()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(out), "kind")
+	return global.HALKindClusterExists(engine)
 }
 
 func init() {

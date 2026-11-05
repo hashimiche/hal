@@ -74,14 +74,13 @@ var sshCmd = &cobra.Command{
 
 			if global.DryRun {
 				fmt.Println("[DRY RUN] Would clean Boundary SSH lab resources via API")
-				fmt.Println("[DRY RUN] Would delete/purge Multipass VM hal-boundary-ssh")
+				fmt.Printf("[DRY RUN] Would execute: %s\n", global.MultipassDeleteCommand(boundarySSHInstance))
 			} else {
 				if err := cleanupBoundarySSH(); err != nil {
 					fmt.Printf("⚠️  Boundary cleanup warning: %v\n", err)
 				}
 
-				_ = exec.Command("multipass", "delete", "hal-boundary-ssh").Run()
-				_ = exec.Command("multipass", "purge").Run()
+				_ = global.DeleteMultipassVM(boundarySSHInstance)
 			}
 
 			if sshDisable {
@@ -100,8 +99,7 @@ var sshCmd = &cobra.Command{
 				fmt.Println("[DRY RUN] Would configure Boundary API resources for SSH target")
 				return
 			}
-			_ = exec.Command("multipass", "delete", boundarySSHInstance).Run()
-			_ = exec.Command("multipass", "purge").Run()
+			_ = global.DeleteMultipassVM(boundarySSHInstance)
 
 			vmArgs := []string{"launch", sshUbuntuImage, "--name", boundarySSHInstance, "--cpus", sshVMCPUs, "--memory", sshVMMem}
 			_, vmErr := exec.Command("multipass", vmArgs...).CombinedOutput()

@@ -186,7 +186,7 @@ var vaultDatabaseCmd = &cobra.Command{
 				}
 				fmt.Println("[DRY RUN] Would call API to force-revoke leases and unmount 'database/'")
 				if dbVSOEnabled {
-					fmt.Println("[DRY RUN] Would execute: kind delete cluster (db-vso cluster)")
+					fmt.Println(kindDeleteDryRun + " (not when another --k8s feature is still active)")
 					fmt.Println("[DRY RUN] Would call API to clean up kubernetes auth and policy for database VSO")
 				}
 			} else {
@@ -230,7 +230,7 @@ var vaultDatabaseCmd = &cobra.Command{
 				}
 
 				if dbVSOEnabled {
-					disableDatabaseVSOCluster()
+					disableDatabaseVSOCluster(engine)
 				}
 
 				if databaseDisable {

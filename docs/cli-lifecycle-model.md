@@ -198,8 +198,43 @@ When the guard preserves the cluster, the `disable` path must still delete its
 behind after disable would be reported as "still active" by every other
 feature's guard, and no disable path could ever remove the cluster.
 
-`hal vault delete` is exempt — it is a full ecosystem teardown and always
-removes the cluster unconditionally.
+`hal vault delete` is exempt from the co-tenant guard — it is a full ecosystem
+teardown and always removes the cluster. It is not exempt from the ownership
+rule below.
+
+### Cluster ownership (the lab invariant)
+HAL's cluster is named `kind`, because `writeHALKindConfig()` sets no `name:`.
+That is also kind's default, so a user who ran a plain `kind create cluster` has a
+cluster with the same name, the same `io.x-k8s.kind.cluster` label and the same
+`kind-control-plane` node. Neither the name nor the label says who created it.
+
+A cluster is **HAL's** only if it is named `kind` **and** at least one of its node
+containers is attached to `hal-net` (`global.IsHALKindCluster`).
+`ensureHALKindCluster()` creates the cluster on `hal-net` and then always connects
+every node to it; a plain `kind create cluster` does neither. The check reads the
+container engine (`ps -a` by label, then `inspect`), so it works for stopped nodes
+and does not depend on the `kind` CLI.
+
+Every path that detects, reuses or deletes a cluster goes through that test:
+
+- Deleting goes through `global.DeleteKindClusters` / `global.DeleteHALKindClusters`
+  and nowhere else. `kind delete cluster` always passes `--name`, never relies on
+  the current default or on `KIND_CLUSTER_NAME`, and falls back to removing only
+  the node IDs of the cluster that passed the test.
+- Detecting uses `halKindClusterRunning()` / `global.HALKindClusterExists`. A
+  foreign cluster counts as "no HAL cluster", so `status` does not report it and
+  `disable` does not delete it.
+- `ensureHALKindCluster()` refuses to reuse a foreign cluster named `kind`. Attaching
+  a user's node to `hal-net` would make it pass the test, and a later `hal delete`
+  would remove it. If the new node cannot be attached to `hal-net`, the cluster just
+  created is rolled back, because it would otherwise be stranded.
+- `hal delete` / `hal daisy` list the foreign clusters they left alone.
+
+A HAL cluster whose nodes were manually detached from `hal-net` is no longer
+recognized. Remove it with `kind delete cluster`.
+
+Never `exec.Command("kind", "delete", ...)` or match `kind get clusters` output with
+`strings.Contains(out, "kind")` in a command: the second also matches `kind-dev`.
 
 ### Port map
 All `--k8s` features share the same KinD cluster config (`writeHALKindConfig()`
@@ -234,9 +269,23 @@ than invoking `kind create` directly. That helper:
 `hal delete` / `hal daisy` must not depend on `kind get clusters` succeeding.
 Older kind CLIs index `.Labels` as a map; Podman 6 stores Labels as a slice, so
 that command fails with `cannot index slice/array with type string`. Teardown
-lists cluster names with `{{.Label "io.x-k8s.kind.cluster"}}`, always
-force-removes leftover `kind-control-plane` nodes, and does not warn for that
-known template error.
+therefore asks the engine, not the kind CLI: `ps -a --filter label=io.x-k8s.kind.cluster`
+for the node IDs, then `inspect` (whose `Config.Labels` is a map on every engine) for
+each node's cluster label and networks. If the `kind` CLI is missing or fails, the
+HAL cluster's own node IDs are removed with `rm -f`. Nodes of other clusters are never
+swept, and the shared `kind` network is only removed when no kind node still uses it.
+
+## Multipass VM Teardown
+
+HAL VMs are named `hal-*`: `hal-nomad`, `hal-boundary-ssh`, `hal-vault-os`. Every
+path that deletes one (`hal delete`, `hal daisy`, `hal nomad delete`/`update`,
+`hal boundary delete`/`ssh disable|update`, `hal vault os disable|update`) calls
+`global.DeleteMultipassVM(name)`, which runs `multipass delete --purge <vm>`.
+
+Never run a bare `multipass purge`: it permanently removes **every** instance in the
+Deleted state, including VMs the user deleted on purpose and may still want to
+`multipass recover`. Dry-run messages print `global.MultipassDeleteCommand(name)`
+so the text cannot drift from the real call.
 
 ## Vault SoftHSM Runtime Ownership
 

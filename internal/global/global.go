@@ -33,10 +33,10 @@ const (
 var HalNetSubnet string
 
 func DetectEngine() (string, error) {
-	if err := exec.Command("docker", "info").Run(); err == nil {
+	if _, err := runner(nil, "docker", "info"); err == nil {
 		return "docker", nil
 	}
-	if err := exec.Command("podman", "info").Run(); err == nil {
+	if _, err := runner(nil, "podman", "info"); err == nil {
 		return "podman", nil
 	}
 	return "", fmt.Errorf("no container engine found (make sure Docker or Podman is running)")

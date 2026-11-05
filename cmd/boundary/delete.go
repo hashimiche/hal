@@ -29,7 +29,7 @@ var destroyCmd = &cobra.Command{
 		fmt.Printf("⚙️  Destroying Boundary ecosystem via %s...\n", engine)
 		if global.DryRun {
 			fmt.Printf("[DRY RUN] Would remove containers: %s\n", strings.Join(boundaryEcosystem, ", "))
-			fmt.Println("[DRY RUN] Would delete and purge Multipass VM hal-boundary-ssh")
+			fmt.Printf("[DRY RUN] Would execute: %s\n", global.MultipassDeleteCommand(boundarySSHInstance))
 			fmt.Println("[DRY RUN] Would clean hal-net if unused")
 			fmt.Println("[DRY RUN] Would remove Boundary observability target file")
 			return
@@ -43,8 +43,7 @@ var destroyCmd = &cobra.Command{
 		}
 
 		// Handle Multipass target cleanup gracefully
-		_ = exec.Command("multipass", "delete", boundarySSHInstance).Run()
-		_ = exec.Command("multipass", "purge").Run()
+		_ = global.DeleteMultipassVM(boundarySSHInstance)
 		fmt.Println("  ✅ Destroyed SSH VM (if it existed)")
 
 		global.CleanNetworkIfEmpty(engine)

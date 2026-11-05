@@ -3,7 +3,6 @@ package vault
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -102,7 +101,7 @@ func writeHALKindConfig() (string, error) {
 	return f.Name(), nil
 }
 
-const kindControlPlaneName = "kind-control-plane"
+const kindControlPlaneName = global.KindControlPlaneNode
 
 // kindClusterEnvExtras returns the environment overrides KinD needs so the
 // node joins hal-net. Docker reads KIND_EXPERIMENTAL_DOCKER_NETWORK; Podman
@@ -124,10 +123,45 @@ func kindCreateEnv(engine string) []string {
 	return append(os.Environ(), kindClusterEnvExtras(engine)...)
 }
 
+// halKindClusterRunning reports whether a KinD cluster that HAL created exists.
+// A user's own cluster, including one named "kind", does not count: it is
+// neither reused nor inspected nor deleted. See global.IsHALKindCluster.
 func halKindClusterRunning() bool {
-	out, err := exec.Command("kind", "get", "clusters").Output()
-	return err == nil && strings.Contains(string(out), "kind")
+	engine, err := global.DetectEngine()
+	if err != nil {
+		return false
+	}
+	return global.HALKindClusterExists(engine)
 }
+
+// destroyHALKindCluster deletes the shared KinD cluster on engine if HAL created
+// it, and says so when it leaves a cluster alone. It is the only way the vault
+// product commands delete a cluster.
+func destroyHALKindCluster(engine string) {
+	hal, foreign, err := global.DiscoverKindClusters(engine)
+	if err != nil {
+		fmt.Printf("⚠️  Could not look for the KinD cluster: %v\n", err)
+		return
+	}
+	for _, c := range foreign {
+		fmt.Printf("ℹ️  KinD cluster %q was not created by HAL (no node attached to %s) — left untouched.\n", c.Name, global.HalNetName)
+	}
+	if len(hal) == 0 {
+		return
+	}
+	fmt.Println("⚙️  Destroying KinD cluster...")
+	res := global.DeleteKindClusters(engine, hal)
+	for _, w := range res.Warnings {
+		fmt.Printf("⚠️  Could not remove KinD cluster: %s\n", w)
+	}
+	if len(res.Deleted) > 0 {
+		fmt.Println("  ✅ Destroyed KinD cluster")
+	}
+}
+
+// kindDeleteDryRun is the dry-run text for every path that may delete the
+// shared cluster.
+const kindDeleteDryRun = "[DRY RUN] Would delete the KinD cluster only if HAL created it (a node attached to hal-net); any other KinD cluster is left alone"
 
 func halNetIPInspectFormat() string {
 	return fmt.Sprintf(`{{range $k,$v := .NetworkSettings.Networks}}{{if eq $k "%s"}}{{$v.IPAddress}}{{end}}{{end}}`, global.HalNetName)
@@ -138,7 +172,7 @@ func halNetIPInspectFormat() string {
 // (kind + hal-net), which newer kind CLIs do when they ignore the experimental
 // network env and HAL then connects the node as a second NIC.
 func containerIPOnHalNet(engine, name string) string {
-	out, err := exec.Command(engine, "inspect", "-f", halNetIPInspectFormat(), name).Output()
+	out, err := global.Run(nil, engine, "inspect", "-f", halNetIPInspectFormat(), name)
 	if err != nil {
 		return ""
 	}
@@ -162,19 +196,18 @@ func attachContainerToHalNet(engine, name string) error {
 		return nil
 	}
 	fmt.Printf("⚙️  Attaching %s to %s...\n", name, global.HalNetName)
-	out, err := exec.Command(engine, "network", "connect", global.HalNetName, name).CombinedOutput()
-	if err != nil {
-		combined := string(out) + err.Error()
-		if isAlreadyConnectedNetworkError(combined) {
+	if _, err := global.Run(nil, engine, "network", "connect", global.HalNetName, name); err != nil {
+		// The runner's error already carries the engine's stderr.
+		if isAlreadyConnectedNetworkError(err.Error()) {
 			return nil
 		}
-		return fmt.Errorf("failed to attach %s to %s: %v (%s)", name, global.HalNetName, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("failed to attach %s to %s: %w", name, global.HalNetName, err)
 	}
 	return nil
 }
 
 func kindNodeNames() []string {
-	out, err := exec.Command("kind", "get", "nodes").Output()
+	out, err := global.Run(nil, "kind", "get", "nodes", "--name", global.KindClusterName)
 	if err == nil {
 		var nodes []string
 		for _, n := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -203,10 +236,26 @@ func attachKindNodesToHalNet(engine string) error {
 // kindest/node v1.36+) may ignore KIND_EXPERIMENTAL_DOCKER_NETWORK or, on
 // Podman, only honor KIND_EXPERIMENTAL_PODMAN_NETWORK — the explicit connect
 // is the fallback so Vault on hal-net can still reach the API server.
+//
+// It refuses to reuse a cluster HAL did not create. HAL's cluster is named
+// "kind", like a user's default one, and attaching a user's node to hal-net
+// would make it pass the ownership test (global.IsHALKindCluster), so a later
+// `hal delete` would remove it.
 func ensureHALKindCluster(engine, nodeImage string) error {
 	global.EnsureNetwork(engine)
 
-	if halKindClusterRunning() {
+	hal, foreign, err := global.DiscoverKindClusters(engine)
+	if err != nil {
+		return fmt.Errorf("cannot check for an existing KinD cluster: %w", err)
+	}
+	for _, c := range foreign {
+		if c.Name == global.KindClusterName {
+			return fmt.Errorf("a KinD cluster named %q already exists and HAL did not create it (none of its nodes is attached to %s); HAL will not reuse or delete it. Delete or rename it, then retry", c.Name, global.HalNetName)
+		}
+	}
+
+	created := false
+	if len(hal) > 0 {
 		fmt.Println("⚡ KinD cluster already running, skipping boot sequence...")
 	} else {
 		fmt.Println("🚀 Booting KinD cluster (attached to hal-net)...")
@@ -216,17 +265,27 @@ func ensureHALKindCluster(engine, nodeImage string) error {
 		}
 		defer func() { _ = os.Remove(kindConfigPath) }()
 
-		startCmd := exec.Command("kind", "create", "cluster", "--config", kindConfigPath)
+		// --name is explicit so a KIND_CLUSTER_NAME in the user's shell cannot
+		// create the cluster under a name teardown does not recognize.
+		args := []string{"create", "cluster", "--name", global.KindClusterName, "--config", kindConfigPath}
 		if strings.TrimSpace(nodeImage) != "" {
-			startCmd.Args = append(startCmd.Args, "--image", nodeImage)
+			args = append(args, "--image", nodeImage)
 		}
-		startCmd.Env = kindCreateEnv(engine)
-		startCmd.Stdout = os.Stdout
-		startCmd.Stderr = os.Stderr
-		if err := startCmd.Run(); err != nil {
+		if err := global.RunStreaming(kindCreateEnv(engine), "kind", args...); err != nil {
 			return fmt.Errorf("failed to start KinD: %w", err)
 		}
+		created = true
 	}
 
-	return attachKindNodesToHalNet(engine)
+	if err := attachKindNodesToHalNet(engine); err != nil {
+		if created {
+			// Without hal-net the new cluster would look foreign to HAL and be
+			// stranded, so undo our own create.
+			if rbErr := global.RollbackNewKindCluster(engine); rbErr != nil {
+				return fmt.Errorf("%w (and removing the new cluster failed: %v; run `kind delete cluster --name %s`)", err, rbErr, global.KindClusterName)
+			}
+		}
+		return err
+	}
+	return nil
 }

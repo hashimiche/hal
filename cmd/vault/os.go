@@ -99,7 +99,7 @@ var vaultOSCmd = &cobra.Command{
 		// ==========================================
 		if osDisable || osUpdate {
 			if global.DryRun {
-				fmt.Println("[DRY RUN] Would execute: multipass delete hal-vault-os && multipass purge")
+				fmt.Printf("[DRY RUN] Would execute: %s\n", global.MultipassDeleteCommand(vaultOSInstance))
 				fmt.Println("[DRY RUN] Would call API to revoke leases and unmount 'os/'")
 			} else {
 				if osDisable {
@@ -118,8 +118,7 @@ var vaultOSCmd = &cobra.Command{
 				}
 
 				fmt.Println("⚙️  Removing Multipass VM...")
-				_ = exec.Command("multipass", "delete", vaultOSInstance).Run()
-				_ = exec.Command("multipass", "purge").Run()
+				_ = global.DeleteMultipassVM(vaultOSInstance)
 
 				if osDisable {
 					fmt.Println("✅ OS secret engine environment destroyed successfully!")
