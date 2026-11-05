@@ -35,16 +35,16 @@ var statusJSONRuntime = statusJSONDeps{
 func runStatusJSON(out, errOut io.Writer, d statusJSONDeps) int {
 	engine, err := d.detectEngine()
 	if err != nil {
-		fmt.Fprintf(errOut, "hal status --json: %v\n", err)
+		_, _ = fmt.Fprintf(errOut, "hal status --json: %v\n", err)
 		return 1
 	}
 	data, err := d.snapshot(engine)
 	if err != nil {
-		fmt.Fprintf(errOut, "hal status --json: cannot build the status snapshot: %v\n", err)
+		_, _ = fmt.Fprintf(errOut, "hal status --json: cannot build the status snapshot: %v\n", err)
 		return 1
 	}
 	if _, err := out.Write(append(data, '\n')); err != nil {
-		fmt.Fprintf(errOut, "hal status --json: cannot write the snapshot: %v\n", err)
+		_, _ = fmt.Fprintf(errOut, "hal status --json: cannot write the snapshot: %v\n", err)
 		return 1
 	}
 	return 0

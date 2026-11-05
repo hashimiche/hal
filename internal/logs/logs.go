@@ -217,22 +217,33 @@ func (s Spec) resolve(name string) (Component, error) {
 	return Component{}, fmt.Errorf("unknown component %q for hal %s logs (valid: %s)", name, s.Product, strings.Join(names, ", "))
 }
 
+// say and sayf write a message about the run to errOut. The write error is
+// dropped on purpose: if errOut is closed there is nowhere left to report it,
+// and the exit code must still describe the logs, not the message.
+func say(w io.Writer, args ...any) {
+	_, _ = fmt.Fprintln(w, args...)
+}
+
+func sayf(w io.Writer, format string, args ...any) {
+	_, _ = fmt.Fprintf(w, format, args...)
+}
+
 // execute runs the command and returns the process exit code. Logs go to out;
 // every message about the run itself goes to errOut, so a pipe on stdout only
 // ever sees log lines.
 func execute(spec Spec, componentName string, requestedTail int, d Deps, out, errOut io.Writer) int {
 	comp, err := spec.resolve(componentName)
 	if err != nil {
-		fmt.Fprintln(errOut, err)
+		say(errOut, err)
 		return exitFailure
 	}
 	tail, note, err := BoundTail(requestedTail)
 	if err != nil {
-		fmt.Fprintln(errOut, err)
+		say(errOut, err)
 		return exitFailure
 	}
 	if note != "" {
-		fmt.Fprintln(errOut, note)
+		say(errOut, note)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
@@ -246,24 +257,24 @@ func execute(spec Spec, componentName string, requestedTail int, d Deps, out, er
 		raw, err = containerLogs(ctx, spec, comp, tail, d, errOut)
 	}
 	if err != nil {
-		fmt.Fprintln(errOut, err)
+		say(errOut, err)
 		return exitFailure
 	}
 
 	data, truncated := boundBytes(raw, MaxOutputBytes)
 	if truncated {
-		fmt.Fprintf(errOut, "output truncated to the last %d KiB\n", MaxOutputBytes/1024)
+		sayf(errOut, "output truncated to the last %d KiB\n", MaxOutputBytes/1024)
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
-		fmt.Fprintf(errOut, "%s has no log output yet\n", comp.Target)
+		sayf(errOut, "%s has no log output yet\n", comp.Target)
 		return exitOK
 	}
 	if _, err := out.Write(data); err != nil {
-		fmt.Fprintf(errOut, "cannot write logs: %v\n", err)
+		sayf(errOut, "cannot write logs: %v\n", err)
 		return exitFailure
 	}
 	if data[len(data)-1] != '\n' {
-		fmt.Fprintln(out)
+		_, _ = fmt.Fprintln(out)
 	}
 	return exitOK
 }
@@ -300,7 +311,7 @@ func containerLogs(ctx context.Context, spec Spec, comp Component, tail int, d D
 	}
 
 	if status := strings.TrimSpace(string(stateOut)); status != "running" {
-		fmt.Fprintf(errOut, "%s is %s (not running); showing its last logs\n", comp.Target, status)
+		sayf(errOut, "%s is %s (not running); showing its last logs\n", comp.Target, status)
 	}
 
 	raw, err := d.Run(ctx, engine, "logs", "--tail", strconv.Itoa(tail), comp.Target)
