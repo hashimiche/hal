@@ -45,11 +45,11 @@ question. The header is the only part the code parses:
 
 ```markdown
 summary: GitLab CI logs into Vault with a JWT bound to a tag.
-read: hal vault jwt | hal vault status
+read: hal vault jwt | hal vault status | hal creds status
 actions: hal vault jwt enable | hal vault jwt update | hal vault jwt disable
 docs:
 - Vault JWT auth: https://developer.hashicorp.com/vault/docs/auth/jwt#bound-claims
-- GitLab CI JWT: https://docs.gitlab.com/ci/secrets/id_token_authentication/
+- GitLab CI JWT: https://docs.gitlab.com/ci/secrets/id_token_authentication/#token-payload
 ```
 
 `summary` is the catalog line. `read` is one or more commands HAL Plus runs
