@@ -86,13 +86,13 @@ var vaultK8sCmd = &cobra.Command{
 			// Check VSO Installation (if KinD is alive)
 			vsoInstalled := false
 			if clusterRunning {
-				vsoCheck, _ := exec.Command("helm", "list", "-n", "vso", "-q").Output()
+				vsoCheck, _ := global.Helm("list", "-n", "vso", "-q").Output()
 				vsoInstalled = strings.Contains(string(vsoCheck), "vault-secrets-operator")
 			}
 
 			proxyServiceReady := false
 			if clusterRunning {
-				proxyCheck, _ := exec.Command("kubectl", "get", "svc", "hal-web-proxy", "-n", "app1", "-o", "name").Output()
+				proxyCheck, _ := global.Kubectl("get", "svc", "hal-web-proxy", "-n", "app1", "-o", "name").Output()
 				proxyServiceReady = strings.TrimSpace(string(proxyCheck)) == "service/hal-web-proxy"
 			}
 
@@ -238,7 +238,7 @@ var vaultK8sCmd = &cobra.Command{
 				}
 				clusterPreserved := false
 				for _, t := range coTenants {
-					out, lookupErr := exec.Command("kubectl", "get", "namespace", t.ns,
+					out, lookupErr := global.Kubectl("get", "namespace", t.ns,
 						"--ignore-not-found", "-o", "name").Output()
 					if (t.ns == pqcNamespace && lookupErr != nil) || strings.TrimSpace(string(out)) != "" {
 						fmt.Printf("ℹ️  KinD cluster preserved (%s is still active).\n", t.feature)
@@ -253,7 +253,7 @@ var vaultK8sCmd = &cobra.Command{
 					// co-tenant guards would keep reporting hal vault k8s as
 					// active and no disable path could ever remove the cluster.
 					fmt.Println("⚙️  Removing namespace 'app1'...")
-					_ = exec.Command("kubectl", "delete", "namespace", "app1", "--ignore-not-found").Run()
+					_ = global.Kubectl("delete", "namespace", "app1", "--ignore-not-found").Run()
 				} else {
 					destroyHALKindCluster(engine)
 				}
@@ -301,8 +301,8 @@ var vaultK8sCmd = &cobra.Command{
 			}
 
 			fmt.Println("⚙️  Ensuring Kubernetes Namespaces exist...")
-			_ = exec.Command("kubectl", "create", "namespace", "vso").Run()
-			_ = exec.Command("kubectl", "create", "namespace", "app1").Run()
+			_ = global.Kubectl("create", "namespace", "vso").Run()
+			_ = global.Kubectl("create", "namespace", "app1").Run()
 
 			fmt.Println("⚙️  Configuring Vault KV Engine and Secrets...")
 			_ = client.Sys().Unmount("kv-k8s")
@@ -323,16 +323,16 @@ path "sys/license/status" { capabilities = ["read"] }
 			_ = client.Sys().PutPolicy("app1-read", policyDef)
 
 			fmt.Println("⚙️  Extracting K8s API CA and generating TokenReviewer SA...")
-			_ = exec.Command("kubectl", "create", "sa", "vault-reviewer", "-n", "default").Run()
-			_ = exec.Command("kubectl", "create", "clusterrolebinding", "vault-reviewer-binding",
+			_ = global.Kubectl("create", "sa", "vault-reviewer", "-n", "default").Run()
+			_ = global.Kubectl("create", "clusterrolebinding", "vault-reviewer-binding",
 				"--clusterrole=system:auth-delegator",
 				"--serviceaccount=default:vault-reviewer").Run()
 
-			caOut, _ := exec.Command("kubectl", "config", "view", "--raw", "--minify", "--flatten", "-o", "jsonpath={.clusters[].cluster.certificate-authority-data}").Output()
+			caOut, _ := global.Kubectl("config", "view", "--raw", "--minify", "--flatten", "-o", "jsonpath={.clusters[].cluster.certificate-authority-data}").Output()
 			decodedCA, _ := base64.StdEncoding.DecodeString(string(caOut))
 			caCert := string(decodedCA)
 
-			tokenOut, _ := exec.Command("kubectl", "create", "token", "vault-reviewer", "-n", "default", "--duration=87600h").Output()
+			tokenOut, _ := global.Kubectl("create", "token", "vault-reviewer", "-n", "default", "--duration=87600h").Output()
 			reviewerToken := strings.TrimSpace(string(tokenOut))
 
 			kindIP := containerIPOnHalNetOrName(engine, kindControlPlaneName)
@@ -359,8 +359,8 @@ path "sys/license/status" { capabilities = ["read"] }
 			})
 
 			fmt.Println("⚙️  Deploying Vault Secrets Operator via Helm...")
-			_ = exec.Command("helm", "repo", "add", "hashicorp", "https://helm.releases.hashicorp.com").Run()
-			_ = exec.Command("helm", "repo", "update").Run()
+			_ = global.Helm("repo", "add", "hashicorp", "https://helm.releases.hashicorp.com").Run()
+			_ = global.Helm("repo", "update").Run()
 
 			helmArgs := []string{"upgrade", "--install", "vault-secrets-operator", "hashicorp/vault-secrets-operator", "-n", "vso"}
 			if strings.TrimSpace(vsoChartVersion) != "" {
@@ -378,7 +378,7 @@ path "sys/license/status" { capabilities = ["read"] }
 				}
 			}
 
-			if err := exec.Command("helm", helmArgs...).Run(); err != nil {
+			if err := global.Helm(helmArgs...).Run(); err != nil {
 				fmt.Printf("❌ Failed to install VSO: %v\n", err)
 			}
 
@@ -392,17 +392,17 @@ path "sys/license/status" { capabilities = ["read"] }
 				crds = append(crds, "crd/csisecrets.secrets.hashicorp.com")
 			}
 			for _, crd := range crds {
-				_ = exec.Command("kubectl", "wait", "--for=condition=Established", crd, "--timeout=60s").Run()
+				_ = global.Kubectl("wait", "--for=condition=Established", crd, "--timeout=60s").Run()
 			}
 
 			fmt.Println("⏳ Waiting for VSO Controller Pods to become Ready (up to 120s)...")
-			_ = exec.Command("kubectl", "wait", "--for=condition=Ready", "pod", "-l", "app.kubernetes.io/name=vault-secrets-operator", "-n", "vso", "--timeout=120s").Run()
+			_ = global.Kubectl("wait", "--for=condition=Ready", "pod", "-l", "app.kubernetes.io/name=vault-secrets-operator", "-n", "vso", "--timeout=120s").Run()
 
 			fmt.Println("⏳ Giving Webhooks 5 seconds to wire up TLS...")
 			time.Sleep(5 * time.Second)
 
 			fmt.Println("⚙️  Applying Kubernetes Manifests...")
-			_ = exec.Command("kubectl", "create", "sa", "app1-sa", "-n", "app1").Run()
+			_ = global.Kubectl("create", "sa", "app1-sa", "-n", "app1").Run()
 
 			vaultIP := containerIPOnHalNetOrName(engine, vaultContainer)
 
@@ -762,8 +762,8 @@ spec:
 				return
 			}
 
-			_ = exec.Command("kubectl", "rollout", "status", "deployment/hal-web-backend", "-n", "app1", "--timeout=180s").Run()
-			_ = exec.Command("kubectl", "rollout", "status", "deployment/hal-web-proxy", "-n", "app1", "--timeout=180s").Run()
+			_ = global.Kubectl("rollout", "status", "deployment/hal-web-backend", "-n", "app1", "--timeout=180s").Run()
+			_ = global.Kubectl("rollout", "status", "deployment/hal-web-proxy", "-n", "app1", "--timeout=180s").Run()
 
 			fmt.Println("\n✅ Kubernetes Secret Zero Environment Ready!")
 			global.RefreshHalHealth(engine)
@@ -785,7 +785,7 @@ spec:
 func applyK8s(yamlContent string) bool {
 	yamlContent = strings.ReplaceAll(yamlContent, "\t", "  ")
 
-	cmd := exec.Command("kubectl", "apply", "-f", "-")
+	cmd := global.Kubectl("apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(yamlContent)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		fmt.Printf("❌ Failed to apply K8s manifests: %v\nOutput: %s\n", err, string(out))
@@ -797,9 +797,7 @@ func applyK8s(yamlContent string) bool {
 }
 
 func detectK8sDemoMode() string {
-	out, err := exec.Command(
-		"kubectl",
-		"get",
+	out, err := global.Kubectl("get",
 		"deploy",
 		"hal-web-backend",
 		"-n",
@@ -811,12 +809,12 @@ func detectK8sDemoMode() string {
 		return "csi"
 	}
 
-	out, err = exec.Command("kubectl", "get", "vaultstaticsecret", "vso-mysecret", "-n", "app1", "-o", "name").Output()
+	out, err = global.Kubectl("get", "vaultstaticsecret", "vso-mysecret", "-n", "app1", "-o", "name").Output()
 	if err == nil && strings.TrimSpace(string(out)) == "vaultstaticsecret.secrets.hashicorp.com/vso-mysecret" {
 		return "native"
 	}
 
-	out, err = exec.Command("kubectl", "get", "csisecrets", "hal-csi-secrets", "-n", "app1", "-o", "name").Output()
+	out, err = global.Kubectl("get", "csisecrets", "hal-csi-secrets", "-n", "app1", "-o", "name").Output()
 	if err == nil && strings.TrimSpace(string(out)) == "csisecrets.secrets.hashicorp.com/hal-csi-secrets" {
 		return "csi"
 	}

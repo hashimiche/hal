@@ -142,14 +142,13 @@ var vaultPKICmd = &cobra.Command{
 
 			if clusterRunning {
 				fmt.Println("\n  [ Kubernetes / cert-manager ]")
-				cmOut, _ := exec.Command("helm", "list", "-n", "cert-manager", "-q").Output()
+				cmOut, _ := global.Helm("list", "-n", "cert-manager", "-q").Output()
 				certManagerInstalled := strings.Contains(string(cmOut), "cert-manager")
 
 				if certManagerInstalled {
 					fmt.Println("  ✅ cert-manager  : Deployed")
 
-					issuerOut, _ := exec.Command(
-						"kubectl", "get", "clusterissuer", "vault-pki-issuer",
+					issuerOut, _ := global.Kubectl("get", "clusterissuer", "vault-pki-issuer",
 						"-o", `jsonpath={.status.conditions[?(@.type=="Ready")].status}`,
 					).Output()
 					if strings.TrimSpace(string(issuerOut)) == "True" {
@@ -158,8 +157,7 @@ var vaultPKICmd = &cobra.Command{
 						fmt.Println("  ⚠️  ClusterIssuer : Not ready")
 					}
 
-					certOut, _ := exec.Command(
-						"kubectl", "get", "certificate", "hal-web-pki-cert",
+					certOut, _ := global.Kubectl("get", "certificate", "hal-web-pki-cert",
 						"-n", "pki-demo", "-o", `jsonpath={.status.conditions[?(@.type=="Ready")].status}`,
 					).Output()
 					if strings.TrimSpace(string(certOut)) == "True" {
@@ -168,8 +166,7 @@ var vaultPKICmd = &cobra.Command{
 						fmt.Println("  ⚠️  Certificate   : Not yet issued")
 					}
 
-					podOut, _ := exec.Command(
-						"kubectl", "get", "pods", "-n", "pki-demo",
+					podOut, _ := global.Kubectl("get", "pods", "-n", "pki-demo",
 						"-l", "app=hal-web-pki", "-o", "jsonpath={.items[0].status.phase}",
 					).Output()
 					if strings.TrimSpace(string(podOut)) == "Running" {
@@ -185,10 +182,9 @@ var vaultPKICmd = &cobra.Command{
 
 				// ACME / Caddy layer
 				fmt.Println("\n  [ ACME / Caddy ]")
-				acmeNsOut, _ := exec.Command("kubectl", "get", "namespace", "pki-acme-demo", "--ignore-not-found").Output()
+				acmeNsOut, _ := global.Kubectl("get", "namespace", "pki-acme-demo", "--ignore-not-found").Output()
 				if strings.Contains(string(acmeNsOut), "pki-acme-demo") {
-					acmePodOut, _ := exec.Command(
-						"kubectl", "get", "pods", "-n", "pki-acme-demo",
+					acmePodOut, _ := global.Kubectl("get", "pods", "-n", "pki-acme-demo",
 						"-l", "app=hal-caddy-acme", "-o", "jsonpath={.items[0].status.phase}",
 					).Output()
 					if strings.TrimSpace(string(acmePodOut)) == "Running" {
@@ -211,11 +207,11 @@ var vaultPKICmd = &cobra.Command{
 			} else {
 				fmt.Println("   vault write " + pkiIntMount + "/issue/hal-role common_name=\"test.hal.local\" ttl=\"24h\"")
 				if clusterRunning {
-					cmOut, _ := exec.Command("helm", "list", "-n", "cert-manager", "-q").Output()
+					cmOut, _ := global.Helm("list", "-n", "cert-manager", "-q").Output()
 					if !strings.Contains(string(cmOut), "cert-manager") {
 						fmt.Println("   hal vault pki enable --k8s    → add cert-manager integration")
 					}
-					acmeNsOut, _ := exec.Command("kubectl", "get", "namespace", "pki-acme-demo", "--ignore-not-found").Output()
+					acmeNsOut, _ := global.Kubectl("get", "namespace", "pki-acme-demo", "--ignore-not-found").Output()
 					if !strings.Contains(string(acmeNsOut), "pki-acme-demo") {
 						fmt.Println("   hal vault pki enable --acme   → add ACME/Caddy integration")
 					}
@@ -275,28 +271,28 @@ var vaultPKICmd = &cobra.Command{
 				teardownSoftHSMLayer(client, engine, pkiUpdate && hsmDetected && !pkiNoHSM)
 
 				// cert-manager demo
-				cmOut, _ := exec.Command("helm", "list", "-n", "cert-manager", "-q").Output()
+				cmOut, _ := global.Helm("list", "-n", "cert-manager", "-q").Output()
 				if strings.Contains(string(cmOut), "cert-manager") {
 					fmt.Println("⚙️  Removing cert-manager (detected from previous --k8s enable)...")
-					_ = exec.Command("kubectl", "delete", "clusterissuer", "vault-pki-issuer", "--ignore-not-found").Run()
-					_ = exec.Command("kubectl", "delete", "namespace", "pki-demo", "--ignore-not-found").Run()
-					_ = exec.Command("helm", "uninstall", "cert-manager", "-n", "cert-manager").Run()
-					_ = exec.Command("kubectl", "delete", "namespace", "cert-manager", "--ignore-not-found").Run()
+					_ = global.Kubectl("delete", "clusterissuer", "vault-pki-issuer", "--ignore-not-found").Run()
+					_ = global.Kubectl("delete", "namespace", "pki-demo", "--ignore-not-found").Run()
+					_ = global.Helm("uninstall", "cert-manager", "-n", "cert-manager").Run()
+					_ = global.Kubectl("delete", "namespace", "cert-manager", "--ignore-not-found").Run()
 					fmt.Println("  ✅ cert-manager and pki-demo namespace removed.")
 				}
 
 				// ACME/Caddy demo
-				acmeNsOut, _ := exec.Command("kubectl", "get", "namespace", "pki-acme-demo", "--ignore-not-found").Output()
+				acmeNsOut, _ := global.Kubectl("get", "namespace", "pki-acme-demo", "--ignore-not-found").Output()
 				if strings.Contains(string(acmeNsOut), "pki-acme-demo") {
 					fmt.Println("⚙️  Removing ACME/Caddy demo...")
-					_ = exec.Command("kubectl", "delete", "namespace", "pki-acme-demo", "--ignore-not-found").Run()
+					_ = global.Kubectl("delete", "namespace", "pki-acme-demo", "--ignore-not-found").Run()
 					fmt.Println("  ✅ pki-acme-demo namespace removed.")
 				}
 				// Remove the CoreDNS sidecar used for ACME challenge DNS resolution.
 				_ = exec.Command(engine, "rm", "-f", acmeDNSContainer).Run()
 
 				// Conditionally delete KinD cluster
-				vsoOut, _ := exec.Command("helm", "list", "-n", "vso", "-q").Output()
+				vsoOut, _ := global.Helm("list", "-n", "vso", "-q").Output()
 				pqcOut, pqcErr := pqcKube(nil, "get", "namespace", pqcNamespace, "--ignore-not-found", "-o", "name")
 				if (pqcErr != nil && halKindClusterRunning()) || strings.TrimSpace(string(pqcOut)) != "" {
 					fmt.Println("KinD cluster preserved (PQC PKI is still active).")
@@ -606,7 +602,7 @@ func runPKIK8sEnable(client *vault.Client, engine string, intMount string) {
 	if strings.TrimSpace(pkiCertManagerVersion) != "" {
 		cmArgs = append(cmArgs, "--version", pkiCertManagerVersion)
 	}
-	cmCmd := exec.Command("helm", cmArgs...)
+	cmCmd := global.Helm(cmArgs...)
 	cmCmd.Stdout = os.Stdout
 	cmCmd.Stderr = os.Stderr
 	if err := cmCmd.Run(); err != nil {
@@ -617,8 +613,7 @@ func runPKIK8sEnable(client *vault.Client, engine string, intMount string) {
 	// node's IP so reachability is no longer the issue, but TLS cert init
 	// still takes a few seconds.
 	fmt.Println("⏳ Waiting for cert-manager-webhook rollout (up to 60s)...")
-	if err := exec.Command(
-		"kubectl", "rollout", "status",
+	if err := global.Kubectl("rollout", "status",
 		"deployment/cert-manager-webhook",
 		"-n", "cert-manager", "--timeout=60s",
 	).Run(); err != nil {
@@ -654,7 +649,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	// webhook validation. Apply immediately with no retry needed.
 	fmt.Println("⚙️  Applying core manifests (Namespace, Deployment, Service)...")
 	coreManifests := buildPKIK8sCoreManifests(intMount, pkiWebBackendImage+":"+pkiWebBackendTag)
-	coreCmd := exec.Command("kubectl", "apply", "-f", "-")
+	coreCmd := global.Kubectl("apply", "-f", "-")
 	coreCmd.Stdin = strings.NewReader(coreManifests)
 	coreCmd.Stdout = os.Stdout
 	coreCmd.Stderr = os.Stderr
@@ -675,7 +670,7 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	crdManifests := buildPKIK8sCRDManifests(server, intMount, serverName, ca)
 	var applyErr error
 	for attempt := 1; attempt <= 10; attempt++ {
-		applyCmd := exec.Command("kubectl", "apply", "-f", "-")
+		applyCmd := global.Kubectl("apply", "-f", "-")
 		applyCmd.Stdin = strings.NewReader(crdManifests)
 		applyCmd.Stdout = os.Stdout
 		applyCmd.Stderr = os.Stderr
@@ -694,40 +689,36 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	}
 
 	fmt.Println("⏳ Waiting for Vault ClusterIssuer to be Ready (up to 180s)...")
-	if err := exec.Command("kubectl", "wait", "--for=condition=Ready",
+	if err := global.Kubectl("wait", "--for=condition=Ready",
 		"clusterissuer/vault-pki-issuer", "--timeout=180s").Run(); err != nil {
 		fmt.Printf("❌ Vault ClusterIssuer did not become ready: %v\n", err)
-		out, _ := exec.Command("kubectl", "describe", "clusterissuer", "vault-pki-issuer").CombinedOutput()
+		out, _ := global.Kubectl("describe", "clusterissuer", "vault-pki-issuer").CombinedOutput()
 		fmt.Print(string(out))
 		return
 	}
 
 	fmt.Println("⏳ Waiting for TLS Certificate to be issued (up to 180s)...")
-	certWaitErr := exec.Command(
-		"kubectl", "wait", "--for=condition=Ready",
+	certWaitErr := global.Kubectl("wait", "--for=condition=Ready",
 		"certificate/hal-web-pki-cert", "-n", "pki-demo", "--timeout=180s",
 	).Run()
 	if certWaitErr != nil {
 		fmt.Println("❌ Certificate was not issued within 180s. Diagnosis:")
 		// Condition message from the Certificate CR
-		condOut, _ := exec.Command(
-			"kubectl", "get", "certificate", "hal-web-pki-cert", "-n", "pki-demo",
+		condOut, _ := global.Kubectl("get", "certificate", "hal-web-pki-cert", "-n", "pki-demo",
 			"-o", `jsonpath={range .status.conditions[*]}  {.type}: {.reason} - {.message}{"\n"}{end}`,
 		).Output()
 		if len(condOut) > 0 {
 			fmt.Println(string(condOut))
 		}
 		// Most recent CertificateRequest failure
-		crOut, _ := exec.Command(
-			"kubectl", "get", "certificaterequest", "-n", "pki-demo",
+		crOut, _ := global.Kubectl("get", "certificaterequest", "-n", "pki-demo",
 			"-o", `jsonpath={range .items[*]}  CertificateRequest {.metadata.name}: {range .status.conditions[*]}{.type}={.reason} ({.message}){"\n"}{end}{end}`,
 		).Output()
 		if len(crOut) > 0 {
 			fmt.Println(string(crOut))
 		}
 		// Recent events in pki-demo
-		evtOut, _ := exec.Command(
-			"kubectl", "get", "events", "-n", "pki-demo",
+		evtOut, _ := global.Kubectl("get", "events", "-n", "pki-demo",
 			"--sort-by=.lastTimestamp",
 			"--field-selector=reason!=Scheduled,reason!=Pulled,reason!=Created,reason!=Started",
 		).Output()
@@ -739,10 +730,10 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	}
 
 	fmt.Println("⏳ Waiting for web deployment to be Ready (up to 180s)...")
-	if err := exec.Command("kubectl", "rollout", "status", "deployment/hal-web-pki",
+	if err := global.Kubectl("rollout", "status", "deployment/hal-web-pki",
 		"-n", "pki-demo", "--timeout=180s").Run(); err != nil {
 		fmt.Printf("❌ Web deployment did not become ready: %v\n", err)
-		out, _ := exec.Command("kubectl", "describe", "pods", "-l", "app=hal-web-pki", "-n", "pki-demo").CombinedOutput()
+		out, _ := global.Kubectl("describe", "pods", "-l", "app=hal-web-pki", "-n", "pki-demo").CombinedOutput()
 		fmt.Print(string(out))
 		return
 	}
@@ -757,8 +748,8 @@ path "%s/issue/hal-role" { capabilities = ["create", "update"] }
 	fmt.Println("\n  Access:")
 	fmt.Println("    → https://pki.localhost:8089")
 	fmt.Println("\n  Inspect the certificate:")
-	fmt.Println("    kubectl describe certificate hal-web-pki-cert -n pki-demo")
-	fmt.Println("    kubectl get secret hal-web-pki-tls -n pki-demo -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -text")
+	fmt.Println("    kubectl --context kind-kind describe certificate hal-web-pki-cert -n pki-demo")
+	fmt.Println("    kubectl --context kind-kind get secret hal-web-pki-tls -n pki-demo -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -text")
 	fmt.Println("\n  Issue a cert directly from Vault:")
 	fmt.Printf("    vault write %s/issue/hal-role common_name=\"test.hal.local\" ttl=\"24h\"\n", intMount)
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -772,16 +763,16 @@ func configurePKIKubeAuth(client *vault.Client, engine string) error {
 	_ = client.Sys().DisableAuth(authMount)
 
 	// vault-reviewer SA — shared infra, idempotent
-	_ = exec.Command("kubectl", "create", "sa", "vault-reviewer", "-n", "default").Run()
-	_ = exec.Command("kubectl", "create", "clusterrolebinding", "vault-reviewer-binding",
+	_ = global.Kubectl("create", "sa", "vault-reviewer", "-n", "default").Run()
+	_ = global.Kubectl("create", "clusterrolebinding", "vault-reviewer-binding",
 		"--clusterrole=system:auth-delegator",
 		"--serviceaccount=default:vault-reviewer").Run()
 
-	caOut, _ := exec.Command("kubectl", "config", "view", "--raw", "--minify", "--flatten",
+	caOut, _ := global.Kubectl("config", "view", "--raw", "--minify", "--flatten",
 		"-o", "jsonpath={.clusters[].cluster.certificate-authority-data}").Output()
 	decodedCA, _ := base64.StdEncoding.DecodeString(strings.TrimSpace(string(caOut)))
 
-	tokenOut, _ := exec.Command("kubectl", "create", "token", "vault-reviewer",
+	tokenOut, _ := global.Kubectl("create", "token", "vault-reviewer",
 		"-n", "default", "--duration=87600h").Output()
 	reviewerToken := strings.TrimSpace(string(tokenOut))
 
@@ -801,15 +792,15 @@ func configurePKIKubeAuth(client *vault.Client, engine string) error {
 	fmt.Printf("  ✅ Auth mount '%s/' configured.\n", authMount)
 
 	// Dedicated SA for cert-manager → Vault
-	_ = exec.Command("kubectl", "create", "sa", "cert-manager-vault", "-n", "cert-manager").Run()
-	cmTokenOut, cmErr := exec.Command("kubectl", "create", "token", "cert-manager-vault",
+	_ = global.Kubectl("create", "sa", "cert-manager-vault", "-n", "cert-manager").Run()
+	cmTokenOut, cmErr := global.Kubectl("create", "token", "cert-manager-vault",
 		"-n", "cert-manager", "--duration=8760h").Output()
 	if cmErr != nil || strings.TrimSpace(string(cmTokenOut)) == "" {
 		return fmt.Errorf("failed to generate cert-manager SA token: %v", cmErr)
 	}
 
-	_ = exec.Command("kubectl", "delete", "secret", "vault-k8s-token", "-n", "cert-manager", "--ignore-not-found").Run()
-	if err := exec.Command("kubectl", "create", "secret", "generic", "vault-k8s-token",
+	_ = global.Kubectl("delete", "secret", "vault-k8s-token", "-n", "cert-manager", "--ignore-not-found").Run()
+	if err := global.Kubectl("create", "secret", "generic", "vault-k8s-token",
 		"--from-literal=token="+strings.TrimSpace(string(cmTokenOut)),
 		"-n", "cert-manager").Run(); err != nil {
 		return fmt.Errorf("failed to store K8s token secret: %w", err)
@@ -1108,7 +1099,7 @@ func runPKIACMEEnable(client *vault.Client, engine string, intMount string) {
 	manifests := buildPKIACMEManifests(vaultIP, intMount, pkiCaddyImage+":"+pkiCaddyTag)
 	// Guard against accidental tab indentation in embedded YAML blocks.
 	manifests = strings.ReplaceAll(manifests, "\t", "  ")
-	applyCmd := exec.Command("kubectl", "apply", "-f", "-")
+	applyCmd := global.Kubectl("apply", "-f", "-")
 	applyCmd.Stdin = strings.NewReader(manifests)
 	applyCmd.Stdout = os.Stdout
 	applyCmd.Stderr = os.Stderr
@@ -1122,26 +1113,22 @@ func runPKIACMEEnable(client *vault.Client, engine string, intMount string) {
 	// cached cert (potentially with the old TTL) and Caddy won't renew until
 	// ~1/3 of the original lifetime remains (could be hours for a 24h cert).
 	fmt.Println("♻️  Restarting Caddy pod to clear cert cache (forces fresh ACME exchange)...")
-	_ = exec.Command("kubectl", "rollout", "restart",
+	_ = global.Kubectl("rollout", "restart",
 		"deployment/hal-caddy-acme", "-n", "pki-acme-demo").Run()
 
 	fmt.Println("⏳ Waiting for Caddy rollout to complete (up to 90s)...")
-	podWaitErr := exec.Command(
-		"kubectl", "rollout", "status",
+	podWaitErr := global.Kubectl("rollout", "status",
 		"deployment/hal-caddy-acme", "-n", "pki-acme-demo", "--timeout=90s",
 	).Run()
 	if podWaitErr != nil {
 		fmt.Println("❌ Caddy deployment did not roll out within 90s. Diagnosis:")
-		logOut, _ := exec.Command(
-			"kubectl", "logs", "-l", "app=hal-caddy-acme",
+		logOut, _ := global.Kubectl("logs", "-l", "app=hal-caddy-acme",
 			"-n", "pki-acme-demo", "--tail=40",
 		).Output()
 		if len(logOut) > 0 {
 			fmt.Println(string(logOut))
 		}
-		evtOut, _ := exec.Command(
-			"kubectl", "get", "events", "-n", "pki-acme-demo", "--sort-by=.lastTimestamp",
-		).Output()
+		evtOut, _ := global.Kubectl("get", "events", "-n", "pki-acme-demo", "--sort-by=.lastTimestamp").Output()
 		if len(evtOut) > 0 {
 			fmt.Println(string(evtOut))
 		}
@@ -1160,9 +1147,9 @@ func runPKIACMEEnable(client *vault.Client, engine string, intMount string) {
 	fmt.Println("\n  Access:")
 	fmt.Println("    → https://acme.localhost:8090")
 	fmt.Println("\n  Inspect the certificate:")
-	fmt.Println("    kubectl exec -n pki-acme-demo deploy/hal-caddy-acme -c caddy -- ls /data/caddy/certificates/")
-	fmt.Println("    kubectl logs -n pki-acme-demo deploy/hal-caddy-acme -c caddy --tail=100")
-	fmt.Println("    kubectl logs -n pki-acme-demo deploy/hal-acme-gateway --tail=100")
+	fmt.Println("    kubectl --context kind-kind exec -n pki-acme-demo deploy/hal-caddy-acme -c caddy -- ls /data/caddy/certificates/")
+	fmt.Println("    kubectl --context kind-kind logs -n pki-acme-demo deploy/hal-caddy-acme -c caddy --tail=100")
+	fmt.Println("    kubectl --context kind-kind logs -n pki-acme-demo deploy/hal-acme-gateway --tail=100")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
 

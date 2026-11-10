@@ -55,22 +55,22 @@ func enableDatabaseVSO(engine string, client *vault.Client, backend, roleName st
 
 	// ---- Namespaces ----
 	fmt.Println("⚙️  Ensuring Kubernetes namespaces exist...")
-	_ = exec.Command("kubectl", "create", "namespace", "vso").Run()
-	_ = exec.Command("kubectl", "create", "namespace", dbVSONS).Run()
+	_ = global.Kubectl("create", "namespace", "vso").Run()
+	_ = global.Kubectl("create", "namespace", dbVSONS).Run()
 
 	// ---- Vault: kubernetes auth + policy ----
 	fmt.Println("⚙️  Extracting K8s API CA and generating TokenReviewer SA...")
-	_ = exec.Command("kubectl", "create", "sa", "vault-reviewer", "-n", "default").Run()
-	_ = exec.Command("kubectl", "create", "clusterrolebinding", "vault-reviewer-binding",
+	_ = global.Kubectl("create", "sa", "vault-reviewer", "-n", "default").Run()
+	_ = global.Kubectl("create", "clusterrolebinding", "vault-reviewer-binding",
 		"--clusterrole=system:auth-delegator",
 		"--serviceaccount=default:vault-reviewer").Run()
 
-	caOut, _ := exec.Command("kubectl", "config", "view", "--raw", "--minify",
+	caOut, _ := global.Kubectl("config", "view", "--raw", "--minify",
 		"--flatten", "-o", "jsonpath={.clusters[].cluster.certificate-authority-data}").Output()
 	decodedCA, _ := base64.StdEncoding.DecodeString(string(caOut))
 	caCert := string(decodedCA)
 
-	tokenOut, _ := exec.Command("kubectl", "create", "token",
+	tokenOut, _ := global.Kubectl("create", "token",
 		"vault-reviewer", "-n", "default", "--duration=87600h").Output()
 	reviewerToken := strings.TrimSpace(string(tokenOut))
 
@@ -109,8 +109,8 @@ path "sys/license/status"  { capabilities = ["read"] }
 
 	// ---- VSO Helm install ----
 	fmt.Println("⚙️  Deploying Vault Secrets Operator via Helm...")
-	_ = exec.Command("helm", "repo", "add", "hashicorp", "https://helm.releases.hashicorp.com").Run()
-	_ = exec.Command("helm", "repo", "update").Run()
+	_ = global.Helm("repo", "add", "hashicorp", "https://helm.releases.hashicorp.com").Run()
+	_ = global.Helm("repo", "update").Run()
 
 	helmArgs := []string{
 		"upgrade", "--install", "vault-secrets-operator",
@@ -119,7 +119,7 @@ path "sys/license/status"  { capabilities = ["read"] }
 	if strings.TrimSpace(dbVSOChartVersion) != "" {
 		helmArgs = append(helmArgs, "--version", dbVSOChartVersion)
 	}
-	if err := exec.Command("helm", helmArgs...).Run(); err != nil {
+	if err := global.Helm(helmArgs...).Run(); err != nil {
 		fmt.Printf("❌ Failed to install VSO: %v\n", err)
 		return
 	}
@@ -131,11 +131,11 @@ path "sys/license/status"  { capabilities = ["read"] }
 		"crd/vaultauths.secrets.hashicorp.com",
 		"crd/vaultdynamicsecrets.secrets.hashicorp.com",
 	} {
-		_ = exec.Command("kubectl", "wait", "--for=condition=Established", crd, "--timeout=60s").Run()
+		_ = global.Kubectl("wait", "--for=condition=Established", crd, "--timeout=60s").Run()
 	}
 
 	fmt.Println("⏳ Waiting for VSO controller pods to become Ready (up to 120s)...")
-	_ = exec.Command("kubectl", "wait", "--for=condition=Ready", "pod",
+	_ = global.Kubectl("wait", "--for=condition=Ready", "pod",
 		"-l", "app.kubernetes.io/name=vault-secrets-operator",
 		"-n", "vso", "--timeout=120s").Run()
 
@@ -146,7 +146,7 @@ path "sys/license/status"  { capabilities = ["read"] }
 	vaultIP := containerIPOnHalNetOrName(engine, vaultContainer)
 
 	// ---- Service account ----
-	_ = exec.Command("kubectl", "create", "sa", dbVSOSAName, "-n", dbVSONS).Run()
+	_ = global.Kubectl("create", "sa", dbVSOSAName, "-n", dbVSONS).Run()
 
 	// ---- Database connection details for the copy button ----
 	dbLabel := "MariaDB"
@@ -173,9 +173,9 @@ path "sys/license/status"  { capabilities = ["read"] }
 		return
 	}
 
-	_ = exec.Command("kubectl", "rollout", "status",
+	_ = global.Kubectl("rollout", "status",
 		"deployment/"+dbVSOAppName, "-n", dbVSONS, "--timeout=180s").Run()
-	_ = exec.Command("kubectl", "rollout", "status",
+	_ = global.Kubectl("rollout", "status",
 		"deployment/"+dbVSOProxyName, "-n", dbVSONS, "--timeout=180s").Run()
 
 	fmt.Println()
@@ -549,7 +549,7 @@ func disableDatabaseVSOCluster(engine string) {
 	}
 
 	for _, t := range coTenants {
-		out, lookupErr := exec.Command("kubectl", "get", "namespace", t.ns,
+		out, lookupErr := global.Kubectl("get", "namespace", t.ns,
 			"--ignore-not-found", "-o", "name").Output()
 		if (t.ns == pqcNamespace && lookupErr != nil) || strings.TrimSpace(string(out)) != "" {
 			// Remove our own namespace (VaultDynamicSecret, synced Secret,
@@ -558,7 +558,7 @@ func disableDatabaseVSOCluster(engine string) {
 			// reporting this demo as active and no disable path could ever
 			// remove the cluster.
 			fmt.Printf("⚙️  Removing namespace '%s' (demo app + VSO resources)...\n", dbVSONS)
-			_ = exec.Command("kubectl", "delete", "namespace", dbVSONS, "--ignore-not-found").Run()
+			_ = global.Kubectl("delete", "namespace", dbVSONS, "--ignore-not-found").Run()
 			fmt.Printf("ℹ️  KinD cluster preserved (%s is still active).\n", t.feature)
 			fmt.Printf("   Run '%s disable' to remove it when done.\n", t.feature)
 			return
